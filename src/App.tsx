@@ -4,7 +4,27 @@ import { FeedProvider, useFeed } from './store/feedStore.tsx';
 import { generateRssFeed, downloadXml, copyToClipboard } from './utils/xmlGenerator';
 import { parseRssFeed, fetchFeedFromUrl } from './utils/xmlParser';
 import { createEmptyAlbum, LANGUAGES, PERSON_GROUPS, PERSON_ROLES } from './types/feed';
+import { FIELD_INFO } from './data/fieldInfo';
 import './App.css';
+
+// Info Icon Component for tooltips
+function InfoIcon({ text }: { text: string }) {
+  const [show, setShow] = useState(false);
+
+  return (
+    <span className="info-icon-wrapper">
+      <span
+        className="info-icon"
+        onMouseEnter={() => setShow(true)}
+        onMouseLeave={() => setShow(false)}
+        onClick={() => setShow(!show)}
+      >
+        i
+      </span>
+      {show && <div className="info-tooltip">{text}</div>}
+    </span>
+  );
+}
 
 // Import Modal Component
 function ImportModal({ onClose, onImport }: { onClose: () => void; onImport: (xml: string) => void }) {
@@ -254,7 +274,7 @@ function Editor() {
           <Section title="Album Info" icon="&#128191;">
             <div className="form-grid">
               <div className="form-group">
-                <label className="form-label">Artist/Band <span className="required">*</span></label>
+                <label className="form-label">Artist/Band <span className="required">*</span><InfoIcon text={FIELD_INFO.author} /></label>
                 <input
                   type="text"
                   className="form-input"
@@ -264,7 +284,7 @@ function Editor() {
                 />
               </div>
               <div className="form-group">
-                <label className="form-label">Album Title <span className="required">*</span></label>
+                <label className="form-label">Album Title <span className="required">*</span><InfoIcon text={FIELD_INFO.title} /></label>
                 <input
                   type="text"
                   className="form-input"
@@ -274,7 +294,7 @@ function Editor() {
                 />
               </div>
               <div className="form-group">
-                <label className="form-label">Website</label>
+                <label className="form-label">Website<InfoIcon text={FIELD_INFO.link} /></label>
                 <input
                   type="url"
                   className="form-input"
@@ -284,7 +304,7 @@ function Editor() {
                 />
               </div>
               <div className="form-group">
-                <label className="form-label">Language</label>
+                <label className="form-label">Language<InfoIcon text={FIELD_INFO.language} /></label>
                 <select
                   className="form-select"
                   value={album.language}
@@ -296,7 +316,7 @@ function Editor() {
                 </select>
               </div>
               <div className="form-group full-width">
-                <label className="form-label">Description <span className="required">*</span></label>
+                <label className="form-label">Description <span className="required">*</span><InfoIcon text={FIELD_INFO.description} /></label>
                 <textarea
                   className="form-textarea"
                   placeholder="Describe your album, band members, recording info, etc."
@@ -305,7 +325,7 @@ function Editor() {
                 />
               </div>
               <div className="form-group">
-                <label className="form-label">Podcast GUID</label>
+                <label className="form-label">Podcast GUID<InfoIcon text={FIELD_INFO.podcastGuid} /></label>
                 <input
                   type="text"
                   className="form-input"
@@ -320,6 +340,7 @@ function Editor() {
                   onChange={val => dispatch({ type: 'UPDATE_ALBUM', payload: { explicit: val } })}
                   label="Explicit Content"
                 />
+                <InfoIcon text={FIELD_INFO.explicit} />
               </div>
             </div>
           </Section>
@@ -328,7 +349,7 @@ function Editor() {
           <Section title="Artwork" icon="&#127912;">
             <div className="form-grid">
               <div className="form-group">
-                <label className="form-label">Album Art URL <span className="required">*</span></label>
+                <label className="form-label">Album Art URL <span className="required">*</span><InfoIcon text={FIELD_INFO.imageUrl} /></label>
                 <input
                   type="url"
                   className="form-input"
@@ -338,7 +359,7 @@ function Editor() {
                 />
               </div>
               <div className="form-group">
-                <label className="form-label">Image Title</label>
+                <label className="form-label">Image Title<InfoIcon text={FIELD_INFO.imageTitle} /></label>
                 <input
                   type="text"
                   className="form-input"
@@ -348,7 +369,7 @@ function Editor() {
                 />
               </div>
               <div className="form-group">
-                <label className="form-label">Image Description</label>
+                <label className="form-label">Image Description<InfoIcon text={FIELD_INFO.imageDescription} /></label>
                 <input
                   type="text"
                   className="form-input"
@@ -378,7 +399,7 @@ function Editor() {
                   <div className="repeatable-item-content">
                     <div className="form-grid">
                       <div className="form-group">
-                        <label className="form-label">Name</label>
+                        <label className="form-label">Name<InfoIcon text={FIELD_INFO.personName} /></label>
                         <input
                           type="text"
                           className="form-input"
@@ -391,7 +412,7 @@ function Editor() {
                         />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Group</label>
+                        <label className="form-label">Group<InfoIcon text={FIELD_INFO.personGroup} /></label>
                         <select
                           className="form-select"
                           value={person.group}
@@ -406,7 +427,7 @@ function Editor() {
                         </select>
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Role</label>
+                        <label className="form-label">Role<InfoIcon text={FIELD_INFO.personRole} /></label>
                         <select
                           className="form-select"
                           value={person.role}
@@ -421,7 +442,7 @@ function Editor() {
                         </select>
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Website</label>
+                        <label className="form-label">Website<InfoIcon text={FIELD_INFO.personHref} /></label>
                         <input
                           type="url"
                           className="form-input"
@@ -434,7 +455,7 @@ function Editor() {
                         />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Photo URL</label>
+                        <label className="form-label">Photo URL<InfoIcon text={FIELD_INFO.personImg} /></label>
                         <input
                           type="url"
                           className="form-input"
@@ -468,7 +489,7 @@ function Editor() {
           <Section title="Value Block (Lightning)" icon="&#9889;">
             <div className="form-grid" style={{ marginBottom: '16px' }}>
               <div className="form-group">
-                <label className="form-label">Suggested Amount (BTC)</label>
+                <label className="form-label">Suggested Amount (BTC)<InfoIcon text={FIELD_INFO.valueSuggested} /></label>
                 <input
                   type="text"
                   className="form-input"
@@ -488,7 +509,7 @@ function Editor() {
                   <div className="repeatable-item-content">
                     <div className="form-grid">
                       <div className="form-group">
-                        <label className="form-label">Name</label>
+                        <label className="form-label">Name<InfoIcon text={FIELD_INFO.recipientName} /></label>
                         <input
                           type="text"
                           className="form-input"
@@ -501,7 +522,7 @@ function Editor() {
                         />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Address</label>
+                        <label className="form-label">Address<InfoIcon text={FIELD_INFO.recipientAddress} /></label>
                         <input
                           type="text"
                           className="form-input"
@@ -518,7 +539,7 @@ function Editor() {
                         />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Split %</label>
+                        <label className="form-label">Split %<InfoIcon text={FIELD_INFO.recipientSplit} /></label>
                         <input
                           type="number"
                           className="form-input"
@@ -579,7 +600,7 @@ function Editor() {
                   {!collapsedTracks.has(track.id) && (
                   <div className="form-grid" style={{ marginTop: '12px' }}>
                     <div className="form-group">
-                      <label className="form-label">Track Title <span className="required">*</span></label>
+                      <label className="form-label">Track Title <span className="required">*</span><InfoIcon text={FIELD_INFO.trackTitle} /></label>
                       <input
                         type="text"
                         className="form-input"
@@ -592,7 +613,7 @@ function Editor() {
                       />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">Duration (HH:MM:SS) <span className="required">*</span></label>
+                      <label className="form-label">Duration (HH:MM:SS) <span className="required">*</span><InfoIcon text={FIELD_INFO.trackDuration} /></label>
                       <input
                         type="text"
                         className="form-input"
@@ -609,7 +630,7 @@ function Editor() {
                       />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">MP3 URL <span className="required">*</span></label>
+                      <label className="form-label">MP3 URL <span className="required">*</span><InfoIcon text={FIELD_INFO.enclosureUrl} /></label>
                       <input
                         type="url"
                         className="form-input"
@@ -640,7 +661,7 @@ function Editor() {
                     </div>
                     <div className="form-group">
                       <label className="form-label">
-                        File Size (MB)
+                        File Size (MB)<InfoIcon text={FIELD_INFO.enclosureLength} />
                         {(!track.enclosureLength || track.enclosureLength === '0') && (
                           <span style={{ color: 'var(--error)', marginLeft: '4px' }}>⚠ Required</span>
                         )}
@@ -667,7 +688,7 @@ function Editor() {
                       )}
                     </div>
                     <div className="form-group full-width">
-                      <label className="form-label">Description</label>
+                      <label className="form-label">Description<InfoIcon text={FIELD_INFO.trackDescription} /></label>
                       <textarea
                         className="form-textarea"
                         placeholder="Track description or notes"
@@ -679,7 +700,7 @@ function Editor() {
                       />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">Track Art URL</label>
+                      <label className="form-label">Track Art URL<InfoIcon text={FIELD_INFO.trackArtUrl} /></label>
                       <input
                         type="url"
                         className="form-input"
@@ -700,7 +721,7 @@ function Editor() {
                       )}
                     </div>
                     <div className="form-group">
-                      <label className="form-label">Lyrics URL</label>
+                      <label className="form-label">Lyrics URL<InfoIcon text={FIELD_INFO.transcriptUrl} /></label>
                       <input
                         type="url"
                         className="form-input"
@@ -721,6 +742,7 @@ function Editor() {
                         })}
                         label="Explicit"
                       />
+                      <InfoIcon text={FIELD_INFO.trackExplicit} />
                     </div>
                     <div className="form-group">
                       <Toggle
@@ -731,6 +753,7 @@ function Editor() {
                         })}
                         label="Override Value Split"
                       />
+                      <InfoIcon text={FIELD_INFO.overrideValue} />
                     </div>
                   </div>
                   )}
@@ -745,7 +768,7 @@ function Editor() {
                             <div className="repeatable-item-content">
                               <div className="form-grid">
                                 <div className="form-group">
-                                  <label className="form-label">Name</label>
+                                  <label className="form-label">Name<InfoIcon text={FIELD_INFO.recipientName} /></label>
                                   <input
                                     type="text"
                                     className="form-input"
@@ -762,7 +785,7 @@ function Editor() {
                                   />
                                 </div>
                                 <div className="form-group">
-                                  <label className="form-label">Address</label>
+                                  <label className="form-label">Address<InfoIcon text={FIELD_INFO.recipientAddress} /></label>
                                   <input
                                     type="text"
                                     className="form-input"
@@ -781,7 +804,7 @@ function Editor() {
                                   />
                                 </div>
                                 <div className="form-group">
-                                  <label className="form-label">Split %</label>
+                                  <label className="form-label">Split %<InfoIcon text={FIELD_INFO.recipientSplit} /></label>
                                   <input
                                     type="number"
                                     className="form-input"

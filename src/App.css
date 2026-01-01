@@ -636,3 +636,68 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* Info Icon Tooltip */
+.info-icon-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+.info-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  color: var(--bg-primary);
+  font-size: 9px;
+  font-weight: 700;
+  cursor: help;
+  font-style: normal;
+  transition: background var(--transition);
+  vertical-align: middle;
+}
+
+.info-icon:hover {
+  background: var(--accent-primary);
+}
+
+.info-tooltip {
+  position: absolute;
+  left: 20px;
+  top: -8px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: var(--text-primary);
+  width: 280px;
+  z-index: 1000;
+  box-shadow: var(--shadow-lg);
+  line-height: 1.4;
+}
+
+.info-tooltip::before {
+  content: '';
+  position: absolute;
+  left: -6px;
+  top: 12px;
+  border: 6px solid transparent;
+  border-right-color: var(--border-color);
+}
+
+.info-tooltip::after {
+  content: '';
+  position: absolute;
+  left: -5px;
+  top: 13px;
+  border: 5px solid transparent;
+  border-right-color: var(--bg-tertiary);
+}

@@ -874,7 +874,7 @@ function Editor() {
       {/* Footer Actions */}
       <div className="footer-actions">
         <button className="btn btn-primary" onClick={handleDownload}>
-          💾 Download XML
+          ⬇️ Download XML
         </button>
         <button className="btn btn-secondary" onClick={handleCopy}>
           {copySuccess ? '✓ Copied!' : '📋 Copy to Clipboard'}
@@ -896,8 +896,9 @@ function Editor() {
 
 // Main App Content (needs access to context)
 function AppContent() {
-  const { dispatch } = useFeed();
+  const { state, dispatch } = useFeed();
   const [showImportModal, setShowImportModal] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
 
   const handleImport = (xml: string) => {
     try {
@@ -927,6 +928,13 @@ function AppContent() {
             </button>
             <button className="btn btn-secondary btn-small" onClick={() => setShowImportModal(true)}>
               📥 Import
+            </button>
+            <button className="btn btn-primary btn-small" onClick={() => {
+              localStorage.setItem('msp2-album-data', JSON.stringify(state.album));
+              setSaveMessage('Saved!');
+              setTimeout(() => setSaveMessage(''), 2000);
+            }}>
+              {saveMessage || '💾 Save'}
             </button>
           </div>
         </header>

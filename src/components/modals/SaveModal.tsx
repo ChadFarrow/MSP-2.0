@@ -32,6 +32,10 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn }: SaveModalProp
   const [hostedInfo, setHostedInfo] = useState<HostedFeedInfo | null>(null);
   const [hostedUrl, setHostedUrl] = useState<string | null>(null);
   const [showEditToken, setShowEditToken] = useState<string | null>(null);
+  const [showRestore, setShowRestore] = useState(false);
+  const [restoreFeedId, setRestoreFeedId] = useState('');
+  const [restoreToken, setRestoreToken] = useState('');
+  const [restoreLoading, setRestoreLoading] = useState(false);
 
   // Check for existing hosted feed on mount
   useEffect(() => {
@@ -41,6 +45,42 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn }: SaveModalProp
       setHostedUrl(buildHostedUrl(info.feedId));
     }
   }, [album.podcastGuid]);
+
+  // Restore feed credentials from saved token
+  const handleRestore = async () => {
+    if (!restoreFeedId.trim() || !restoreToken.trim()) {
+      setMessage({ type: 'error', text: 'Please enter both Feed ID and Edit Token' });
+      return;
+    }
+
+    setRestoreLoading(true);
+    setMessage(null);
+
+    try {
+      // Try to update the feed with the provided credentials to verify they work
+      const xml = generateRssFeed(album);
+      await updateHostedFeed(restoreFeedId.trim(), restoreToken.trim(), xml, album.title);
+
+      // Credentials work - save them
+      const newInfo: HostedFeedInfo = {
+        feedId: restoreFeedId.trim(),
+        editToken: restoreToken.trim(),
+        createdAt: Date.now(),
+        lastUpdated: Date.now()
+      };
+      saveHostedFeedInfo(album.podcastGuid, newInfo);
+      setHostedInfo(newInfo);
+      setHostedUrl(buildHostedUrl(restoreFeedId.trim()));
+      setShowRestore(false);
+      setRestoreFeedId('');
+      setRestoreToken('');
+      setMessage({ type: 'success', text: 'Feed restored and updated!' });
+    } catch (err) {
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Invalid credentials' });
+    } finally {
+      setRestoreLoading(false);
+    }
+  };
 
   const handleSave = async () => {
     setLoading(true);
@@ -380,9 +420,84 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn }: SaveModalProp
                 </div>
               )}
               {!hostedInfo && !showEditToken && (
-                <p style={{ color: 'var(--warning, #f59e0b)', fontSize: '0.75rem', marginTop: '12px', padding: '8px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '4px' }}>
-                  Your edit token will be saved in this browser. If you clear browser data, you won't be able to update this feed.
-                </p>
+                <div style={{ marginTop: '12px' }}>
+                  <p style={{ color: 'var(--warning, #f59e0b)', fontSize: '0.75rem', padding: '8px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '4px', marginBottom: '12px' }}>
+                    Your edit token will be saved in this browser. If you clear browser data, you won't be able to update this feed.
+                  </p>
+                  {!showRestore ? (
+                    <button
+                      className="btn btn-secondary"
+                      style={{ fontSize: '0.75rem', padding: '6px 12px' }}
+                      onClick={() => setShowRestore(true)}
+                    >
+                      Have a token? Restore existing feed
+                    </button>
+                  ) : (
+                    <div style={{ padding: '12px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                      <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                        Feed ID (from your feed URL)
+                      </label>
+                      <input
+                        type="text"
+                        value={restoreFeedId}
+                        onChange={(e) => setRestoreFeedId(e.target.value)}
+                        placeholder="e.g. ZiagqOqCluAv"
+                        style={{
+                          width: '100%',
+                          padding: '8px 12px',
+                          borderRadius: '4px',
+                          border: '1px solid var(--border)',
+                          backgroundColor: 'var(--bg-secondary)',
+                          color: 'var(--text-primary)',
+                          fontSize: '0.75rem',
+                          fontFamily: 'monospace',
+                          marginBottom: '8px'
+                        }}
+                      />
+                      <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                        Edit Token
+                      </label>
+                      <input
+                        type="text"
+                        value={restoreToken}
+                        onChange={(e) => setRestoreToken(e.target.value)}
+                        placeholder="Your saved edit token"
+                        style={{
+                          width: '100%',
+                          padding: '8px 12px',
+                          borderRadius: '4px',
+                          border: '1px solid var(--border)',
+                          backgroundColor: 'var(--bg-secondary)',
+                          color: 'var(--text-primary)',
+                          fontSize: '0.75rem',
+                          fontFamily: 'monospace',
+                          marginBottom: '12px'
+                        }}
+                      />
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          className="btn btn-primary"
+                          style={{ fontSize: '0.75rem', padding: '6px 12px' }}
+                          onClick={handleRestore}
+                          disabled={restoreLoading}
+                        >
+                          {restoreLoading ? 'Verifying...' : 'Restore Feed'}
+                        </button>
+                        <button
+                          className="btn btn-secondary"
+                          style={{ fontSize: '0.75rem', padding: '6px 12px' }}
+                          onClick={() => {
+                            setShowRestore(false);
+                            setRestoreFeedId('');
+                            setRestoreToken('');
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}

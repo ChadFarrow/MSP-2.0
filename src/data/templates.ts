@@ -124,56 +124,6 @@ const createAlbumTemplate = (): Album => {
   return album;
 };
 
-// Playlist template (musicL medium)
-const createPlaylistTemplate = (): Album => {
-  const album = createEmptyAlbum();
-  album.title = 'My Playlist';
-  album.author = 'Curator Name';
-  album.description = 'A curated playlist of great music.';
-  album.medium = 'musicL'; // Playlist medium
-  album.categories = ['Music'];
-  album.podcastGuid = crypto.randomUUID();
-
-  // Add 5 placeholder tracks
-  album.tracks = Array.from({ length: 5 }, (_, i) => {
-    const track = createEmptyTrack(i + 1);
-    track.title = `Playlist Track ${i + 1}`;
-    track.duration = '00:03:30';
-    track.overrideValue = true; // Each track has its own value split
-    track.value = {
-      type: 'lightning',
-      method: 'keysend',
-      recipients: [
-        {
-          name: 'Original Artist',
-          address: '',
-          split: 90,
-          type: 'node'
-        },
-        {
-          name: 'Curator',
-          address: '',
-          split: 10,
-          type: 'node'
-        }
-      ]
-    };
-    return track;
-  });
-
-  // Curator as main value recipient
-  album.value.recipients = [
-    {
-      name: 'Curator Name',
-      address: '',
-      split: 100,
-      type: 'node'
-    }
-  ];
-
-  return album;
-};
-
 // Blank template
 const createBlankTemplate = (): Album => {
   return createEmptyAlbum();

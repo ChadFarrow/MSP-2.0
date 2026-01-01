@@ -1,73 +1,73 @@
-# React + TypeScript + Vite
+# MSP 2.0 - Music Side Project Studio
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A web-based RSS feed editor for creating Podcasting 2.0 compatible music album feeds with Value 4 Value support.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Create and edit podcast RSS feeds for music albums
+- Podcasting 2.0 namespace support (podcast:person, podcast:value, etc.)
+- Value 4 Value (V4V) Lightning payment splits
+- Per-track value recipient overrides
+- Nostr integration for cloud sync (NIP-07)
+- Import/export feeds as XML
+- Local storage persistence
 
-## React Compiler
+## Tech Stack
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- React 18 + TypeScript
+- Vite
+- Nostr (NIP-07 browser extension support)
 
-## Expanding the ESLint configuration
+## Project Structure
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```
+src/
+├── components/
+│   ├── Editor/
+│   │   └── Editor.tsx        # Main form editor
+│   ├── modals/
+│   │   ├── ImportModal.tsx   # Import feed modal
+│   │   └── SaveModal.tsx     # Save options modal
+│   ├── InfoIcon.tsx          # Tooltip component
+│   ├── NostrLoginButton.tsx  # Nostr auth button
+│   ├── Section.tsx           # Collapsible section
+│   └── Toggle.tsx            # Toggle switch
+├── store/
+│   ├── feedStore.tsx         # Album state management
+│   └── nostrStore.tsx        # Nostr auth state
+├── types/
+│   ├── feed.ts               # Album/track types
+│   └── nostr.ts              # Nostr types
+├── utils/
+│   ├── nostr.ts              # Nostr utilities
+│   ├── nostrSync.ts          # Relay sync (kind 30054)
+│   ├── xmlGenerator.ts       # RSS XML generation
+│   └── xmlParser.ts          # RSS XML parsing
+├── data/
+│   └── fieldInfo.ts          # Form field tooltips
+├── App.tsx                   # Main app component
+└── App.css                   # Styles
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Development
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev
 ```
+
+## Nostr Integration
+
+Sign in with a NIP-07 compatible browser extension (Alby, nos2x, etc.) to:
+- Save feeds to Nostr relays (kind 30054)
+- Load feeds from any device with your Nostr key
+
+Default relays:
+- wss://relay.damus.io
+- wss://relay.primal.net
+- wss://nos.lol
+- wss://relay.nostr.band
+
+## License
+
+MIT

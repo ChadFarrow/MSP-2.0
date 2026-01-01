@@ -52,7 +52,8 @@ export const parseRssFeed = (xmlString: string): Album => {
   }
 
   // Explicit
-  album.explicit = getText(channel['itunes:explicit']) === 'true';
+  const explicitVal = channel['itunes:explicit'];
+  album.explicit = explicitVal === true || explicitVal === 'true' || getText(explicitVal) === 'true';
 
   // Image
   const image = channel.image;
@@ -191,7 +192,8 @@ function parseTrack(node: unknown, trackNumber: number): Track {
   }
 
   // Explicit
-  track.explicit = getText(item['itunes:explicit']) === 'true';
+  const trackExplicit = item['itunes:explicit'];
+  track.explicit = trackExplicit === true || trackExplicit === 'true' || getText(trackExplicit) === 'true';
 
   // Track image
   const itunesImage = item['itunes:image'];

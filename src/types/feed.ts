@@ -103,7 +103,7 @@ export const createEmptyTrack = (trackNumber: number): Track => ({
   pubDate: new Date().toUTCString(),
   guid: crypto.randomUUID(),
   enclosureUrl: '',
-  enclosureLength: '0',
+  enclosureLength: '',
   enclosureType: 'audio/mpeg',
   duration: '00:00:00',
   explicit: false,

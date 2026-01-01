@@ -143,6 +143,41 @@ function Editor() {
   const [collapsedTracks, setCollapsedTracks] = useState<Set<string>>(new Set());
   const [copySuccess, setCopySuccess] = useState(false);
 
+  // Format duration to HH:MM:SS
+  const formatDuration = (input: string): string => {
+    // Remove any non-digit and non-colon characters
+    const cleaned = input.replace(/[^\d:]/g, '');
+    const parts = cleaned.split(':').map(p => parseInt(p) || 0);
+
+    let hours = 0, minutes = 0, seconds = 0;
+
+    if (parts.length === 1) {
+      // Just seconds or minutes
+      seconds = parts[0];
+    } else if (parts.length === 2) {
+      // MM:SS
+      minutes = parts[0];
+      seconds = parts[1];
+    } else if (parts.length >= 3) {
+      // HH:MM:SS
+      hours = parts[0];
+      minutes = parts[1];
+      seconds = parts[2];
+    }
+
+    // Handle overflow
+    if (seconds >= 60) {
+      minutes += Math.floor(seconds / 60);
+      seconds = seconds % 60;
+    }
+    if (minutes >= 60) {
+      hours += Math.floor(minutes / 60);
+      minutes = minutes % 60;
+    }
+
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  };
+
   const toggleTrackCollapse = (trackId: string) => {
     setCollapsedTracks(prev => {
       const next = new Set(prev);
@@ -527,9 +562,13 @@ function Editor() {
                           type: 'UPDATE_TRACK',
                           payload: { index, track: { duration: e.target.value } }
                         })}
+                        onBlur={e => dispatch({
+                          type: 'UPDATE_TRACK',
+                          payload: { index, track: { duration: formatDuration(e.target.value) } }
+                        })}
                       />
                     </div>
-                    <div className="form-group full-width">
+                    <div className="form-group">
                       <label className="form-label">MP3 URL <span className="required">*</span></label>
                       <input
                         type="url"
@@ -540,7 +579,42 @@ function Editor() {
                           type: 'UPDATE_TRACK',
                           payload: { index, track: { enclosureUrl: e.target.value } }
                         })}
+                        onBlur={async e => {
+                          const url = e.target.value;
+                          if (url && url.startsWith('http') && !track.enclosureLength) {
+                            try {
+                              const response = await fetch(url, { method: 'HEAD' });
+                              const length = response.headers.get('content-length');
+                              if (length && parseInt(length) > 0) {
+                                dispatch({
+                                  type: 'UPDATE_TRACK',
+                                  payload: { index, track: { enclosureLength: length } }
+                                });
+                              }
+                            } catch {
+                              // CORS blocked - user needs to enter manually
+                            }
+                          }
+                        }}
                       />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">File Size (bytes)</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="Auto-detected or enter manually"
+                        value={track.enclosureLength}
+                        onChange={e => dispatch({
+                          type: 'UPDATE_TRACK',
+                          payload: { index, track: { enclosureLength: e.target.value.replace(/\D/g, '') } }
+                        })}
+                      />
+                      {track.enclosureLength && parseInt(track.enclosureLength) > 0 && (
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                          = {(parseInt(track.enclosureLength) / 1024 / 1024).toFixed(2)} MB
+                        </span>
+                      )}
                     </div>
                     <div className="form-group full-width">
                       <label className="form-label">Description</label>
@@ -566,6 +640,14 @@ function Editor() {
                           payload: { index, track: { trackArtUrl: e.target.value } }
                         })}
                       />
+                      {track.trackArtUrl && (
+                        <img
+                          src={track.trackArtUrl}
+                          alt="Track art preview"
+                          style={{ marginTop: '8px', maxWidth: '100px', borderRadius: '4px', border: '1px solid var(--border-color)' }}
+                          onError={e => (e.target as HTMLImageElement).style.display = 'none'}
+                        />
+                      )}
                     </div>
                     <div className="form-group">
                       <label className="form-label">Lyrics URL</label>

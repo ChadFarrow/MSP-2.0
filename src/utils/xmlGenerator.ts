@@ -51,10 +51,15 @@ const generateRecipientXml = (recipient: ValueRecipient, level: number): string 
 const generateValueXml = (value: ValueBlock, level: number): string => {
   if (!value.recipients.length) return '';
 
+  // Determine method based on recipient types
+  // If any recipient uses lnaddress, method should be lnaddress
+  const hasLnAddress = value.recipients.some(r => r.type === 'lnaddress');
+  const method = hasLnAddress ? 'lnaddress' : 'keysend';
+
   const lines: string[] = [];
   const attrs = [
     `type="${value.type}"`,
-    `method="${value.method}"`
+    `method="${method}"`
   ];
   if (value.suggested) attrs.push(`suggested="${value.suggested}"`);
 
@@ -90,7 +95,8 @@ const generateTrackXml = (track: Track, album: Album, level: number): string => 
   }
 
   // Enclosure (audio file)
-  lines.push(`${indent(level + 1)}<enclosure url="${escapeXml(track.enclosureUrl)}" length="${track.enclosureLength}" type="${track.enclosureType}"/>`);
+  const fileLength = track.enclosureLength || '0';
+  lines.push(`${indent(level + 1)}<enclosure url="${escapeXml(track.enclosureUrl)}" length="${fileLength}" type="${track.enclosureType}"/>`);
 
   // Duration
   lines.push(`${indent(level + 1)}<itunes:duration>${track.duration}</itunes:duration>`);

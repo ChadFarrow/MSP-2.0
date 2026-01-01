@@ -63,3 +63,43 @@ export interface SavedAlbumInfo {
   createdAt: number;    // timestamp
   pubkey: string;       // author pubkey
 }
+
+// Kind 36787 Music Track - Zap split info
+export interface NostrZapSplit {
+  pubkey: string;
+  relay?: string;
+  splitPercentage: number;
+}
+
+// Kind 36787 Music Track - Parsed content sections
+export interface NostrMusicContent {
+  lyrics?: string;
+  credits?: string;
+  license?: string;
+}
+
+// Kind 36787 Music Track - Parsed track info
+export interface NostrMusicTrackInfo {
+  id: string;
+  dTag: string;
+  title: string;
+  artist: string;
+  album: string;
+  trackNumber: number;
+  url: string;
+  imageUrl?: string;
+  released?: string;
+  language?: string;
+  genres: string[];
+  zapSplits: NostrZapSplit[];
+  content: NostrMusicContent;
+  createdAt: number;
+}
+
+// Grouped by album for UI display
+export interface NostrMusicAlbumGroup {
+  albumName: string;
+  artist: string;
+  imageUrl?: string;
+  tracks: NostrMusicTrackInfo[];
+}

@@ -1,5 +1,5 @@
 import type { Album } from '../types/feed';
-import type { NostrEvent, SavedAlbumInfo } from '../types/nostr';
+import type { NostrEvent, SavedAlbumInfo, NostrMusicTrackInfo, NostrMusicAlbumGroup, NostrZapSplit, NostrMusicContent } from '../types/nostr';
 import { generateRssFeed } from './xmlGenerator';
 import { parseRssFeed } from './xmlParser';
 
@@ -14,6 +14,9 @@ export const DEFAULT_RELAYS = [
 // Kind 30054 for podcast/RSS feeds (parameterized replaceable)
 const RSS_FEED_KIND = 30054;
 const CLIENT_TAG = 'MSP 2.0';
+
+// Kind 36787 for Nostr music tracks
+const MUSIC_TRACK_KIND = 36787;
 
 // Connect to a relay with timeout
 function connectRelay(url: string, timeout = 5000): Promise<WebSocket> {
@@ -404,5 +407,192 @@ export async function deleteAlbumFromNostr(
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     return { success: false, message };
+  }
+}
+
+// Parse content field for lyrics, credits, license
+function parseNostrMusicContent(content: string): NostrMusicContent {
+  const result: NostrMusicContent = {};
+
+  if (!content || !content.trim()) return result;
+
+  // Split by known section headers
+  const sections = content.split(/\n\n(?=Lyrics:|Credits:|License:)/i);
+
+  for (const section of sections) {
+    const trimmed = section.trim();
+
+    if (trimmed.toLowerCase().startsWith('lyrics:')) {
+      result.lyrics = trimmed.substring(7).trim();
+    } else if (trimmed.toLowerCase().startsWith('credits:')) {
+      result.credits = trimmed.substring(8).trim();
+    } else if (trimmed.toLowerCase().startsWith('license:')) {
+      result.license = trimmed.substring(8).trim();
+    } else if (!result.lyrics && trimmed) {
+      // If no section header and no lyrics yet, treat as lyrics
+      result.lyrics = trimmed;
+    }
+  }
+
+  return result;
+}
+
+// Parse a kind 36787 event into NostrMusicTrackInfo
+function parseNostrMusicEvent(event: NostrEvent): NostrMusicTrackInfo | null {
+  const getTag = (name: string): string | undefined =>
+    event.tags.find(t => t[0] === name)?.[1];
+
+  const dTag = getTag('d');
+  const title = getTag('title');
+  const url = getTag('url');
+
+  // Required fields
+  if (!dTag || !title || !url) return null;
+
+  // Parse genres from 't' tags
+  const genres = event.tags
+    .filter(t => t[0] === 't')
+    .map(t => t[1])
+    .filter(Boolean);
+
+  // Parse zap splits from 'zap' tags
+  const zapSplits: NostrZapSplit[] = event.tags
+    .filter(t => t[0] === 'zap')
+    .map(t => ({
+      pubkey: t[1] || '',
+      relay: t[2] || undefined,
+      splitPercentage: parseInt(t[3]) || 0
+    }))
+    .filter(z => z.pubkey && z.splitPercentage > 0);
+
+  // Parse content for lyrics, credits, license
+  const parsedContent = parseNostrMusicContent(event.content);
+
+  return {
+    id: event.id || '',
+    dTag,
+    title,
+    artist: getTag('artist') || 'Unknown Artist',
+    album: getTag('album') || 'Singles',
+    trackNumber: parseInt(getTag('track_number') || '1') || 1,
+    url,
+    imageUrl: getTag('image'),
+    released: getTag('released'),
+    language: getTag('language'),
+    genres,
+    zapSplits,
+    content: parsedContent,
+    createdAt: event.created_at
+  };
+}
+
+// Group tracks by album for UI display
+export function groupTracksByAlbum(tracks: NostrMusicTrackInfo[]): NostrMusicAlbumGroup[] {
+  const albumMap = new Map<string, NostrMusicAlbumGroup>();
+
+  for (const track of tracks) {
+    const key = `${track.album}|${track.artist}`;
+
+    if (!albumMap.has(key)) {
+      albumMap.set(key, {
+        albumName: track.album,
+        artist: track.artist,
+        imageUrl: track.imageUrl,
+        tracks: []
+      });
+    }
+
+    const group = albumMap.get(key)!;
+    group.tracks.push(track);
+
+    // Use first track with image as album image
+    if (!group.imageUrl && track.imageUrl) {
+      group.imageUrl = track.imageUrl;
+    }
+  }
+
+  // Sort tracks within each album by track number
+  for (const group of albumMap.values()) {
+    group.tracks.sort((a, b) => a.trackNumber - b.trackNumber);
+  }
+
+  // Return albums sorted alphabetically
+  return Array.from(albumMap.values())
+    .sort((a, b) => a.albumName.localeCompare(b.albumName));
+}
+
+// Fetch music track events (kind 36787) for logged-in user
+export async function fetchNostrMusicTracks(
+  relays = DEFAULT_RELAYS
+): Promise<{ success: boolean; tracks: NostrMusicTrackInfo[]; message: string }> {
+  if (!window.nostr) {
+    return { success: false, tracks: [], message: 'Nostr extension not found' };
+  }
+
+  try {
+    const pubkey = await window.nostr.getPublicKey();
+    const allEvents: NostrEvent[] = [];
+
+    // Query each relay
+    const results = await Promise.allSettled(
+      relays.map(async (relayUrl) => {
+        const ws = await connectRelay(relayUrl);
+        try {
+          const subId = Math.random().toString(36).substring(7);
+          const filter = {
+            kinds: [MUSIC_TRACK_KIND],
+            authors: [pubkey]
+          };
+
+          ws.send(JSON.stringify(['REQ', subId, filter]));
+          const events = await collectEvents(ws, subId);
+          return events;
+        } finally {
+          ws.close();
+        }
+      })
+    );
+
+    // Collect all events from successful relays
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        allEvents.push(...result.value);
+      }
+    }
+
+    // Deduplicate by d-tag (keep latest version)
+    const latestByDTag = new Map<string, NostrEvent>();
+    for (const event of allEvents) {
+      const dTag = event.tags.find(t => t[0] === 'd')?.[1] || event.id || '';
+      const existing = latestByDTag.get(dTag);
+      if (!existing || event.created_at > existing.created_at) {
+        latestByDTag.set(dTag, event);
+      }
+    }
+
+    // Parse events to NostrMusicTrackInfo
+    const tracks: NostrMusicTrackInfo[] = [];
+    for (const event of latestByDTag.values()) {
+      const track = parseNostrMusicEvent(event);
+      if (track) {
+        tracks.push(track);
+      }
+    }
+
+    // Sort by album name, then track number
+    tracks.sort((a, b) => {
+      const albumCompare = a.album.localeCompare(b.album);
+      if (albumCompare !== 0) return albumCompare;
+      return a.trackNumber - b.trackNumber;
+    });
+
+    return {
+      success: true,
+      tracks,
+      message: `Found ${tracks.length} track(s)`
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return { success: false, tracks: [], message };
   }
 }

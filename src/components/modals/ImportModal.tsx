@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { fetchFeedFromUrl } from '../../utils/xmlParser';
-import { loadAlbumsFromNostr, loadAlbumByDTag } from '../../utils/nostrSync';
-import type { SavedAlbumInfo } from '../../types/nostr';
+import { loadAlbumsFromNostr, loadAlbumByDTag, fetchNostrMusicTracks, groupTracksByAlbum } from '../../utils/nostrSync';
+import { convertNostrMusicToAlbum } from '../../utils/nostrMusicConverter';
+import type { SavedAlbumInfo, NostrMusicAlbumGroup } from '../../types/nostr';
 import type { Album } from '../../types/feed';
 
 interface ImportModalProps {
@@ -12,7 +13,7 @@ interface ImportModalProps {
 }
 
 export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn }: ImportModalProps) {
-  const [mode, setMode] = useState<'file' | 'paste' | 'url' | 'nostr'>('file');
+  const [mode, setMode] = useState<'file' | 'paste' | 'url' | 'nostr' | 'nostrMusic'>('file');
   const [xmlContent, setXmlContent] = useState('');
   const [feedUrl, setFeedUrl] = useState('');
   const [loading, setLoading] = useState(false);
@@ -20,6 +21,8 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn }: Impo
   const [fileName, setFileName] = useState('');
   const [savedAlbums, setSavedAlbums] = useState<SavedAlbumInfo[]>([]);
   const [loadingAlbums, setLoadingAlbums] = useState(false);
+  const [musicAlbums, setMusicAlbums] = useState<NostrMusicAlbumGroup[]>([]);
+  const [loadingMusic, setLoadingMusic] = useState(false);
 
   const fetchSavedAlbums = async () => {
     setLoadingAlbums(true);
@@ -60,6 +63,38 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn }: Impo
       hour: '2-digit',
       minute: '2-digit'
     });
+  };
+
+  const fetchMusicTracks = async () => {
+    setLoadingMusic(true);
+    setError('');
+
+    const result = await fetchNostrMusicTracks();
+    setLoadingMusic(false);
+
+    if (result.success) {
+      const grouped = groupTracksByAlbum(result.tracks);
+      setMusicAlbums(grouped);
+      if (grouped.length === 0) {
+        setError('No music tracks found on Nostr');
+      }
+    } else {
+      setError(result.message);
+    }
+  };
+
+  const handleImportMusicAlbum = async (albumGroup: NostrMusicAlbumGroup) => {
+    setLoading(true);
+    setError('');
+
+    try {
+      const album = await convertNostrMusicToAlbum(albumGroup, true);
+      onLoadAlbum(album);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to convert music tracks');
+      setLoading(false);
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -132,16 +167,66 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn }: Impo
               From URL
             </button>
             {isLoggedIn && (
-              <button
-                className={`btn ${mode === 'nostr' ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => { setMode('nostr'); fetchSavedAlbums(); }}
-              >
-                From Nostr
-              </button>
+              <>
+                <button
+                  className={`btn ${mode === 'nostr' ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => { setMode('nostr'); fetchSavedAlbums(); }}
+                >
+                  From Nostr
+                </button>
+                <button
+                  className={`btn ${mode === 'nostrMusic' ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => { setMode('nostrMusic'); fetchMusicTracks(); }}
+                >
+                  From Nostr Music
+                </button>
+              </>
             )}
           </div>
 
-          {mode === 'nostr' ? (
+          {mode === 'nostrMusic' ? (
+            <div className="nostr-music-section">
+              {loadingMusic ? (
+                <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>
+                  Loading music from Nostr...
+                </div>
+              ) : musicAlbums.length > 0 ? (
+                <div className="nostr-album-list">
+                  {musicAlbums.map((albumGroup, index) => (
+                    <div
+                      key={`${albumGroup.albumName}-${albumGroup.artist}-${index}`}
+                      className="nostr-music-album-item"
+                      onClick={() => !loading && handleImportMusicAlbum(albumGroup)}
+                      style={{ cursor: loading ? 'wait' : 'pointer' }}
+                    >
+                      <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                        {albumGroup.imageUrl && (
+                          <img
+                            src={albumGroup.imageUrl}
+                            alt={albumGroup.albumName}
+                            style={{ width: '48px', height: '48px', borderRadius: '4px', objectFit: 'cover' }}
+                          />
+                        )}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div className="nostr-album-item-title">{albumGroup.albumName}</div>
+                          <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
+                            {albumGroup.artist}
+                          </div>
+                          <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                            {albumGroup.tracks.length} track{albumGroup.tracks.length !== 1 ? 's' : ''}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>
+                  {error || 'No music tracks found'}
+                </div>
+              )}
+            </div>
+          ) : mode === 'nostr' ? (
             <div className="nostr-load-section">
               {loadingAlbums ? (
                 <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>
@@ -213,7 +298,11 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn }: Impo
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          {mode === 'nostr' ? (
+          {mode === 'nostrMusic' ? (
+            <button className="btn btn-secondary" onClick={fetchMusicTracks} disabled={loadingMusic}>
+              {loadingMusic ? 'Loading...' : 'Refresh'}
+            </button>
+          ) : mode === 'nostr' ? (
             <button className="btn btn-secondary" onClick={fetchSavedAlbums} disabled={loadingAlbums}>
               {loadingAlbums ? 'Loading...' : 'Refresh'}
             </button>

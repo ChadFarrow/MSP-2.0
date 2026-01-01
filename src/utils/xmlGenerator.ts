@@ -92,6 +92,8 @@ const generateTrackXml = (track: Track, album: Album, level: number): string => 
   const artUrl = track.trackArtUrl || album.imageUrl;
   if (artUrl) {
     lines.push(`${indent(level + 1)}<itunes:image href="${escapeXml(artUrl)}" />`);
+    // Add podcast:images for better Podcast 2.0 app compatibility
+    lines.push(`${indent(level + 1)}<podcast:images srcset="${escapeXml(artUrl)}" />`);
   }
 
   // Enclosure (audio file)

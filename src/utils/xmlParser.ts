@@ -224,10 +224,20 @@ function parseTrack(node: unknown, trackNumber: number, albumValue: ValueBlock, 
   const trackExplicit = item['itunes:explicit'];
   track.explicit = trackExplicit === true || trackExplicit === 'true' || getText(trackExplicit) === 'true';
 
-  // Track image
+  // Track image (check itunes:image first, then podcast:images as fallback)
   const itunesImage = item['itunes:image'];
   if (itunesImage) {
     track.trackArtUrl = getAttr(itunesImage, 'href') || '';
+  }
+  // Fallback to podcast:images if no itunes:image
+  if (!track.trackArtUrl) {
+    const podcastImages = item['podcast:images'];
+    if (podcastImages) {
+      // podcast:images uses srcset attribute
+      const srcset = getAttr(podcastImages, 'srcset') || '';
+      // srcset can be a single URL or multiple URLs with sizes - take the first one
+      track.trackArtUrl = srcset.split(' ')[0] || '';
+    }
   }
 
   // Transcript

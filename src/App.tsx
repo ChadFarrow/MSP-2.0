@@ -76,6 +76,7 @@ function AppContent() {
           album={state.album}
           isDirty={state.isDirty}
           isLoggedIn={nostrState.isLoggedIn}
+          onImport={handleImport}
         />
       )}
     </>

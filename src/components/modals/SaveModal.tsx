@@ -20,9 +20,10 @@ interface SaveModalProps {
   album: Album;
   isDirty: boolean;
   isLoggedIn: boolean;
+  onImport?: (xml: string) => void;
 }
 
-export function SaveModal({ onClose, album, isDirty, isLoggedIn }: SaveModalProps) {
+export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: SaveModalProps) {
   const [mode, setMode] = useState<'local' | 'download' | 'clipboard' | 'nostr' | 'nostrMusic' | 'blossom' | 'hosted'>('local');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -38,8 +39,23 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn }: SaveModalProp
   const [restoreToken, setRestoreToken] = useState('');
   const [restoreLoading, setRestoreLoading] = useState(false);
 
-  // Check for existing hosted feed on mount
+  // Check for existing hosted feed on mount, and apply pending credentials
   useEffect(() => {
+    // Check for pending credentials from import
+    const pendingStr = localStorage.getItem('msp2-pending-hosted');
+    if (pendingStr) {
+      try {
+        const pending = JSON.parse(pendingStr) as HostedFeedInfo;
+        saveHostedFeedInfo(album.podcastGuid, pending);
+        localStorage.removeItem('msp2-pending-hosted');
+        setHostedInfo(pending);
+        setHostedUrl(buildHostedUrl(pending.feedId));
+        return;
+      } catch {
+        localStorage.removeItem('msp2-pending-hosted');
+      }
+    }
+
     const info = getHostedFeedInfo(album.podcastGuid);
     if (info) {
       setHostedInfo(info);
@@ -78,6 +94,58 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn }: SaveModalProp
       setMessage({ type: 'success', text: 'Feed restored and updated!' });
     } catch (err) {
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Invalid credentials' });
+    } finally {
+      setRestoreLoading(false);
+    }
+  };
+
+  // Import feed content and restore credentials
+  const handleImportAndRestore = async () => {
+    if (!restoreFeedId.trim() || !restoreToken.trim()) {
+      setMessage({ type: 'error', text: 'Please enter both Feed ID and Edit Token' });
+      return;
+    }
+
+    if (!onImport) {
+      setMessage({ type: 'error', text: 'Import not available' });
+      return;
+    }
+
+    setRestoreLoading(true);
+    setMessage(null);
+
+    try {
+      // Fetch the feed XML (public, no auth needed)
+      const feedUrl = buildHostedUrl(restoreFeedId.trim());
+      const response = await fetch(feedUrl);
+      if (!response.ok) {
+        throw new Error('Feed not found');
+      }
+      const xml = await response.text();
+
+      // Verify the token works by doing a test (we'll update after import)
+      // For now just save the credentials - they'll be validated on next save
+      const newInfo: HostedFeedInfo = {
+        feedId: restoreFeedId.trim(),
+        editToken: restoreToken.trim(),
+        createdAt: Date.now(),
+        lastUpdated: Date.now()
+      };
+
+      // Import the feed content
+      onImport(xml);
+
+      // Save credentials (using the imported feed's podcastGuid will happen after import)
+      // Store with a temporary key, will be updated when user saves
+      localStorage.setItem('msp2-pending-hosted', JSON.stringify(newInfo));
+
+      setShowRestore(false);
+      setRestoreFeedId('');
+      setRestoreToken('');
+      onClose();
+      setMessage({ type: 'success', text: 'Feed imported! Save to verify your token.' });
+    } catch (err) {
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to import feed' });
     } finally {
       setRestoreLoading(false);
     }
@@ -490,14 +558,22 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn }: SaveModalProp
                           marginBottom: '12px'
                         }}
                       />
-                      <div style={{ display: 'flex', gap: '8px' }}>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                         <button
                           className="btn btn-primary"
+                          style={{ fontSize: '0.75rem', padding: '6px 12px' }}
+                          onClick={handleImportAndRestore}
+                          disabled={restoreLoading}
+                        >
+                          {restoreLoading ? 'Loading...' : 'Import & Restore'}
+                        </button>
+                        <button
+                          className="btn btn-secondary"
                           style={{ fontSize: '0.75rem', padding: '6px 12px' }}
                           onClick={handleRestore}
                           disabled={restoreLoading}
                         >
-                          {restoreLoading ? 'Verifying...' : 'Restore Feed'}
+                          Restore Only
                         </button>
                         <button
                           className="btn btn-secondary"
@@ -511,6 +587,10 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn }: SaveModalProp
                           Cancel
                         </button>
                       </div>
+                      <p style={{ color: 'var(--text-secondary)', fontSize: '0.7rem', marginTop: '8px' }}>
+                        <strong>Import & Restore</strong>: Fetches feed content and loads it into the editor<br />
+                        <strong>Restore Only</strong>: Links credentials without changing current content
+                      </p>
                     </div>
                   )}
                 </div>

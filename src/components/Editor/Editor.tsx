@@ -466,7 +466,6 @@ export function Editor() {
                             payload: { index, track: { enclosureLength: bytes > 0 ? String(bytes) : '' } }
                           });
                         }}
-                        style={(!track.enclosureLength || track.enclosureLength === '0') ? { borderColor: 'var(--error)' } : {}}
                       />
                       {track.enclosureLength && parseInt(track.enclosureLength) > 0 && (
                         <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>

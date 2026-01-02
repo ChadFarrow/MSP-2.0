@@ -1,4 +1,4 @@
-import { ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
 export function Toggle({ checked, onChange, label, labelSuffix }: {
   checked: boolean;

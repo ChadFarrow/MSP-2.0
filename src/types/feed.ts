@@ -25,6 +25,11 @@ export interface ValueBlock {
   recipients: ValueRecipient[];
 }
 
+export interface Funding {
+  url: string;
+  text: string;
+}
+
 export interface Track {
   id: string;
   trackNumber: number;
@@ -83,6 +88,9 @@ export interface Album {
   // People & Value
   persons: Person[];
   value: ValueBlock;
+
+  // Funding
+  funding: Funding[];
 
   // Tracks
   tracks: Track[];
@@ -148,6 +156,7 @@ export const createEmptyAlbum = (): Album => ({
     suggested: '0.000033333',
     recipients: []
   },
+  funding: [],
   tracks: [createEmptyTrack(1)]
 });
 
@@ -166,6 +175,12 @@ export const createEmptyRecipient = (): ValueRecipient => ({
   address: '',
   split: 0,
   type: 'node'
+});
+
+// Default empty funding
+export const createEmptyFunding = (): Funding => ({
+  url: '',
+  text: ''
 });
 
 // iTunes categories for music

@@ -1,5 +1,5 @@
 // MSP 2.0 - XML Generator for Demu RSS Feeds
-import type { Album, Track, Person, ValueBlock, ValueRecipient } from '../types/feed';
+import type { Album, Track, Person, ValueBlock, ValueRecipient, Funding } from '../types/feed';
 
 // Escape XML special characters
 const escapeXml = (str: string): string => {
@@ -68,6 +68,12 @@ const generateValueXml = (value: ValueBlock, level: number): string => {
   lines.push(`${indent(level)}</podcast:value>`);
 
   return lines.join('\n');
+};
+
+// Generate funding XML
+const generateFundingXml = (funding: Funding, level: number): string => {
+  if (!funding.url) return '';
+  return `${indent(level)}<podcast:funding url="${escapeXml(funding.url)}">${escapeXml(funding.text)}</podcast:funding>`;
 };
 
 // Generate track/item XML
@@ -227,6 +233,12 @@ export const generateRssFeed = (album: Album): string => {
   if (album.value.recipients.length > 0) {
     lines.push(generateValueXml(album.value, 2));
   }
+
+  // Funding
+  (album.funding || []).forEach(f => {
+    const fundingXml = generateFundingXml(f, 2);
+    if (fundingXml) lines.push(fundingXml);
+  });
 
   // Tracks
   album.tracks.forEach(track => lines.push(generateTrackXml(track, album, 2)));

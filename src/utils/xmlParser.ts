@@ -1,6 +1,6 @@
 // MSP 2.0 - XML Parser for importing Demu RSS Feeds
 import { XMLParser } from 'fast-xml-parser';
-import type { Album, Track, Person, ValueRecipient, ValueBlock } from '../types/feed';
+import type { Album, Track, Person, ValueRecipient, ValueBlock, Funding } from '../types/feed';
 import { createEmptyAlbum, createEmptyTrack } from '../types/feed';
 
 // Parse XML string to Album object
@@ -87,6 +87,13 @@ export const parseRssFeed = (xmlString: string): Album => {
     album.value = parseValueBlock(value);
   }
 
+  // Funding
+  const funding = channel['podcast:funding'];
+  if (funding) {
+    const fundingArray = Array.isArray(funding) ? funding : [funding];
+    album.funding = fundingArray.map(parseFunding).filter(Boolean) as Funding[];
+  }
+
   // Tracks
   const items = channel.item;
   if (items) {
@@ -128,6 +135,18 @@ function parsePerson(node: unknown): Person | null {
     img: getAttr(node, 'img') || undefined,
     group: (getAttr(node, 'group') || 'music') as Person['group'],
     role: getAttr(node, 'role') || 'band'
+  };
+}
+
+// Parse funding tag
+function parseFunding(node: unknown): Funding | null {
+  if (!node) return null;
+  const url = getAttr(node, 'url');
+  if (!url) return null;
+
+  return {
+    url,
+    text: getText(node) || ''
   };
 }
 

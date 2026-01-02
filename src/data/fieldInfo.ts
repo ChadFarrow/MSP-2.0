@@ -29,6 +29,10 @@ export const FIELD_INFO = {
   recipientAddress: "Lightning node pubkey (66 hex chars) or Lightning address (user@wallet.com). Type is auto-detected.",
   recipientSplit: "Percentage of payment this recipient receives. Splits are totaled and divided proportionally (must be whole numbers).",
 
+  // Funding
+  fundingUrl: "URL where listeners can support your podcast (e.g., Patreon, Ko-fi, your website).",
+  fundingText: "Call-to-action text (max 128 characters). E.g., 'Support the show!' or 'Become a member!'",
+
   // Tracks
   trackTitle: "The song title.",
   trackDescription: "Optional description or notes about the track.",

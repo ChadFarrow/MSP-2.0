@@ -1,8 +1,8 @@
 // MSP 2.0 - Feed State Management (React Context)
 import { createContext, useContext, useReducer, useEffect } from 'react';
 import type { ReactNode } from 'react';
-import type { Album, Track, Person, ValueRecipient } from '../types/feed';
-import { createEmptyAlbum, createEmptyTrack, createEmptyPerson, createEmptyRecipient } from '../types/feed';
+import type { Album, Track, Person, ValueRecipient, Funding } from '../types/feed';
+import { createEmptyAlbum, createEmptyTrack, createEmptyPerson, createEmptyRecipient, createEmptyFunding } from '../types/feed';
 
 // localStorage key
 const STORAGE_KEY = 'msp2-album-data';
@@ -17,6 +17,9 @@ type FeedAction =
   | { type: 'ADD_RECIPIENT'; payload?: ValueRecipient }
   | { type: 'UPDATE_RECIPIENT'; payload: { index: number; recipient: ValueRecipient } }
   | { type: 'REMOVE_RECIPIENT'; payload: number }
+  | { type: 'ADD_FUNDING'; payload?: Funding }
+  | { type: 'UPDATE_FUNDING'; payload: { index: number; funding: Funding } }
+  | { type: 'REMOVE_FUNDING'; payload: number }
   | { type: 'ADD_TRACK'; payload?: Track }
   | { type: 'UPDATE_TRACK'; payload: { index: number; track: Partial<Track> } }
   | { type: 'REMOVE_TRACK'; payload: number }
@@ -138,6 +141,35 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
             ...state.album.value,
             recipients: state.album.value.recipients.filter((_, i) => i !== action.payload)
           }
+        },
+        isDirty: true
+      };
+
+    case 'ADD_FUNDING':
+      return {
+        album: {
+          ...state.album,
+          funding: [...(state.album.funding || []), action.payload || createEmptyFunding()]
+        },
+        isDirty: true
+      };
+
+    case 'UPDATE_FUNDING':
+      return {
+        album: {
+          ...state.album,
+          funding: (state.album.funding || []).map((f, i) =>
+            i === action.payload.index ? action.payload.funding : f
+          )
+        },
+        isDirty: true
+      };
+
+    case 'REMOVE_FUNDING':
+      return {
+        album: {
+          ...state.album,
+          funding: (state.album.funding || []).filter((_, i) => i !== action.payload)
         },
         isDirty: true
       };

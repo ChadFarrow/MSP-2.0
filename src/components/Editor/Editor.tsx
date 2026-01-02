@@ -358,6 +358,58 @@ export function Editor() {
             </div>
           </Section>
 
+          {/* Funding Section */}
+          <Section title="Funding" icon="&#128176;">
+            <div className="repeatable-list">
+              {(album.funding || []).map((funding, index) => (
+                <div key={index} className="repeatable-item">
+                  <div className="repeatable-item-content">
+                    <div className="form-grid">
+                      <div className="form-group">
+                        <label className="form-label">URL <span className="required">*</span><InfoIcon text={FIELD_INFO.fundingUrl} /></label>
+                        <input
+                          type="url"
+                          className="form-input"
+                          placeholder="https://patreon.com/yourshow"
+                          value={funding.url}
+                          onChange={e => dispatch({
+                            type: 'UPDATE_FUNDING',
+                            payload: { index, funding: { ...funding, url: e.target.value } }
+                          })}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Text<InfoIcon text={FIELD_INFO.fundingText} /></label>
+                        <input
+                          type="text"
+                          className="form-input"
+                          placeholder="Support the show!"
+                          maxLength={128}
+                          value={funding.text}
+                          onChange={e => dispatch({
+                            type: 'UPDATE_FUNDING',
+                            payload: { index, funding: { ...funding, text: e.target.value } }
+                          })}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="repeatable-item-actions">
+                    <button
+                      className="btn btn-icon btn-danger"
+                      onClick={() => dispatch({ type: 'REMOVE_FUNDING', payload: index })}
+                    >
+                      &#10005;
+                    </button>
+                  </div>
+                </div>
+              ))}
+              <button className="add-item-btn" onClick={() => dispatch({ type: 'ADD_FUNDING' })}>
+                + Add Funding Link
+              </button>
+            </div>
+          </Section>
+
           {/* Tracks Section */}
           <Section title="Tracks" icon="&#127925;">
             <div className="track-list">

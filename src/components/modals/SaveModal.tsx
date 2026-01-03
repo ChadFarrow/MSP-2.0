@@ -13,7 +13,7 @@ import {
   type HostedFeedInfo
 } from '../../utils/hostedFeed';
 
-const DEFAULT_BLOSSOM_SERVER = 'https://podtards.com';
+const DEFAULT_BLOSSOM_SERVER = 'https://blossom.primal.net/';
 
 interface SaveModalProps {
   onClose: () => void;
@@ -321,24 +321,26 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '12px' }}>
                 Upload your RSS feed to a Blossom server. Get a permanent URL for podcast apps.
               </p>
-              <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.875rem' }}>
-                Blossom Server URL
-              </label>
-              <input
-                type="text"
-                value={blossomServer}
-                onChange={(e) => setBlossomServer(e.target.value)}
-                placeholder="https://blossom.example.com"
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  borderRadius: '4px',
-                  border: '1px solid var(--border)',
-                  backgroundColor: 'var(--bg-secondary)',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.875rem'
-                }}
-              />
+              <div style={{ padding: '12px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.875rem' }}>
+                  Blossom Server URL
+                </label>
+                <input
+                  type="text"
+                  value={blossomServer}
+                  onChange={(e) => setBlossomServer(e.target.value)}
+                  placeholder="https://blossom.example.com"
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    borderRadius: '4px',
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: 'var(--bg-secondary)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.875rem'
+                  }}
+                />
+              </div>
               {feedUrl && (
                 <div style={{ marginTop: '12px' }}>
                   <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>

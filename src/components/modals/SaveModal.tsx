@@ -12,6 +12,7 @@ import {
   buildHostedUrl,
   type HostedFeedInfo
 } from '../../utils/hostedFeed';
+import { albumStorage, pendingHostedStorage } from '../../utils/storage';
 
 const DEFAULT_BLOSSOM_SERVER = 'https://blossom.primal.net/';
 
@@ -43,18 +44,13 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
   // Check for existing hosted feed on mount, and apply pending credentials
   useEffect(() => {
     // Check for pending credentials from import
-    const pendingStr = localStorage.getItem('msp2-pending-hosted');
-    if (pendingStr) {
-      try {
-        const pending = JSON.parse(pendingStr) as HostedFeedInfo;
-        saveHostedFeedInfo(album.podcastGuid, pending);
-        localStorage.removeItem('msp2-pending-hosted');
-        setHostedInfo(pending);
-        setHostedUrl(buildHostedUrl(pending.feedId));
-        return;
-      } catch {
-        localStorage.removeItem('msp2-pending-hosted');
-      }
+    const pending = pendingHostedStorage.load();
+    if (pending) {
+      saveHostedFeedInfo(album.podcastGuid, pending);
+      pendingHostedStorage.clear();
+      setHostedInfo(pending);
+      setHostedUrl(buildHostedUrl(pending.feedId));
+      return;
     }
 
     const info = getHostedFeedInfo(album.podcastGuid);
@@ -138,7 +134,7 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
 
       // Save credentials (using the imported feed's podcastGuid will happen after import)
       // Store with a temporary key, will be updated when user saves
-      localStorage.setItem('msp2-pending-hosted', JSON.stringify(newInfo));
+      pendingHostedStorage.save(newInfo);
 
       setShowRestore(false);
       setRestoreFeedId('');
@@ -182,7 +178,7 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
     try {
       switch (mode) {
         case 'local':
-          localStorage.setItem('msp2-album-data', JSON.stringify(album));
+          albumStorage.save(album);
           setMessage({ type: 'success', text: 'Saved to browser storage' });
           break;
         case 'download':

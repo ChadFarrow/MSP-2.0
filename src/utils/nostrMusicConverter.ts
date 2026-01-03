@@ -2,32 +2,11 @@ import type { Album, Track, ValueRecipient, ValueBlock, Person } from '../types/
 import type { NostrMusicTrackInfo, NostrMusicAlbumGroup, NostrZapSplit, NostrEvent } from '../types/nostr';
 import { createEmptyAlbum, createEmptyTrack } from '../types/feed';
 import { fetchNostrProfile } from './nostrSync';
+import { areValueBlocksEqual } from './comparison';
+import { parseReleasedDate } from './dateUtils';
 
 // Kind 36787 for Nostr music tracks
 const MUSIC_TRACK_KIND = 36787;
-
-// Parse released date (format: "DD/MM/YYYY" or various formats)
-function parseReleasedDate(released: string): string {
-  try {
-    // Handle DD/MM/YYYY format
-    const parts = released.split('/');
-    if (parts.length === 3) {
-      const [day, month, year] = parts;
-      const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-      if (!isNaN(date.getTime())) {
-        return date.toUTCString();
-      }
-    }
-    // Fallback: try direct parse
-    const parsed = new Date(released);
-    if (!isNaN(parsed.getTime())) {
-      return parsed.toUTCString();
-    }
-    return new Date().toUTCString();
-  } catch {
-    return new Date().toUTCString();
-  }
-}
 
 // Infer person group from role string
 function inferPersonGroup(role: string): Person['group'] {
@@ -121,22 +100,6 @@ async function buildValueBlockFromZaps(
     suggested: '0.000033333',
     recipients
   };
-}
-
-// Compare two value blocks for equality
-function areValueBlocksEqual(a: ValueBlock, b: ValueBlock): boolean {
-  if (a.recipients.length !== b.recipients.length) return false;
-
-  const aAddresses = new Set(a.recipients.map(r => r.address));
-  const bAddresses = new Set(b.recipients.map(r => r.address));
-
-  if (aAddresses.size !== bAddresses.size) return false;
-
-  for (const addr of aAddresses) {
-    if (!bAddresses.has(addr)) return false;
-  }
-
-  return true;
 }
 
 // Build aggregate value block from all tracks' zap splits

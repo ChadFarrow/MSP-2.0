@@ -2,6 +2,7 @@
 import { XMLParser } from 'fast-xml-parser';
 import type { Album, Track, Person, ValueRecipient, ValueBlock, Funding } from '../types/feed';
 import { createEmptyAlbum, createEmptyTrack } from '../types/feed';
+import { areValueBlocksStrictEqual, arePersonsEqual } from './comparison';
 
 // Parse XML string to Album object
 export const parseRssFeed = (xmlString: string): Album => {
@@ -178,34 +179,6 @@ function parseValueBlock(node: unknown): ValueBlock {
   };
 }
 
-// Compare two value blocks to see if they're equivalent
-function areValueBlocksEqual(a: ValueBlock, b: ValueBlock): boolean {
-  if (a.recipients.length !== b.recipients.length) return false;
-
-  for (let i = 0; i < a.recipients.length; i++) {
-    const ra = a.recipients[i];
-    const rb = b.recipients[i];
-    if (ra.name !== rb.name || ra.address !== rb.address ||
-        ra.split !== rb.split || ra.type !== rb.type) {
-      return false;
-    }
-  }
-  return true;
-}
-
-// Compare two person arrays to see if they're equivalent
-function arePersonsEqual(a: Person[], b: Person[]): boolean {
-  if (a.length !== b.length) return false;
-
-  for (let i = 0; i < a.length; i++) {
-    if (a[i].name !== b[i].name || a[i].role !== b[i].role ||
-        a[i].group !== b[i].group) {
-      return false;
-    }
-  }
-  return true;
-}
-
 // Parse track/item
 function parseTrack(node: unknown, trackNumber: number, albumValue: ValueBlock, albumPersons: Person[]): Track {
   const track = createEmptyTrack(trackNumber);
@@ -278,7 +251,7 @@ function parseTrack(node: unknown, trackNumber: number, albumValue: ValueBlock, 
   const value = item['podcast:value'];
   if (value) {
     track.value = parseValueBlock(value);
-    track.overrideValue = !areValueBlocksEqual(track.value, albumValue);
+    track.overrideValue = !areValueBlocksStrictEqual(track.value, albumValue);
   }
 
   return track;

@@ -2,108 +2,26 @@ import type { Album, Track, Person, ValueRecipient } from '../types/feed';
 import type { NostrEvent, SavedAlbumInfo, NostrMusicTrackInfo, NostrMusicAlbumGroup, NostrZapSplit, NostrMusicContent } from '../types/nostr';
 import { generateRssFeed } from './xmlGenerator';
 import { parseRssFeed } from './xmlParser';
-import { hexToNpub } from './nostr';
+import { formatReleasedDate } from './dateUtils';
+import {
+  DEFAULT_RELAYS,
+  connectRelay,
+  collectEvents,
+  publishEventToRelays
+} from './nostrRelay';
 
-// Blossom auth event kind
-const BLOSSOM_AUTH_KIND = 24242;
+// Re-export for backward compatibility
+export { DEFAULT_RELAYS };
 
-// Default relays to use
-export const DEFAULT_RELAYS = [
-  'wss://relay.damus.io',
-  'wss://relay.primal.net',
-  'wss://nos.lol',
-  'wss://relay.nostr.band'
-];
+// Re-export Blossom functions from dedicated module
+export { uploadToBlossom } from './blossom';
 
 // Kind 30054 for podcast/RSS feeds (parameterized replaceable)
 const RSS_FEED_KIND = 30054;
 const CLIENT_TAG = 'MSP 2.0';
 
-// Kind 1063 for file metadata (NIP-94)
-const FILE_METADATA_KIND = 1063;
-
 // Kind 36787 for Nostr music tracks
 const MUSIC_TRACK_KIND = 36787;
-
-// Connect to a relay with timeout
-function connectRelay(url: string, timeout = 5000): Promise<WebSocket> {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(url);
-    const timer = setTimeout(() => {
-      ws.close();
-      reject(new Error(`Connection to ${url} timed out`));
-    }, timeout);
-
-    ws.onopen = () => {
-      clearTimeout(timer);
-      resolve(ws);
-    };
-
-    ws.onerror = () => {
-      clearTimeout(timer);
-      reject(new Error(`Failed to connect to ${url}`));
-    };
-  });
-}
-
-// Send a message and wait for response
-function sendAndWait(
-  ws: WebSocket,
-  message: unknown[],
-  timeout = 10000
-): Promise<unknown[]> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error('Request timed out'));
-    }, timeout);
-
-    const handler = (event: MessageEvent) => {
-      try {
-        const data = JSON.parse(event.data);
-        clearTimeout(timer);
-        ws.removeEventListener('message', handler);
-        resolve(data);
-      } catch {
-        // Ignore parse errors, wait for valid response
-      }
-    };
-
-    ws.addEventListener('message', handler);
-    ws.send(JSON.stringify(message));
-  });
-}
-
-// Collect multiple events from a relay
-function collectEvents(
-  ws: WebSocket,
-  subscriptionId: string,
-  timeout = 10000
-): Promise<NostrEvent[]> {
-  return new Promise((resolve) => {
-    const events: NostrEvent[] = [];
-    const timer = setTimeout(() => {
-      ws.removeEventListener('message', handler);
-      resolve(events);
-    }, timeout);
-
-    const handler = (event: MessageEvent) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data[0] === 'EVENT' && data[1] === subscriptionId) {
-          events.push(data[2] as NostrEvent);
-        } else if (data[0] === 'EOSE' && data[1] === subscriptionId) {
-          clearTimeout(timer);
-          ws.removeEventListener('message', handler);
-          resolve(events);
-        }
-      } catch {
-        // Ignore parse errors
-      }
-    };
-
-    ws.addEventListener('message', handler);
-  });
-}
 
 // Nostr profile metadata interface
 export interface NostrProfile {
@@ -205,19 +123,7 @@ export async function saveAlbumToNostr(
     const signedEvent = await window.nostr.signEvent(unsignedEvent);
 
     // Publish to relays
-    const results = await Promise.allSettled(
-      relays.map(async (relayUrl) => {
-        const ws = await connectRelay(relayUrl);
-        try {
-          const response = await sendAndWait(ws, ['EVENT', signedEvent]);
-          return { relay: relayUrl, response };
-        } finally {
-          ws.close();
-        }
-      })
-    );
-
-    const successCount = results.filter(r => r.status === 'fulfilled').length;
+    const { successCount } = await publishEventToRelays(signedEvent, relays);
 
     if (successCount === 0) {
       return { success: false, message: 'Failed to publish to any relay' };
@@ -555,20 +461,6 @@ export async function fetchNostrMusicTracks(
   }
 }
 
-// Convert date string to MM/DD/YYYY format for Nostr music events
-function formatReleasedDate(dateString: string): string {
-  try {
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return '';
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const year = date.getFullYear();
-    return `${month}/${day}/${year}`;
-  } catch {
-    return '';
-  }
-}
-
 // Convert persons array to Credits section string
 function formatCreditsFromPersons(persons: Person[]): string {
   if (!persons || persons.length === 0) return '';
@@ -711,20 +603,9 @@ export async function publishNostrMusicTracks(
       const signedEvent = await window.nostr.signEvent(unsignedEvent);
 
       // Publish to all relays
-      const results = await Promise.allSettled(
-        relays.map(async (relayUrl) => {
-          const ws = await connectRelay(relayUrl);
-          try {
-            const response = await sendAndWait(ws, ['EVENT', signedEvent]);
-            return { relay: relayUrl, response };
-          } finally {
-            ws.close();
-          }
-        })
-      );
+      const { successCount } = await publishEventToRelays(signedEvent, relays);
 
       // Count as published if at least one relay succeeded
-      const successCount = results.filter(r => r.status === 'fulfilled').length;
       if (successCount > 0) {
         publishedCount++;
       }
@@ -745,176 +626,3 @@ export async function publishNostrMusicTracks(
   }
 }
 
-// Calculate SHA256 hash of content
-async function sha256Hash(content: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(content);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-// Create Blossom auth event (kind 24242)
-async function createBlossomAuthEvent(
-  hash: string,
-  pubkey: string,
-  action: 'upload' | 'delete' = 'upload'
-): Promise<NostrEvent> {
-  const expiration = Math.floor(Date.now() / 1000) + 300; // 5 minutes from now
-
-  return {
-    kind: BLOSSOM_AUTH_KIND,
-    pubkey,
-    created_at: Math.floor(Date.now() / 1000),
-    tags: [
-      ['t', action],
-      ['x', hash],
-      ['expiration', String(expiration)]
-    ],
-    content: `${action} ${hash}`
-  };
-}
-
-// Create NIP-94 file metadata event for RSS feed
-function createFileMetadataEvent(
-  blossomUrl: string,
-  hash: string,
-  fileSize: number,
-  album: Album,
-  pubkey: string
-): NostrEvent {
-  return {
-    kind: FILE_METADATA_KIND,
-    pubkey,
-    created_at: Math.floor(Date.now() / 1000),
-    tags: [
-      ['url', blossomUrl],
-      ['m', 'application/rss+xml'],
-      ['x', hash],
-      ['size', String(fileSize)],
-      ['alt', `RSS feed for: ${album.title}`],
-      ['title', album.title],
-      ['d', album.podcastGuid],
-      ['client', CLIENT_TAG]
-    ],
-    content: `${album.title} - Podcast RSS Feed`
-  };
-}
-
-// Publish file metadata to Nostr relays
-async function publishFileMetadata(
-  blossomUrl: string,
-  hash: string,
-  fileSize: number,
-  album: Album,
-  relays: string[]
-): Promise<{ success: boolean; eventId?: string }> {
-  if (!window.nostr) {
-    return { success: false };
-  }
-
-  try {
-    const pubkey = await window.nostr.getPublicKey();
-    const unsignedEvent = createFileMetadataEvent(blossomUrl, hash, fileSize, album, pubkey);
-    const signedEvent = await window.nostr.signEvent(unsignedEvent);
-
-    const results = await Promise.allSettled(
-      relays.map(async (relayUrl) => {
-        const ws = await connectRelay(relayUrl);
-        try {
-          await sendAndWait(ws, ['EVENT', signedEvent]);
-          return true;
-        } finally {
-          ws.close();
-        }
-      })
-    );
-
-    const successCount = results.filter(r => r.status === 'fulfilled').length;
-    return {
-      success: successCount > 0,
-      eventId: signedEvent.id
-    };
-  } catch {
-    return { success: false };
-  }
-}
-
-// Upload RSS feed to Blossom server
-export async function uploadToBlossom(
-  album: Album,
-  blossomServer: string
-): Promise<{ success: boolean; message: string; url?: string; stableUrl?: string }> {
-  if (!window.nostr) {
-    return { success: false, message: 'Nostr extension not found' };
-  }
-
-  try {
-    const pubkey = await window.nostr.getPublicKey();
-
-    // Generate RSS XML
-    const rssXml = generateRssFeed(album);
-
-    // Calculate hash
-    const hash = await sha256Hash(rssXml);
-
-    // Create and sign auth event
-    const authEvent = await createBlossomAuthEvent(hash, pubkey, 'upload');
-    const signedAuthEvent = await window.nostr.signEvent(authEvent);
-
-    // Base64 encode the signed event for Authorization header
-    const authHeader = 'Nostr ' + btoa(JSON.stringify(signedAuthEvent));
-
-    // Normalize server URL
-    const serverUrl = blossomServer.replace(/\/$/, '');
-
-    // Upload to Blossom server
-    const response = await fetch(`${serverUrl}/upload`, {
-      method: 'PUT',
-      headers: {
-        'Authorization': authHeader,
-        'Content-Type': 'application/xml'
-      },
-      body: rssXml
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      return { success: false, message: `Upload failed: ${response.status} - ${errorText}` };
-    }
-
-    const result = await response.json();
-
-    // Blossom returns the URL in the response
-    const fileUrl = result.url || `${serverUrl}/${hash}.xml`;
-
-    // Publish NIP-94 file metadata event to enable stable URL
-    const fileSize = new Blob([rssXml]).size;
-    const metadataResult = await publishFileMetadata(
-      fileUrl,
-      hash,
-      fileSize,
-      album,
-      DEFAULT_RELAYS
-    );
-
-    // Construct stable URL if metadata was published
-    let stableUrl: string | undefined;
-    if (metadataResult.success) {
-      const npub = hexToNpub(pubkey);
-      stableUrl = `${window.location.origin}/api/feed/${npub}/${album.podcastGuid}`;
-    }
-
-    return {
-      success: true,
-      message: metadataResult.success
-        ? 'Feed uploaded and metadata published'
-        : 'Feed uploaded (metadata publish failed)',
-      url: fileUrl,
-      stableUrl
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    return { success: false, message };
-  }
-}

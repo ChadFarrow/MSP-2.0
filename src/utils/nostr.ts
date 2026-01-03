@@ -1,7 +1,8 @@
 import type { NostrUser } from '../types/nostr';
+import { nostrUserStorage, STORAGE_KEYS } from './storage';
 
-// Storage key for persisted auth
-export const NOSTR_STORAGE_KEY = 'msp2-nostr-user';
+// Storage key for persisted auth (re-export for backward compatibility)
+export const NOSTR_STORAGE_KEY = STORAGE_KEYS.NOSTR_USER;
 
 // Bech32 encoding for npub conversion
 const BECH32_ALPHABET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
@@ -137,31 +138,15 @@ export async function getPublicKey(): Promise<string> {
 
 // Load user from localStorage
 export function loadStoredUser(): NostrUser | null {
-  try {
-    const stored = localStorage.getItem(NOSTR_STORAGE_KEY);
-    if (stored) {
-      return JSON.parse(stored);
-    }
-  } catch (e) {
-    console.error('Failed to load Nostr user from storage:', e);
-  }
-  return null;
+  return nostrUserStorage.load();
 }
 
 // Save user to localStorage
 export function saveUser(user: NostrUser): void {
-  try {
-    localStorage.setItem(NOSTR_STORAGE_KEY, JSON.stringify(user));
-  } catch (e) {
-    console.error('Failed to save Nostr user to storage:', e);
-  }
+  nostrUserStorage.save(user);
 }
 
 // Clear user from localStorage
 export function clearStoredUser(): void {
-  try {
-    localStorage.removeItem(NOSTR_STORAGE_KEY);
-  } catch (e) {
-    console.error('Failed to clear Nostr user from storage:', e);
-  }
+  nostrUserStorage.clear();
 }

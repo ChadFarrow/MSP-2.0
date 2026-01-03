@@ -1,38 +1,28 @@
 // Hosted feed API utilities for non-Nostr users
+import { hostedFeedStorage, type HostedFeedInfo } from './storage';
 
-export interface HostedFeedInfo {
-  feedId: string;
-  editToken: string;
-  createdAt: number;
-  lastUpdated: number;
-}
-
-const STORAGE_PREFIX = 'msp2-hosted-';
+// Re-export type for backward compatibility
+export type { HostedFeedInfo };
 
 /**
  * Get stored hosted feed info from localStorage
  */
 export function getHostedFeedInfo(podcastGuid: string): HostedFeedInfo | null {
-  try {
-    const data = localStorage.getItem(`${STORAGE_PREFIX}${podcastGuid}`);
-    return data ? JSON.parse(data) : null;
-  } catch {
-    return null;
-  }
+  return hostedFeedStorage.load(podcastGuid);
 }
 
 /**
  * Save hosted feed info to localStorage
  */
 export function saveHostedFeedInfo(podcastGuid: string, info: HostedFeedInfo): void {
-  localStorage.setItem(`${STORAGE_PREFIX}${podcastGuid}`, JSON.stringify(info));
+  hostedFeedStorage.save(podcastGuid, info);
 }
 
 /**
  * Clear hosted feed info from localStorage
  */
 export function clearHostedFeedInfo(podcastGuid: string): void {
-  localStorage.removeItem(`${STORAGE_PREFIX}${podcastGuid}`);
+  hostedFeedStorage.clear(podcastGuid);
 }
 
 interface CreateFeedResponse {

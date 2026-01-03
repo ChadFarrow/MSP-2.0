@@ -3,6 +3,8 @@ import { fetchFeedFromUrl } from '../../utils/xmlParser';
 import { loadAlbumsFromNostr, loadAlbumByDTag, fetchNostrMusicTracks, groupTracksByAlbum } from '../../utils/nostrSync';
 import { convertNostrMusicToAlbum, parseNostrEventJson } from '../../utils/nostrMusicConverter';
 import { buildHostedUrl, type HostedFeedInfo } from '../../utils/hostedFeed';
+import { pendingHostedStorage } from '../../utils/storage';
+import { formatTimestamp } from '../../utils/dateUtils';
 import type { SavedAlbumInfo, NostrMusicAlbumGroup } from '../../types/nostr';
 import type { Album } from '../../types/feed';
 
@@ -60,15 +62,6 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn }: Impo
     }
   };
 
-  const formatDate = (timestamp: number) => {
-    return new Date(timestamp * 1000).toLocaleDateString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
 
   const fetchMusicTracks = async () => {
     setLoadingMusic(true);
@@ -147,7 +140,7 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn }: Impo
           lastUpdated: Date.now()
         };
         // Store as pending - will be associated with the album's GUID after import
-        localStorage.setItem('msp2-pending-hosted', JSON.stringify(newInfo));
+        pendingHostedStorage.save(newInfo);
       }
 
       onImport(xml);
@@ -296,7 +289,7 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn }: Impo
                       onClick={() => !loading && handleLoadFromNostr(savedAlbum.dTag)}
                     >
                       <div className="nostr-album-item-title">{savedAlbum.title}</div>
-                      <div className="nostr-album-item-date">{formatDate(savedAlbum.createdAt)}</div>
+                      <div className="nostr-album-item-date">{formatTimestamp(savedAlbum.createdAt)}</div>
                     </div>
                   ))}
                 </div>

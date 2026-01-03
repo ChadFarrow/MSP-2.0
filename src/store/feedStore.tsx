@@ -3,9 +3,7 @@ import { createContext, useContext, useReducer, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import type { Album, Track, Person, ValueRecipient, Funding } from '../types/feed';
 import { createEmptyAlbum, createEmptyTrack, createEmptyPerson, createEmptyRecipient, createEmptyFunding } from '../types/feed';
-
-// localStorage key
-const STORAGE_KEY = 'msp2-album-data';
+import { albumStorage } from '../utils/storage';
 
 // Action types
 type FeedAction =
@@ -38,31 +36,10 @@ interface FeedState {
   isDirty: boolean;
 }
 
-// Load from localStorage
-const loadFromStorage = (): Album | null => {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      return JSON.parse(saved);
-    }
-  } catch (e) {
-    console.error('Failed to load from localStorage:', e);
-  }
-  return null;
-};
-
-// Save to localStorage
-const saveToStorage = (album: Album): void => {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(album));
-  } catch (e) {
-    console.error('Failed to save to localStorage:', e);
-  }
-};
 
 // Initial state - try to load from localStorage first
 const initialState: FeedState = {
-  album: loadFromStorage() || createEmptyAlbum(),
+  album: albumStorage.load() || createEmptyAlbum(),
   isDirty: false
 };
 
@@ -303,7 +280,7 @@ export function FeedProvider({ children }: { children: ReactNode }) {
 
   // Auto-save to localStorage whenever album changes
   useEffect(() => {
-    saveToStorage(state.album);
+    albumStorage.save(state.album);
   }, [state.album]);
 
   return (

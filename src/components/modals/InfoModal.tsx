@@ -9,10 +9,16 @@ export function InfoModal({ onClose }: InfoModalProps) {
   const [content, setContent] = useState('Loading...');
 
   useEffect(() => {
-    fetch('/info.md')
-      .then(res => res.text())
-      .then(setContent)
-      .catch(() => setContent('Failed to load content'));
+    const loadContent = async () => {
+      try {
+        const res = await fetch('/info.md');
+        const text = await res.text();
+        setContent(text);
+      } catch {
+        setContent('Failed to load content');
+      }
+    };
+    loadContent();
   }, []);
 
   return (

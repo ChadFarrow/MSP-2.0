@@ -1,5 +1,9 @@
 // MSP 2.0 - XML Generator for Demu RSS Feeds
 import type { Album, Track, Person, ValueBlock, ValueRecipient, Funding } from '../types/feed';
+import { formatRFC822Date } from './dateUtils';
+
+// Re-export for backward compatibility
+export { formatRFC822Date };
 
 // Escape XML special characters
 const escapeXml = (str: string): string => {
@@ -10,12 +14,6 @@ const escapeXml = (str: string): string => {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;');
-};
-
-// Format date to RFC-822
-export const formatRFC822Date = (date: Date | string): string => {
-  const d = typeof date === 'string' ? new Date(date) : date;
-  return d.toUTCString();
 };
 
 // Generate indent

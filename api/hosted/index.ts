@@ -20,7 +20,35 @@ function getBaseUrl(req: VercelRequest): string {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Only allow POST requests
+  // GET - List all feeds (admin only)
+  if (req.method === 'GET') {
+    const adminKey = req.headers['x-admin-key'];
+
+    if (!process.env.MSP_ADMIN_KEY || adminKey !== process.env.MSP_ADMIN_KEY) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    try {
+      const { blobs } = await list({ prefix: 'feeds/' });
+      const metaBlobs = blobs.filter(b => b.pathname.endsWith('.meta.json'));
+
+      const feeds = await Promise.all(
+        metaBlobs.map(async (blob) => {
+          const response = await fetch(blob.url);
+          const meta = await response.json();
+          const feedId = blob.pathname.replace('feeds/', '').replace('.meta.json', '');
+          return { feedId, ...meta };
+        })
+      );
+
+      return res.status(200).json({ feeds, count: feeds.length });
+    } catch (error) {
+      console.error('Error listing feeds:', error);
+      return res.status(500).json({ error: 'Failed to list feeds' });
+    }
+  }
+
+  // POST - Create new feed
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }

@@ -169,7 +169,7 @@ export async function uploadToBlossom(
     let stableUrl: string | undefined;
     if (metadataResult.success) {
       const npub = hexToNpub(pubkey);
-      stableUrl = `${window.location.origin}/api/feed/${npub}/${album.podcastGuid}`;
+      stableUrl = `${window.location.origin}/api/feed/${npub}/${album.podcastGuid}.xml`;
     }
 
     return {

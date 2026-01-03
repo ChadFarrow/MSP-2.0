@@ -1,5 +1,5 @@
 // MSP 2.0 - Music Side Project Studio
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { FeedProvider, useFeed } from './store/feedStore.tsx';
 import { NostrProvider, useNostr } from './store/nostrStore.tsx';
 import { parseRssFeed } from './utils/xmlParser';
@@ -19,7 +19,20 @@ function AppContent() {
   const [showImportModal, setShowImportModal] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
-  const { state: nostrState } = useNostr();
+  const [showDropdown, setShowDropdown] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const { state: nostrState, login: nostrLogin, logout: nostrLogout } = useNostr();
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleImport = (xml: string) => {
     try {
@@ -60,20 +73,62 @@ function AppContent() {
             <h1>MSP 2.0 - Music Side Project Studio</h1>
           </div>
           <div className="header-actions">
-            <button className="btn btn-secondary btn-small" onClick={() => setShowInfoModal(true)}>
-              ℹ️ Info
-            </button>
-            <button className="btn btn-secondary btn-small" onClick={handleNew}>
-              📂 New
-            </button>
-            <button className="btn btn-secondary btn-small" onClick={() => setShowImportModal(true)}>
-              📥 Import
-            </button>
-            <button className="btn btn-primary btn-small" onClick={() => setShowSaveModal(true)}>
-              💾 Save
-            </button>
-            <span className="header-separator" />
             <NostrLoginButton />
+            <div className="header-dropdown" ref={dropdownRef}>
+              <button
+                className="btn btn-secondary btn-small dropdown-trigger"
+                onClick={() => setShowDropdown(!showDropdown)}
+                aria-expanded={showDropdown}
+                aria-label="Menu"
+              >
+                ☰
+              </button>
+              {showDropdown && (
+                <div className="dropdown-menu">
+                  <button
+                    className="dropdown-item"
+                    onClick={() => { handleNew(); setShowDropdown(false); }}
+                  >
+                    📂 New
+                  </button>
+                  <button
+                    className="dropdown-item"
+                    onClick={() => { setShowImportModal(true); setShowDropdown(false); }}
+                  >
+                    📥 Import
+                  </button>
+                  <button
+                    className="dropdown-item"
+                    onClick={() => { setShowSaveModal(true); setShowDropdown(false); }}
+                  >
+                    💾 Save
+                  </button>
+                  <button
+                    className="dropdown-item"
+                    onClick={() => { setShowInfoModal(true); setShowDropdown(false); }}
+                  >
+                    ℹ️ Info
+                  </button>
+                  <div className="dropdown-divider" />
+                  {nostrState.isLoggedIn ? (
+                    <button
+                      className="dropdown-item"
+                      onClick={() => { nostrLogout(); setShowDropdown(false); }}
+                    >
+                      🚪 Sign Out (nostr)
+                    </button>
+                  ) : (
+                    <button
+                      className="dropdown-item"
+                      onClick={() => { nostrLogin(); setShowDropdown(false); }}
+                      disabled={!nostrState.hasExtension}
+                    >
+                      🔑 {nostrState.hasExtension ? 'Sign In (nostr)' : 'No Extension'}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </header>
         <Editor />

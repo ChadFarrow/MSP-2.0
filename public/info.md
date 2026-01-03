@@ -30,6 +30,14 @@ But, you're musicians, you're used to booking your own gigs, hauling your own ge
 
 Really its the same since its building PC 2.0 RSS feeds but MSP has always been missing the hosting part, you make your feed and then what? I've got some ideas on how to do this but I wont really know know how until I build it.
 
+Any questions reach out.
+
+Mastodon - @ChadF@podcastindex.social
+
+Nostr - npub177fz5zkm87jdmf0we2nz7mm7uc2e7l64uzqrv6rvdrsg8qkrg7yqx0aaq7
+
+Email - SirChadF@proton.me
+
 
 
 

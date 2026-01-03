@@ -153,11 +153,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { npub, guid } = req.query;
+  let { npub, guid } = req.query;
 
   // Validate parameters
   if (typeof npub !== 'string' || typeof guid !== 'string') {
     return res.status(400).json({ error: 'Invalid parameters' });
+  }
+
+  // Strip .xml extension if present (support both /guid and /guid.xml)
+  if (guid.endsWith('.xml')) {
+    guid = guid.slice(0, -4);
   }
 
   // Validate npub format

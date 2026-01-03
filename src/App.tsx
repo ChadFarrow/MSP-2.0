@@ -9,6 +9,7 @@ import { ImportModal } from './components/modals/ImportModal';
 import { SaveModal } from './components/modals/SaveModal';
 import { Editor } from './components/Editor/Editor';
 import type { Album } from './types/feed';
+import mspLogo from './assets/msp-logo.png';
 import './App.css';
 
 // Main App Content (needs access to context)
@@ -42,6 +43,7 @@ function AppContent() {
       <div className="app">
         <header className="header">
           <div className="header-title">
+            <img src={mspLogo} alt="MSP Logo" className="header-logo" />
             <h1>MSP 2.0 - Music Side Project Studio</h1>
           </div>
           <div className="header-actions">

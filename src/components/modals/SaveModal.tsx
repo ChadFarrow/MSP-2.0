@@ -606,8 +606,8 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" onClick={handleSave} disabled={loading}>
             {loading
-              ? (mode === 'nostrMusic' || mode === 'blossom' || mode === 'hosted' ? 'Uploading...' : 'Saving...')
-              : (mode === 'nostrMusic' ? 'Publish' : mode === 'blossom' || mode === 'hosted' ? 'Upload' : 'Save')}
+              ? (mode === 'nostrMusic' || mode === 'blossom' || mode === 'hosted' ? 'Uploading...' : mode === 'download' ? 'Downloading...' : mode === 'clipboard' ? 'Copying...' : 'Saving...')
+              : (mode === 'nostrMusic' ? 'Publish' : mode === 'blossom' || mode === 'hosted' ? 'Upload' : mode === 'download' ? 'Download' : mode === 'clipboard' ? 'Copy to Clipboard' : 'Save')}
           </button>
         </div>
       </div>

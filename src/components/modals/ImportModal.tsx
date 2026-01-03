@@ -27,6 +27,7 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn }: Impo
   const [loadingMusic, setLoadingMusic] = useState(false);
   const [hostedFeedId, setHostedFeedId] = useState('');
   const [hostedToken, setHostedToken] = useState('');
+  const [showHelp, setShowHelp] = useState(false);
 
   const fetchSavedAlbums = async () => {
     setLoadingAlbums(true);
@@ -203,7 +204,16 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn }: Impo
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>Import Feed</h2>
+          <h2 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            Import Feed
+            <span
+              className="import-help-icon"
+              onClick={() => setShowHelp(true)}
+              title="Show import type descriptions"
+            >
+              ℹ️
+            </span>
+          </h2>
           <button className="btn btn-icon" onClick={onClose}>&#10005;</button>
         </div>
         <div className="modal-content">
@@ -404,6 +414,31 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn }: Impo
           )}
         </div>
       </div>
+
+      {showHelp && (
+        <div className="modal-overlay" style={{ zIndex: 1001 }} onClick={() => setShowHelp(false)}>
+          <div className="modal import-help-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Import Types</h2>
+              <button className="btn btn-icon" onClick={() => setShowHelp(false)}>&#10005;</button>
+            </div>
+            <div className="modal-content">
+              <ul className="import-help-list">
+                <li><strong>Upload File</strong> - Upload an RSS/XML feed file from your device</li>
+                <li><strong>Paste XML</strong> - Paste RSS/XML content directly</li>
+                <li><strong>From URL</strong> - Fetch a feed from any URL</li>
+                <li><strong>Nostr Event</strong> - Import from a Nostr Event (kind 36787)</li>
+                <li><strong>MSP Hosted</strong> - Load a feed hosted on MSP servers using its Feed ID</li>
+                <li><strong>From Nostr</strong> - Load your previously saved albums from Nostr (requires login)</li>
+                <li><strong>From Nostr Music</strong> - Import tracks from Nostr Music library (requires login)</li>
+              </ul>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-primary" onClick={() => setShowHelp(false)}>Got it</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -824,6 +824,7 @@ body {
     top: auto;
     bottom: 16px;
     width: auto;
+    border: 1px solid var(--accent-primary);
   }
 
   .info-tooltip::before,

@@ -67,12 +67,21 @@ body {
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border-color);
   flex-shrink: 0;
+  position: relative;
 }
 
 .header-title {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.header-title h1 {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  white-space: nowrap;
 }
 
 .header-logo {

@@ -1,0 +1,26 @@
+{
+  "name": "MSP 2.0 - Music Side Project Studio",
+  "short_name": "MSP 2.0",
+  "description": "Create and manage RSS podcast feeds for your music with Lightning Network payment support",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f0f1a",
+  "theme_color": "#8b5cf6",
+  "icons": [
+    {
+      "src": "/msp-logo-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/msp-logo-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/msp-logo.png",
+      "sizes": "1024x1024",
+      "type": "image/png"
+    }
+  ]
+}

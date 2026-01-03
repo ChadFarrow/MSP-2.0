@@ -113,9 +113,7 @@ const generateTrackXml = (track: Track, album: Album, level: number): string => 
   lines.push(`${indent(level + 1)}<podcast:episode>${track.trackNumber}</podcast:episode>`);
 
   // Explicit
-  if (track.explicit) {
-    lines.push(`${indent(level + 1)}<itunes:explicit>true</itunes:explicit>`);
-  }
+  lines.push(`${indent(level + 1)}<itunes:explicit>${track.explicit ? 'true' : 'false'}</itunes:explicit>`);
 
   // Persons (override or inherit from album)
   const persons = track.overridePersons ? track.persons : album.persons;
@@ -222,9 +220,7 @@ export const generateRssFeed = (album: Album): string => {
   lines.push(`${indent(2)}<podcast:medium>${album.medium}</podcast:medium>`);
 
   // Explicit
-  if (album.explicit) {
-    lines.push(`${indent(2)}<itunes:explicit>true</itunes:explicit>`);
-  }
+  lines.push(`${indent(2)}<itunes:explicit>${album.explicit ? 'true' : 'false'}</itunes:explicit>`);
 
   // Persons
   album.persons.forEach(p => lines.push(generatePersonXml(p, 2)));

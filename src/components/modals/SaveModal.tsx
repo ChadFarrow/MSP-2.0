@@ -163,26 +163,29 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
     setMessage(null);
     setProgress(null);
 
-    // Validate required fields
-    const errors: string[] = [];
-    if (!album.author?.trim()) errors.push('Artist/Band');
-    if (!album.title?.trim()) errors.push('Album Title');
-    if (!album.description?.trim()) errors.push('Description');
-    if (!album.imageUrl?.trim()) errors.push('Album Art URL');
-    if (!album.language?.trim()) errors.push('Language');
-    if (!album.podcastGuid?.trim()) errors.push('Podcast GUID');
+    // Validate required fields only for publishing modes (not local/download/clipboard)
+    const requiresValidation = !['local', 'download', 'clipboard'].includes(mode);
+    if (requiresValidation) {
+      const errors: string[] = [];
+      if (!album.author?.trim()) errors.push('Artist/Band');
+      if (!album.title?.trim()) errors.push('Album Title');
+      if (!album.description?.trim()) errors.push('Description');
+      if (!album.imageUrl?.trim()) errors.push('Album Art URL');
+      if (!album.language?.trim()) errors.push('Language');
+      if (!album.podcastGuid?.trim()) errors.push('Podcast GUID');
 
-    album.tracks.forEach((track, i) => {
-      if (!track.title?.trim()) errors.push(`Track ${i + 1} Title`);
-      if (!track.duration?.trim()) errors.push(`Track ${i + 1} Duration`);
-      if (!track.enclosureUrl?.trim()) errors.push(`Track ${i + 1} MP3 URL`);
-      if (!track.enclosureLength?.trim()) errors.push(`Track ${i + 1} File Size`);
-    });
+      album.tracks.forEach((track, i) => {
+        if (!track.title?.trim()) errors.push(`Track ${i + 1} Title`);
+        if (!track.duration?.trim()) errors.push(`Track ${i + 1} Duration`);
+        if (!track.enclosureUrl?.trim()) errors.push(`Track ${i + 1} MP3 URL`);
+        if (!track.enclosureLength?.trim()) errors.push(`Track ${i + 1} File Size`);
+      });
 
-    if (errors.length > 0) {
-      setMessage({ type: 'error', text: `Missing required fields: ${errors.join(', ')}` });
-      setLoading(false);
-      return;
+      if (errors.length > 0) {
+        setMessage({ type: 'error', text: `Missing required fields: ${errors.join(', ')}` });
+        setLoading(false);
+        return;
+      }
     }
 
     try {

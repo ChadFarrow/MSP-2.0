@@ -33,17 +33,29 @@ interface CreateFeedResponse {
 }
 
 /**
+ * Generate a random edit token (32 bytes, base64url encoded)
+ */
+export function generateEditToken(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  // Convert to base64url
+  const base64 = btoa(String.fromCharCode(...bytes));
+  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+/**
  * Create a new hosted feed
  */
 export async function createHostedFeed(
   xml: string,
   title: string,
-  podcastGuid: string
+  podcastGuid: string,
+  editToken?: string
 ): Promise<CreateFeedResponse> {
   const response = await fetch('/api/hosted', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ xml, title, podcastGuid })
+    body: JSON.stringify({ xml, title, podcastGuid, editToken })
   });
 
   if (!response.ok) {
@@ -101,4 +113,64 @@ export async function deleteHostedFeed(
  */
 export function buildHostedUrl(feedId: string): string {
   return `${window.location.origin}/api/hosted/${feedId}.xml`;
+}
+
+/**
+ * Backup file structure for hosted feeds
+ */
+export interface HostedFeedBackup {
+  msp_hosted_feed_backup: {
+    version: number;
+    created_at: string;
+    feed_id: string;
+    edit_token: string;
+    feed_url: string;
+    podcast_guid: string;
+    album_title: string;
+    warning: string;
+  };
+}
+
+/**
+ * Download a backup JSON file containing hosted feed credentials
+ */
+export function downloadHostedFeedBackup(
+  feedId: string,
+  editToken: string,
+  albumTitle: string,
+  podcastGuid: string
+): void {
+  const backup: HostedFeedBackup = {
+    msp_hosted_feed_backup: {
+      version: 1,
+      created_at: new Date().toISOString(),
+      feed_id: feedId,
+      edit_token: editToken,
+      feed_url: buildHostedUrl(feedId),
+      podcast_guid: podcastGuid,
+      album_title: albumTitle,
+      warning: 'Keep this file safe! Anyone with this token can edit or delete your feed.'
+    }
+  };
+
+  const json = JSON.stringify(backup, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+
+  // Generate filename: sanitize album title
+  const titleSlug = albumTitle
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 30) || 'untitled';
+  const feedIdPrefix = feedId.slice(0, 8);
+  const filename = `msp-feed-backup-${titleSlug}-${feedIdPrefix}.json`;
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }

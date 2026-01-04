@@ -54,7 +54,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { xml, title, podcastGuid } = req.body;
+    const { xml, title, podcastGuid, editToken: clientToken } = req.body;
 
     // Validate input
     if (!xml || typeof xml !== 'string') {
@@ -94,7 +94,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const editToken = generateEditToken();
+    // Use client-provided token or generate one
+    const editToken = (typeof clientToken === 'string' && clientToken.length >= 32)
+      ? clientToken
+      : generateEditToken();
     const editTokenHash = hashToken(editToken);
 
     // Store feed XML in Vercel Blob

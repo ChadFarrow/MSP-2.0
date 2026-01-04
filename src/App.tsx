@@ -4,6 +4,7 @@ import { FeedProvider, useFeed } from './store/feedStore.tsx';
 import { NostrProvider, useNostr } from './store/nostrStore.tsx';
 import { parseRssFeed } from './utils/xmlParser';
 import { createEmptyAlbum } from './types/feed';
+import { generateTestAlbum } from './utils/testData';
 import { NostrLoginButton } from './components/NostrLoginButton';
 import { ImportModal } from './components/modals/ImportModal';
 import { SaveModal } from './components/modals/SaveModal';
@@ -127,6 +128,20 @@ function AppContent() {
                     >
                       🔑 {nostrState.hasExtension ? 'Sign In (nostr)' : 'No Extension'}
                     </button>
+                  )}
+                  {import.meta.env.DEV && (
+                    <>
+                      <div className="dropdown-divider" />
+                      <button
+                        className="dropdown-item"
+                        onClick={() => {
+                          dispatch({ type: 'SET_ALBUM', payload: generateTestAlbum() });
+                          setShowDropdown(false);
+                        }}
+                      >
+                        🧪 Load Test Data
+                      </button>
+                    </>
                   )}
                 </div>
               )}

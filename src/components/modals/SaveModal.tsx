@@ -10,6 +10,8 @@ import {
   createHostedFeed,
   updateHostedFeed,
   buildHostedUrl,
+  downloadHostedFeedBackup,
+  generateEditToken,
   type HostedFeedInfo
 } from '../../utils/hostedFeed';
 import { albumStorage, pendingHostedStorage } from '../../utils/storage';
@@ -34,12 +36,20 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
   const [stableUrl, setStableUrl] = useState<string | null>(null);
   const [hostedInfo, setHostedInfo] = useState<HostedFeedInfo | null>(null);
   const [hostedUrl, setHostedUrl] = useState<string | null>(null);
-  const [showEditToken, setShowEditToken] = useState<string | null>(null);
   const [showRestore, setShowRestore] = useState(false);
   const [restoreFeedId, setRestoreFeedId] = useState('');
   const [restoreToken, setRestoreToken] = useState('');
   const [restoreLoading, setRestoreLoading] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [pendingToken, setPendingToken] = useState<string | null>(null);
+  const [tokenAcknowledged, setTokenAcknowledged] = useState(false);
+
+  // Generate token when selecting hosted mode for a new feed
+  useEffect(() => {
+    if (mode === 'hosted' && !hostedInfo && !pendingToken) {
+      setPendingToken(generateEditToken());
+    }
+  }, [mode, hostedInfo, pendingToken]);
 
   // Check for existing hosted feed on mount, and apply pending credentials
   useEffect(() => {
@@ -231,20 +241,21 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
             saveHostedFeedInfo(album.podcastGuid, updatedInfo);
             setHostedInfo(updatedInfo);
             setMessage({ type: 'success', text: 'Feed updated!' });
-          } else {
-            // Create new feed
-            const hostedResult = await createHostedFeed(hostedXml, album.title, album.podcastGuid);
+          } else if (pendingToken) {
+            // Create new feed with pre-generated token
+            const hostedResult = await createHostedFeed(hostedXml, album.title, album.podcastGuid, pendingToken);
             const newInfo: HostedFeedInfo = {
               feedId: hostedResult.feedId,
-              editToken: hostedResult.editToken,
+              editToken: pendingToken,
               createdAt: Date.now(),
               lastUpdated: Date.now()
             };
             saveHostedFeedInfo(album.podcastGuid, newInfo);
             setHostedInfo(newInfo);
             setHostedUrl(hostedResult.url);
-            setShowEditToken(hostedResult.editToken); // Show token so user can save it
-            setMessage({ type: 'success', text: 'Feed created! Save your edit token below.' });
+            setPendingToken(null);
+            setTokenAcknowledged(false);
+            setMessage({ type: 'success', text: 'Feed created!' });
           }
           break;
       }
@@ -256,8 +267,12 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
     }
   };
 
+  const handleClose = () => {
+    onClose();
+  };
+
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={handleClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <h2 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -270,7 +285,7 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
               ℹ️
             </span>
           </h2>
-          <button className="btn btn-icon" onClick={onClose}>&#10005;</button>
+          <button className="btn btn-icon" onClick={handleClose}>&#10005;</button>
         </div>
         <div className="modal-content">
           <div className="form-group" style={{ marginBottom: '16px' }}>
@@ -412,8 +427,76 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '12px' }}>
                 {hostedInfo
                   ? 'Your feed is already hosted. Click Save to update it with your latest changes.'
-                  : 'Host your RSS feed on MSP. No account required - just save your edit token!'}
+                  : pendingToken
+                    ? 'Save your edit token before uploading!'
+                    : 'Host your RSS feed on MSP. No account required - just save your edit token!'}
               </p>
+              {pendingToken && !hostedInfo && (
+                <div style={{ marginTop: '16px', padding: '12px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--warning, #f59e0b)' }}>
+                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.875rem', fontWeight: 600, color: 'var(--warning, #f59e0b)' }}>
+                    Your Edit Token (save this first!)
+                  </label>
+                  <input
+                    type="text"
+                    value={pendingToken}
+                    readOnly
+                    onClick={(e) => (e.target as HTMLInputElement).select()}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: '4px',
+                      border: '1px solid var(--warning, #f59e0b)',
+                      backgroundColor: 'var(--bg-secondary)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.75rem',
+                      fontFamily: 'monospace'
+                    }}
+                  />
+                  <p style={{ color: 'var(--warning, #f59e0b)', fontSize: '0.75rem', marginTop: '8px', marginBottom: '12px' }}>
+                    You need this token to edit your feed later. Save it somewhere safe!
+                  </p>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => {
+                        navigator.clipboard.writeText(pendingToken);
+                        setMessage({ type: 'success', text: 'Token copied to clipboard' });
+                      }}
+                    >
+                      Copy Token
+                    </button>
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => {
+                        downloadHostedFeedBackup(album.podcastGuid, pendingToken, album.title, album.podcastGuid);
+                        setMessage({ type: 'success', text: 'Backup file downloaded' });
+                      }}
+                    >
+                      Download Backup
+                    </button>
+                  </div>
+                  <label style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    cursor: 'pointer',
+                    fontSize: '0.75rem',
+                    color: 'var(--text-primary)',
+                    padding: '8px',
+                    backgroundColor: tokenAcknowledged ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
+                    borderRadius: '4px',
+                    border: tokenAcknowledged ? '1px solid var(--success, #10b981)' : '1px solid var(--border-color)'
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={tokenAcknowledged}
+                      onChange={(e) => setTokenAcknowledged(e.target.checked)}
+                      style={{ width: '16px', height: '16px' }}
+                    />
+                    <span>I have saved my edit token</span>
+                  </label>
+                </div>
+              )}
               {hostedUrl && (
                 <div style={{ marginTop: '16px', padding: '12px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--success)' }}>
                   <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.875rem', fontWeight: 600, color: 'var(--success)' }}>
@@ -455,7 +538,6 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
                         clearHostedFeedInfo(album.podcastGuid);
                         setHostedInfo(null);
                         setHostedUrl(null);
-                        setShowEditToken(null);
                         setMessage({ type: 'success', text: 'Feed unlinked from this browser' });
                       }}
                     >
@@ -464,42 +546,7 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
                   </div>
                 </div>
               )}
-              {showEditToken && (
-                <div style={{ marginTop: '16px', padding: '12px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--warning, #f59e0b)' }}>
-                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.875rem', fontWeight: 600, color: 'var(--warning, #f59e0b)' }}>
-                    Your Edit Token (save this!)
-                  </label>
-                  <input
-                    type="text"
-                    value={showEditToken}
-                    readOnly
-                    onClick={(e) => (e.target as HTMLInputElement).select()}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: '4px',
-                      border: '1px solid var(--warning, #f59e0b)',
-                      backgroundColor: 'var(--bg-secondary)',
-                      color: 'var(--text-primary)',
-                      fontSize: '0.75rem',
-                      fontFamily: 'monospace'
-                    }}
-                  />
-                  <p style={{ color: 'var(--warning, #f59e0b)', fontSize: '0.75rem', marginTop: '8px', marginBottom: '8px' }}>
-                    Save this token somewhere safe! You'll need it to edit your feed from another browser or device.
-                  </p>
-                  <button
-                    className="btn btn-secondary"
-                    onClick={() => {
-                      navigator.clipboard.writeText(showEditToken);
-                      setMessage({ type: 'success', text: 'Edit token copied to clipboard' });
-                    }}
-                  >
-                    Copy Token
-                  </button>
-                </div>
-              )}
-              {!hostedInfo && !showEditToken && (
+              {!hostedInfo && !pendingToken && (
                 <div style={{ marginTop: '12px' }}>
                   <p style={{ color: 'var(--warning, #f59e0b)', fontSize: '0.75rem', padding: '8px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '4px', marginBottom: '12px' }}>
                     Your edit token will be saved in this browser. If you clear browser data, you won't be able to update this feed.
@@ -611,8 +658,8 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
           )}
         </div>
         <div className="modal-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSave} disabled={loading}>
+          <button className="btn btn-secondary" onClick={handleClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loading || (mode === 'hosted' && !hostedInfo && !tokenAcknowledged)}>
             {loading
               ? (mode === 'nostrMusic' || mode === 'blossom' || mode === 'hosted' ? 'Uploading...' : mode === 'download' ? 'Downloading...' : mode === 'clipboard' ? 'Copying...' : 'Saving...')
               : (mode === 'nostrMusic' ? 'Publish' : mode === 'blossom' || mode === 'hosted' ? 'Upload' : mode === 'download' ? 'Download' : mode === 'clipboard' ? 'Copy to Clipboard' : 'Save')}

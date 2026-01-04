@@ -412,6 +412,14 @@ body {
   transform: translateY(-1px);
 }
 
+.btn-primary:disabled,
+.btn-primary:disabled:hover {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+  background: var(--bg-tertiary);
+}
+
 .btn-secondary {
   background: var(--bg-tertiary);
   color: var(--text-primary);

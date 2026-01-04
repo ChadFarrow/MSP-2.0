@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { put, list } from '@vercel/blob';
 import { createHash, randomBytes } from 'crypto';
+import { parseAuthHeader } from '../_utils/adminAuth.js';
 
 // Generate a secure edit token
 function generateEditToken(): string {
@@ -22,9 +23,15 @@ function getBaseUrl(req: VercelRequest): string {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // GET - List all feeds (admin only)
   if (req.method === 'GET') {
+    // Check legacy admin key
     const adminKey = req.headers['x-admin-key'];
+    const hasLegacyAdmin = process.env.MSP_ADMIN_KEY && adminKey === process.env.MSP_ADMIN_KEY;
 
-    if (!process.env.MSP_ADMIN_KEY || adminKey !== process.env.MSP_ADMIN_KEY) {
+    // Check Nostr auth header
+    const authHeader = req.headers['authorization'] as string | undefined;
+    const nostrAuth = await parseAuthHeader(authHeader);
+
+    if (!hasLegacyAdmin && !nostrAuth.valid) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 

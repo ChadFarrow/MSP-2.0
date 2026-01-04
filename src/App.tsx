@@ -10,6 +10,7 @@ import { ImportModal } from './components/modals/ImportModal';
 import { SaveModal } from './components/modals/SaveModal';
 import { InfoModal } from './components/modals/InfoModal';
 import { Editor } from './components/Editor/Editor';
+import { AdminPage } from './components/admin/AdminPage';
 import type { Album } from './types/feed';
 import mspLogo from './assets/msp-logo.png';
 import './App.css';
@@ -179,6 +180,16 @@ function AppContent() {
 
 // Main App
 function App() {
+  const isAdminRoute = window.location.pathname === '/admin';
+
+  if (isAdminRoute) {
+    return (
+      <NostrProvider>
+        <AdminPage />
+      </NostrProvider>
+    );
+  }
+
   return (
     <NostrProvider>
       <FeedProvider>

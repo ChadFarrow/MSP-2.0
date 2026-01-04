@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { put, del, list } from '@vercel/blob';
 import { createHash } from 'crypto';
+import { parseAuthHeader } from '../_utils/adminAuth.js';
 
 // Hash token for comparison
 function hashToken(token: string): string {
@@ -44,7 +45,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // Check for admin key (bypasses UUID validation and edit token)
   const adminKey = req.headers['x-admin-key'];
-  const isAdmin = process.env.MSP_ADMIN_KEY && adminKey === process.env.MSP_ADMIN_KEY;
+  const hasLegacyAdmin = process.env.MSP_ADMIN_KEY && adminKey === process.env.MSP_ADMIN_KEY;
+
+  // Check Nostr auth header for admin access
+  const authHeader = req.headers['authorization'] as string | undefined;
+  const nostrAuth = await parseAuthHeader(authHeader);
+
+  const isAdmin = hasLegacyAdmin || nostrAuth.valid;
 
   // Validate feedId (admin can use any format, regular users need UUID)
   if (typeof feedId !== 'string' || (!isAdmin && !isValidFeedId(feedId))) {

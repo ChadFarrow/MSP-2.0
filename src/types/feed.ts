@@ -30,6 +30,14 @@ export interface Funding {
   text: string;
 }
 
+export interface RemoteItem {
+  id: string;
+  feedGuid: string;
+  feedUrl: string;
+  feedImg?: string;
+  medium?: 'podcast' | 'music' | 'musicL' | 'video' | 'film' | 'audiobook' | 'newsletter' | 'blog';
+}
+
 export interface Track {
   id: string;
   trackNumber: number;
@@ -65,7 +73,7 @@ export interface Album {
 
   // Podcast Index
   podcastGuid: string;
-  medium: 'music' | 'musicL';
+  medium: 'music' | 'musicL' | 'publisher';
   locked: boolean;
   lockedOwner: string;
   location: string;
@@ -91,6 +99,10 @@ export interface Album {
 
   // Funding
   funding: Funding[];
+
+  // Remote Items (for publisher feeds)
+  remoteItems: RemoteItem[];
+  podroll: RemoteItem[];
 
   // Tracks
   tracks: Track[];
@@ -157,6 +169,8 @@ export const createEmptyAlbum = (): Album => ({
     recipients: []
   },
   funding: [],
+  remoteItems: [],
+  podroll: [],
   tracks: [createEmptyTrack(1)]
 });
 
@@ -181,6 +195,15 @@ export const createEmptyRecipient = (): ValueRecipient => ({
 export const createEmptyFunding = (): Funding => ({
   url: '',
   text: ''
+});
+
+// Default empty remote item (for publisher feeds)
+export const createEmptyRemoteItem = (): RemoteItem => ({
+  id: crypto.randomUUID(),
+  feedGuid: '',
+  feedUrl: '',
+  feedImg: '',
+  medium: 'music'
 });
 
 // iTunes categories for music

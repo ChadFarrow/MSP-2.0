@@ -42,16 +42,17 @@ function AppContent() {
     try {
       const album = parseRssFeed(xml);
 
-      // Warn if not a music feed
-      if (!album.medium || (album.medium !== 'music' && album.medium !== 'musicL')) {
+      // Warn if not a supported feed type
+      const supportedMediums = ['music', 'musicL', 'publisher'];
+      if (!album.medium || !supportedMediums.includes(album.medium)) {
         const mediumMsg = album.medium
-          ? `This feed has medium "${album.medium}" which is not a music feed.`
+          ? `This feed has medium "${album.medium}" which may not be fully supported.`
           : `This feed has no medium tag specified.`;
         const proceed = confirm(
-          `${mediumMsg} MSP 2.0 is designed for music feeds. Continue anyway?`
+          `${mediumMsg} MSP 2.0 is designed for music and publisher feeds. Continue anyway?`
         );
         if (!proceed) return;
-        album.medium = 'music';
+        if (!album.medium) album.medium = 'music';
       }
 
       dispatch({ type: 'SET_ALBUM', payload: album });
@@ -77,6 +78,14 @@ function AppContent() {
           <div className="header-title">
             <img src={mspLogo} alt="MSP Logo" className="header-logo" />
             <h1><span className="title-short">MSP 2.0</span><span className="title-full"> - Music Side Project Studio</span></h1>
+            <select
+              className="feed-type-select"
+              value={state.album.medium || 'music'}
+              onChange={e => dispatch({ type: 'UPDATE_ALBUM', payload: { medium: e.target.value as 'music' | 'publisher' } })}
+            >
+              <option value="music">Music Feed</option>
+              <option value="publisher">Publisher Feed</option>
+            </select>
           </div>
           <div className="header-actions">
             <NostrLoginButton />

@@ -1,5 +1,5 @@
 // MSP 2.0 - XML Generator for Demu RSS Feeds
-import type { Album, Track, Person, ValueBlock, ValueRecipient, Funding } from '../types/feed';
+import type { Album, Track, Person, ValueBlock, ValueRecipient, Funding, RemoteItem } from '../types/feed';
 import { formatRFC822Date } from './dateUtils';
 
 // Re-export for backward compatibility
@@ -72,6 +72,19 @@ const generateValueXml = (value: ValueBlock, level: number): string => {
 const generateFundingXml = (funding: Funding, level: number): string => {
   if (!funding.url) return '';
   return `${indent(level)}<podcast:funding url="${escapeXml(funding.url)}">${escapeXml(funding.text)}</podcast:funding>`;
+};
+
+// Generate remote item XML (for publisher feeds)
+const generateRemoteItemXml = (item: RemoteItem, level: number): string => {
+  if (!item.feedUrl) return '';
+
+  const attrs: string[] = [];
+  if (item.medium) attrs.push(`medium="${escapeXml(item.medium)}"`);
+  if (item.feedGuid) attrs.push(`feedGuid="${escapeXml(item.feedGuid)}"`);
+  attrs.push(`feedUrl="${escapeXml(item.feedUrl)}"`);
+  if (item.feedImg) attrs.push(`feedImg="${escapeXml(item.feedImg)}"`);
+
+  return `${indent(level)}<podcast:remoteItem ${attrs.join(' ')}/>`;
 };
 
 // Generate track/item XML
@@ -231,8 +244,28 @@ export const generateRssFeed = (album: Album): string => {
     if (fundingXml) lines.push(fundingXml);
   });
 
-  // Tracks
-  album.tracks.forEach(track => lines.push(generateTrackXml(track, album, 2)));
+  // Podroll (for publisher feeds - related/recommended feeds)
+  if (album.podroll && album.podroll.length > 0) {
+    lines.push(`${indent(2)}<podcast:podroll>`);
+    album.podroll.forEach(item => {
+      const itemXml = generateRemoteItemXml(item, 3);
+      if (itemXml) lines.push(itemXml);
+    });
+    lines.push(`${indent(2)}</podcast:podroll>`);
+  }
+
+  // Remote items (for publisher feeds - child feeds)
+  if (album.medium === 'publisher' && album.remoteItems) {
+    album.remoteItems.forEach(item => {
+      const itemXml = generateRemoteItemXml(item, 2);
+      if (itemXml) lines.push(itemXml);
+    });
+  }
+
+  // Tracks (only for non-publisher feeds)
+  if (album.medium !== 'publisher') {
+    album.tracks.forEach(track => lines.push(generateTrackXml(track, album, 2)));
+  }
 
   // Close channel and rss
   lines.push(`${indent(1)}</channel>`);

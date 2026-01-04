@@ -1,6 +1,6 @@
 // MSP 2.0 - XML Parser for importing Demu RSS Feeds
 import { XMLParser } from 'fast-xml-parser';
-import type { Album, Track, Person, ValueRecipient, ValueBlock, Funding } from '../types/feed';
+import type { Album, Track, Person, ValueRecipient, ValueBlock, Funding, RemoteItem } from '../types/feed';
 import { createEmptyAlbum, createEmptyTrack } from '../types/feed';
 import { areValueBlocksStrictEqual, arePersonsEqual } from './comparison';
 
@@ -35,7 +35,7 @@ export const parseRssFeed = (xmlString: string): Album => {
 
   // Podcast Index tags
   album.podcastGuid = getText(channel['podcast:guid']) || '';
-  album.medium = (getText(channel['podcast:medium']) as 'music' | 'musicL') || 'music';
+  album.medium = (getText(channel['podcast:medium']) as 'music' | 'musicL' | 'publisher') || 'music';
   album.location = getText(channel['podcast:location']) || '';
 
   // Locked
@@ -95,6 +95,23 @@ export const parseRssFeed = (xmlString: string): Album => {
     album.funding = fundingArray.map(parseFunding).filter(Boolean) as Funding[];
   }
 
+  // Remote items (for publisher feeds)
+  const remoteItems = channel['podcast:remoteItem'];
+  if (remoteItems) {
+    const remoteArray = Array.isArray(remoteItems) ? remoteItems : [remoteItems];
+    album.remoteItems = remoteArray.map(parseRemoteItem).filter(Boolean) as RemoteItem[];
+  }
+
+  // Podroll (related/recommended feeds)
+  const podroll = channel['podcast:podroll'];
+  if (podroll) {
+    const podrollItems = (podroll as Record<string, unknown>)['podcast:remoteItem'];
+    if (podrollItems) {
+      const podrollArray = Array.isArray(podrollItems) ? podrollItems : [podrollItems];
+      album.podroll = podrollArray.map(parseRemoteItem).filter(Boolean) as RemoteItem[];
+    }
+  }
+
   // Tracks
   const items = channel.item;
   if (items) {
@@ -148,6 +165,22 @@ function parseFunding(node: unknown): Funding | null {
   return {
     url,
     text: getText(node) || ''
+  };
+}
+
+// Parse remote item (for publisher feeds)
+function parseRemoteItem(node: unknown): RemoteItem | null {
+  if (!node) return null;
+  const feedGuid = getAttr(node, 'feedGuid');
+  const feedUrl = getAttr(node, 'feedUrl');
+  if (!feedGuid && !feedUrl) return null;
+
+  return {
+    id: crypto.randomUUID(),
+    feedGuid: feedGuid || '',
+    feedUrl: feedUrl || '',
+    feedImg: getAttr(node, 'feedImg') || undefined,
+    medium: (getAttr(node, 'medium') as RemoteItem['medium']) || undefined
   };
 }
 

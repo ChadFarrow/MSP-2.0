@@ -1,8 +1,8 @@
 // MSP 2.0 - Feed State Management (React Context)
 import { createContext, useContext, useReducer, useEffect } from 'react';
 import type { ReactNode } from 'react';
-import type { Album, Track, Person, ValueRecipient, Funding } from '../types/feed';
-import { createEmptyAlbum, createEmptyTrack, createEmptyPerson, createEmptyRecipient, createEmptyFunding } from '../types/feed';
+import type { Album, Track, Person, ValueRecipient, Funding, RemoteItem } from '../types/feed';
+import { createEmptyAlbum, createEmptyTrack, createEmptyPerson, createEmptyRecipient, createEmptyFunding, createEmptyRemoteItem } from '../types/feed';
 import { albumStorage } from '../utils/storage';
 
 // Action types
@@ -28,6 +28,13 @@ type FeedAction =
   | { type: 'ADD_TRACK_RECIPIENT'; payload: { trackIndex: number; recipient?: ValueRecipient } }
   | { type: 'UPDATE_TRACK_RECIPIENT'; payload: { trackIndex: number; recipientIndex: number; recipient: ValueRecipient } }
   | { type: 'REMOVE_TRACK_RECIPIENT'; payload: { trackIndex: number; recipientIndex: number } }
+  | { type: 'ADD_REMOTE_ITEM'; payload?: RemoteItem }
+  | { type: 'UPDATE_REMOTE_ITEM'; payload: { index: number; item: RemoteItem } }
+  | { type: 'REMOVE_REMOTE_ITEM'; payload: number }
+  | { type: 'REORDER_REMOTE_ITEMS'; payload: { fromIndex: number; toIndex: number } }
+  | { type: 'ADD_PODROLL_ITEM'; payload?: RemoteItem }
+  | { type: 'UPDATE_PODROLL_ITEM'; payload: { index: number; item: RemoteItem } }
+  | { type: 'REMOVE_PODROLL_ITEM'; payload: number }
   | { type: 'RESET' };
 
 // State interface
@@ -257,6 +264,74 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
       }
       return { album: { ...state.album, tracks }, isDirty: true };
     }
+
+    case 'ADD_REMOTE_ITEM':
+      return {
+        album: {
+          ...state.album,
+          remoteItems: [...(state.album.remoteItems || []), action.payload || createEmptyRemoteItem()]
+        },
+        isDirty: true
+      };
+
+    case 'UPDATE_REMOTE_ITEM':
+      return {
+        album: {
+          ...state.album,
+          remoteItems: (state.album.remoteItems || []).map((item, i) =>
+            i === action.payload.index ? action.payload.item : item
+          )
+        },
+        isDirty: true
+      };
+
+    case 'REMOVE_REMOTE_ITEM':
+      return {
+        album: {
+          ...state.album,
+          remoteItems: (state.album.remoteItems || []).filter((_, i) => i !== action.payload)
+        },
+        isDirty: true
+      };
+
+    case 'REORDER_REMOTE_ITEMS': {
+      const items = [...(state.album.remoteItems || [])];
+      const [removed] = items.splice(action.payload.fromIndex, 1);
+      items.splice(action.payload.toIndex, 0, removed);
+      return {
+        album: { ...state.album, remoteItems: items },
+        isDirty: true
+      };
+    }
+
+    case 'ADD_PODROLL_ITEM':
+      return {
+        album: {
+          ...state.album,
+          podroll: [...(state.album.podroll || []), action.payload || createEmptyRemoteItem()]
+        },
+        isDirty: true
+      };
+
+    case 'UPDATE_PODROLL_ITEM':
+      return {
+        album: {
+          ...state.album,
+          podroll: (state.album.podroll || []).map((item, i) =>
+            i === action.payload.index ? action.payload.item : item
+          )
+        },
+        isDirty: true
+      };
+
+    case 'REMOVE_PODROLL_ITEM':
+      return {
+        album: {
+          ...state.album,
+          podroll: (state.album.podroll || []).filter((_, i) => i !== action.payload)
+        },
+        isDirty: true
+      };
 
     case 'RESET':
       return initialState;

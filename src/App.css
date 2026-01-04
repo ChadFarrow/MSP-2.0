@@ -112,6 +112,27 @@ body {
   border: 2px solid rgba(255, 255, 255, 0.3);
 }
 
+.feed-type-select {
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 6px;
+  color: white;
+  padding: 6px 12px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  margin-left: 16px;
+}
+
+.feed-type-select:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.feed-type-select option {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
 /* Header Dropdown Menu */
 .header-dropdown {
   position: relative;

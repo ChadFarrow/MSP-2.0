@@ -337,7 +337,7 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
           )}
           {mode === 'nostrMusic' && (
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '16px' }}>
-              Publish each track as a Nostr Music event (kind 36787). Compatible with Nostr music clients.
+              Publish tracks and playlist to Nostr (kinds 36787 + 34139). Compatible with Nostr music clients.
             </p>
           )}
           {mode === 'blossom' && (
@@ -735,7 +735,7 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
                 <li><strong>Copy to Clipboard</strong> - Copy the RSS XML to your clipboard for pasting elsewhere.</li>
                 <li><strong>Host on MSP</strong> - Host your feed on MSP servers. Get a permanent URL for your RSS feed to use in any app.</li>
                 <li><strong>Save to Nostr</strong> - Publish to Nostr relays. Load it later on any device with your Nostr key (requires login).</li>
-                <li><strong>Publish Nostr Music</strong> - Publish each track as a Nostr Music event (kind 36787) for music clients (requires login).</li>
+                <li><strong>Publish Nostr Music</strong> - Publish tracks and playlist (kinds 36787 + 34139) for Nostr music clients (requires login).</li>
                 <li><strong>Publish to Blossom</strong> - Upload your feed to a Blossom server. Get a stable MSP URL that always points to your latest upload (requires login).</li>
               </ul>
             </div>

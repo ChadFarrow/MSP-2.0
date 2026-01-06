@@ -656,18 +656,18 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
                         <button
                           className="btn btn-primary"
                           style={{ fontSize: '0.75rem', padding: '6px 12px' }}
-                          onClick={handleImportAndRestore}
+                          onClick={handleRestore}
                           disabled={restoreLoading}
                         >
-                          {restoreLoading ? 'Loading...' : 'Import & Restore'}
+                          {restoreLoading ? 'Loading...' : 'Link Credentials'}
                         </button>
                         <button
                           className="btn btn-secondary"
                           style={{ fontSize: '0.75rem', padding: '6px 12px' }}
-                          onClick={handleRestore}
+                          onClick={handleImportAndRestore}
                           disabled={restoreLoading}
                         >
-                          Restore Only
+                          Import & Link
                         </button>
                         <button
                           className="btn btn-secondary"
@@ -682,8 +682,8 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
                         </button>
                       </div>
                       <p style={{ color: 'var(--text-secondary)', fontSize: '0.7rem', marginTop: '8px' }}>
-                        <strong>Import & Restore</strong>: Fetches feed content and loads it into the editor<br />
-                        <strong>Restore Only</strong>: Links credentials without changing current content
+                        <strong>Link Credentials</strong>: Links credentials without changing current content<br />
+                        <strong>Import & Link</strong>: Fetches feed content and loads it into the editor
                       </p>
                     </div>
                   )}

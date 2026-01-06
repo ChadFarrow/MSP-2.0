@@ -680,26 +680,36 @@ export async function publishNostrMusicTracks(
       return { success: false, message: 'Failed to publish any tracks', publishedCount: 0, playlistPublished: false };
     }
 
-    // Phase 2: Publish playlist (only if at least one track succeeded)
+    // Phase 2: Publish playlist (only if 2+ tracks - single track isn't a playlist)
     let playlistPublished = false;
 
-    if (onProgress) {
-      onProgress({ current: 1, total: 1, trackTitle: album.title || 'Playlist', phase: 'playlist' });
+    if (publishedTracks.length >= 2) {
+      if (onProgress) {
+        onProgress({ current: 1, total: 1, trackTitle: album.title || 'Playlist', phase: 'playlist' });
+      }
+
+      const playlistEvent = createMusicPlaylistEvent(album, publishedTracks, pubkey);
+      const signedPlaylist = await signer.signEvent(playlistEvent);
+      const { successCount: playlistSuccessCount } = await publishEventToRelays(signedPlaylist as NostrEvent, relays);
+
+      if (playlistSuccessCount > 0) {
+        playlistPublished = true;
+      }
     }
 
-    const playlistEvent = createMusicPlaylistEvent(album, publishedTracks, pubkey);
-    const signedPlaylist = await signer.signEvent(playlistEvent);
-    const { successCount: playlistSuccessCount } = await publishEventToRelays(signedPlaylist as NostrEvent, relays);
-
-    if (playlistSuccessCount > 0) {
-      playlistPublished = true;
+    // Build appropriate message
+    let message: string;
+    if (publishedTracks.length < 2) {
+      message = `Published ${publishedCount} track(s) to Nostr`;
+    } else if (playlistPublished) {
+      message = `Published ${publishedCount} track(s) and playlist to Nostr`;
+    } else {
+      message = `Published ${publishedCount} track(s) to Nostr (playlist failed)`;
     }
 
     return {
       success: true,
-      message: playlistPublished
-        ? `Published ${publishedCount} track(s) and playlist to Nostr`
-        : `Published ${publishedCount} track(s) to Nostr (playlist failed)`,
+      message,
       publishedCount,
       playlistPublished
     };

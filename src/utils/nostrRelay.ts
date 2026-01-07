@@ -10,9 +10,9 @@ export const DEFAULT_RELAYS = [
 ];
 
 /**
- * Connect to a relay with timeout
+ * Connect to a relay with timeout (single attempt)
  */
-export function connectRelay(url: string, timeout = 5000): Promise<WebSocket> {
+function connectRelayOnce(url: string, timeout = 5000): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(url);
     const timer = setTimeout(() => {
@@ -30,6 +30,27 @@ export function connectRelay(url: string, timeout = 5000): Promise<WebSocket> {
       reject(new Error(`Failed to connect to ${url}`));
     };
   });
+}
+
+/**
+ * Connect to a relay with timeout and retries
+ */
+export async function connectRelay(url: string, timeout = 8000, maxRetries = 5): Promise<WebSocket> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await connectRelayOnce(url, timeout);
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error('Unknown error');
+      // Wait before retrying (exponential backoff: 1s, 2s, 4s, 8s)
+      if (attempt < maxRetries - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
+      }
+    }
+  }
+
+  throw lastError || new Error(`Failed to connect to ${url} after ${maxRetries} attempts`);
 }
 
 /**

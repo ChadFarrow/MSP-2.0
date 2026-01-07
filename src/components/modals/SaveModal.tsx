@@ -215,8 +215,12 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
         case 'nostrMusic':
           const musicResult = await publishNostrMusicTracks(album, undefined, setProgress);
           setProgress(null);
+          // Show error/warning if not all tracks published or playlist failed
+          const allTracksPublished = musicResult.publishedCount === album.tracks.length;
+          const playlistExpected = album.tracks.length >= 2;
+          const hasPartialFailure = !allTracksPublished || (playlistExpected && !musicResult.playlistPublished);
           setMessage({
-            type: musicResult.success ? 'success' : 'error',
+            type: musicResult.success && !hasPartialFailure ? 'success' : 'error',
             text: musicResult.message
           });
           break;

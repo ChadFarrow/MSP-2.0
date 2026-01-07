@@ -482,13 +482,25 @@ function isValidHexPubkey(str: string): boolean {
   return /^[0-9a-fA-F]{64}$/.test(str);
 }
 
-// Convert value recipients to zap tags (only for valid Nostr pubkeys)
+// Check if a string is a valid lightning address (user@domain)
+function isValidLightningAddress(str: string): boolean {
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(str);
+}
+
+// Convert value recipients to zap tags (supports lightning addresses and hex pubkeys)
 function buildZapTags(recipients: ValueRecipient[], defaultRelay: string): string[][] {
   if (!recipients || recipients.length === 0) return [];
 
   return recipients
-    .filter(r => r.address && r.split > 0 && isValidHexPubkey(r.address))
-    .map(r => ['zap', r.address, defaultRelay, String(r.split)]);
+    .filter(r => r.address && r.split > 0 && (isValidLightningAddress(r.address) || isValidHexPubkey(r.address)))
+    .map(r => {
+      // For lightning addresses, use simpler format without relay
+      if (isValidLightningAddress(r.address)) {
+        return ['zap', r.address, String(r.split)];
+      }
+      // For hex pubkeys, include relay
+      return ['zap', r.address, defaultRelay, String(r.split)];
+    });
 }
 
 // Build content field with description and credits
@@ -601,6 +613,12 @@ function createMusicPlaylistEvent(
   // Category tags for discovery
   for (const category of album.categories) {
     tags.push(['t', category.toLowerCase()]);
+  }
+
+  // Add zap tags from album value recipients
+  if (album.value && album.value.recipients) {
+    const zapTags = buildZapTags(album.value.recipients, DEFAULT_RELAYS[0]);
+    tags.push(...zapTags);
   }
 
   // Default to public playlist

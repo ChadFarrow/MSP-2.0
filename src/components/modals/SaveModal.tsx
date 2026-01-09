@@ -12,9 +12,13 @@ import {
   buildHostedUrl,
   downloadHostedFeedBackup,
   generateEditToken,
+  createHostedFeedWithNostr,
+  updateHostedFeedWithNostr,
+  linkNostrToFeed,
   type HostedFeedInfo
 } from '../../utils/hostedFeed';
 import { albumStorage, pendingHostedStorage } from '../../utils/storage';
+import { useNostr } from '../../store/nostrStore';
 
 const DEFAULT_BLOSSOM_SERVER = 'https://blossom.primal.net/';
 
@@ -27,6 +31,7 @@ interface SaveModalProps {
 }
 
 export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: SaveModalProps) {
+  const { state: nostrState } = useNostr();
   const [mode, setMode] = useState<'local' | 'download' | 'clipboard' | 'nostr' | 'nostrMusic' | 'blossom' | 'hosted'>('local');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -43,6 +48,11 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
   const [showHelp, setShowHelp] = useState(false);
   const [pendingToken, setPendingToken] = useState<string | null>(null);
   const [tokenAcknowledged, setTokenAcknowledged] = useState(false);
+  const [linkingNostr, setLinkingNostr] = useState(false);
+  const [linkNostrOnCreate, setLinkNostrOnCreate] = useState(true); // Default to linking if logged in
+
+  // Check if feed is linked to current user's Nostr identity
+  const isNostrLinked = hostedInfo?.ownerPubkey && nostrState.user?.pubkey === hostedInfo.ownerPubkey;
 
   // Generate token when selecting hosted mode for a new feed
   useEffect(() => {
@@ -242,27 +252,46 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
         case 'hosted':
           const hostedXml = generateRssFeed(album);
           if (hostedInfo) {
-            // Update existing feed
-            await updateHostedFeed(hostedInfo.feedId, hostedInfo.editToken, hostedXml, album.title);
+            // Update existing feed - use Nostr auth if linked, otherwise token
+            if (isNostrLinked) {
+              await updateHostedFeedWithNostr(hostedInfo.feedId, hostedXml, album.title);
+            } else {
+              await updateHostedFeed(hostedInfo.feedId, hostedInfo.editToken, hostedXml, album.title);
+            }
             const updatedInfo = { ...hostedInfo, lastUpdated: Date.now() };
             saveHostedFeedInfo(album.podcastGuid, updatedInfo);
             setHostedInfo(updatedInfo);
             setMessage({ type: 'success', text: 'Feed updated!' });
           } else if (pendingToken) {
-            // Create new feed with pre-generated token
-            const hostedResult = await createHostedFeed(hostedXml, album.title, album.podcastGuid, pendingToken);
-            const newInfo: HostedFeedInfo = {
-              feedId: hostedResult.feedId,
-              editToken: pendingToken,
-              createdAt: Date.now(),
-              lastUpdated: Date.now()
-            };
+            // Create new feed - use Nostr auth if user opted in
+            let hostedResult;
+            let newInfo: HostedFeedInfo;
+            const shouldLinkNostr = isLoggedIn && linkNostrOnCreate && nostrState.user?.pubkey;
+            if (shouldLinkNostr) {
+              hostedResult = await createHostedFeedWithNostr(hostedXml, album.title, album.podcastGuid, pendingToken);
+              newInfo = {
+                feedId: hostedResult.feedId,
+                editToken: pendingToken,
+                createdAt: Date.now(),
+                lastUpdated: Date.now(),
+                ownerPubkey: nostrState.user!.pubkey,
+                linkedAt: Date.now()
+              };
+            } else {
+              hostedResult = await createHostedFeed(hostedXml, album.title, album.podcastGuid, pendingToken);
+              newInfo = {
+                feedId: hostedResult.feedId,
+                editToken: pendingToken,
+                createdAt: Date.now(),
+                lastUpdated: Date.now()
+              };
+            }
             saveHostedFeedInfo(album.podcastGuid, newInfo);
             setHostedInfo(newInfo);
             setHostedUrl(hostedResult.url);
             setPendingToken(null);
             setTokenAcknowledged(false);
-            setMessage({ type: 'success', text: 'Feed created!' });
+            setMessage({ type: 'success', text: shouldLinkNostr ? 'Feed created and linked to your Nostr identity!' : 'Feed created!' });
           }
           break;
       }
@@ -276,6 +305,33 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
 
   const handleClose = () => {
     onClose();
+  };
+
+  // Link Nostr identity to existing feed
+  const handleLinkNostr = async () => {
+    if (!hostedInfo) return;
+
+    setLinkingNostr(true);
+    setMessage(null);
+
+    try {
+      const result = await linkNostrToFeed(hostedInfo.feedId, hostedInfo.editToken);
+
+      // Update local storage with linked pubkey
+      const updatedInfo = {
+        ...hostedInfo,
+        ownerPubkey: result.pubkey,
+        linkedAt: Date.now()
+      };
+      saveHostedFeedInfo(album.podcastGuid, updatedInfo);
+      setHostedInfo(updatedInfo);
+
+      setMessage({ type: 'success', text: 'Nostr identity linked! You can now sign in to edit.' });
+    } catch (err) {
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to link Nostr identity' });
+    } finally {
+      setLinkingNostr(false);
+    }
   };
 
   return (
@@ -440,8 +496,32 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
               </p>
               {pendingToken && !hostedInfo && (
                 <div style={{ marginTop: '16px', padding: '12px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--warning, #f59e0b)' }}>
+                  {isLoggedIn && (
+                    <label style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      marginBottom: '12px',
+                      padding: '10px',
+                      backgroundColor: linkNostrOnCreate ? 'rgba(139, 92, 246, 0.1)' : 'transparent',
+                      borderRadius: '4px',
+                      border: linkNostrOnCreate ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid var(--border-color)',
+                      cursor: 'pointer',
+                      fontSize: '0.75rem'
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={linkNostrOnCreate}
+                        onChange={(e) => setLinkNostrOnCreate(e.target.checked)}
+                        style={{ width: '16px', height: '16px' }}
+                      />
+                      <span style={{ color: linkNostrOnCreate ? '#a78bfa' : 'var(--text-secondary)' }}>
+                        Link to my Nostr identity (edit from any device without needing the token)
+                      </span>
+                    </label>
+                  )}
                   <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.875rem', fontWeight: 600, color: 'var(--warning, #f59e0b)' }}>
-                    Your Edit Token (save this first!)
+                    {isLoggedIn && linkNostrOnCreate ? 'Backup Token (save this!)' : 'Edit Token (save this!)'}
                   </label>
                   <input
                     type="text"
@@ -517,8 +597,13 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
               )}
               {hostedUrl && (
                 <div style={{ marginTop: '16px', padding: '12px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--success)' }}>
-                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.875rem', fontWeight: 600, color: 'var(--success)' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', fontSize: '0.875rem', fontWeight: 600, color: 'var(--success)' }}>
                     Your Feed URL
+                    {isNostrLinked && (
+                      <span style={{ fontSize: '0.7rem', padding: '2px 6px', backgroundColor: 'rgba(139, 92, 246, 0.2)', color: '#a78bfa', borderRadius: '4px' }}>
+                        Linked to Nostr
+                      </span>
+                    )}
                   </label>
                   <input
                     type="text"
@@ -562,6 +647,22 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
                       Unlink
                     </button>
                   </div>
+                  {/* Link Nostr button for existing feeds without Nostr link */}
+                  {isLoggedIn && hostedInfo && !isNostrLinked && (
+                    <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                        Link your Nostr identity to manage this feed without needing the token.
+                      </p>
+                      <button
+                        className="btn btn-secondary"
+                        style={{ fontSize: '0.75rem' }}
+                        onClick={handleLinkNostr}
+                        disabled={linkingNostr}
+                      >
+                        {linkingNostr ? 'Linking...' : 'Link Nostr Identity'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
               {!hostedInfo && !pendingToken && (
@@ -579,43 +680,68 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
                     </button>
                   ) : (
                     <div style={{ padding: '12px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                      <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                        Upload backup file or enter manually:
-                      </label>
-                      <input
-                        type="file"
-                        accept=".json"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (!file) return;
-                          const reader = new FileReader();
-                          reader.onload = (event) => {
-                            try {
-                              const json = JSON.parse(event.target?.result as string);
-                              // Support both old and new format
-                              const feedId = json.feedId || json.feed_id || json.msp_hosted_feed_backup?.feed_id;
-                              const token = json.editToken || json.edit_token || json.msp_hosted_feed_backup?.edit_token;
-                              if (feedId && token) {
-                                setRestoreFeedId(feedId);
-                                setRestoreToken(token);
-                                setMessage({ type: 'success', text: 'Backup file loaded!' });
-                              } else {
-                                setMessage({ type: 'error', text: 'Invalid backup file format' });
-                              }
-                            } catch {
-                              setMessage({ type: 'error', text: 'Could not parse backup file' });
-                            }
-                          };
-                          reader.readAsText(file);
-                          e.target.value = '';
-                        }}
+                      {/* Upload backup file - primary option */}
+                      <label
                         style={{
-                          width: '100%',
-                          padding: '8px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: '20px',
                           marginBottom: '12px',
-                          fontSize: '0.75rem'
+                          border: '2px dashed var(--border-color)',
+                          borderRadius: '8px',
+                          backgroundColor: 'var(--bg-secondary)',
+                          cursor: 'pointer',
+                          transition: 'border-color 0.2s'
                         }}
-                      />
+                      >
+                        <span style={{ fontSize: '1.5rem', marginBottom: '8px' }}>📁</span>
+                        <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          Upload Backup File
+                        </span>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                          Drop your .json backup file here or click to browse
+                        </span>
+                        <input
+                          type="file"
+                          accept=".json"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const reader = new FileReader();
+                            reader.onload = (event) => {
+                              try {
+                                const json = JSON.parse(event.target?.result as string);
+                                // Support both old and new format
+                                const feedId = json.feedId || json.feed_id || json.msp_hosted_feed_backup?.feed_id;
+                                const token = json.editToken || json.edit_token || json.msp_hosted_feed_backup?.edit_token;
+                                if (feedId && token) {
+                                  setRestoreFeedId(feedId);
+                                  setRestoreToken(token);
+                                  setMessage({ type: 'success', text: 'Backup file loaded! Click "Link Credentials" to restore.' });
+                                } else {
+                                  setMessage({ type: 'error', text: 'Invalid backup file format' });
+                                }
+                              } catch {
+                                setMessage({ type: 'error', text: 'Could not parse backup file' });
+                              }
+                            };
+                            reader.readAsText(file);
+                            e.target.value = '';
+                          }}
+                          style={{ display: 'none' }}
+                        />
+                      </label>
+
+                      {/* Divider */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '12px 0' }}>
+                        <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--border-color)' }} />
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>OR ENTER MANUALLY</span>
+                        <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--border-color)' }} />
+                      </div>
+
+                      {/* Manual entry fields */}
                       <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                         Feed ID
                       </label>
@@ -737,7 +863,7 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
                 <li><strong>Local Storage</strong> - Save to your browser's local storage. Data persists until you clear browser data.</li>
                 <li><strong>Download XML</strong> - Download the RSS feed as an XML file to your computer.</li>
                 <li><strong>Copy to Clipboard</strong> - Copy the RSS XML to your clipboard for pasting elsewhere.</li>
-                <li><strong>Host on MSP</strong> - Host your feed on MSP servers. Get a permanent URL for your RSS feed to use in any app.</li>
+                <li><strong>Host on MSP</strong> - Host your feed on MSP servers. Get a permanent URL for your RSS feed to use in any app.{isLoggedIn && ' You can link your Nostr identity to edit from any device without needing the token.'}</li>
                 <li><strong>Save to Nostr</strong> - Publish to Nostr relays. Load it later on any device with your Nostr key (requires login).</li>
                 <li><strong>Publish Nostr Music</strong> - Publish tracks and playlist (kinds 36787 + 34139) for Nostr music clients (requires login).</li>
                 <li><strong>Publish to Blossom</strong> - Upload your feed to a Blossom server. Get a stable MSP URL that always points to your latest upload (requires login).</li>

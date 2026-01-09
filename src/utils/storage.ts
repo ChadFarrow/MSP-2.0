@@ -122,6 +122,8 @@ export interface HostedFeedInfo {
   editToken: string;
   createdAt: number;
   lastUpdated: number;
+  ownerPubkey?: string;  // Nostr pubkey if linked
+  linkedAt?: number;     // When Nostr was linked
 }
 
 // Hosted feed storage operations

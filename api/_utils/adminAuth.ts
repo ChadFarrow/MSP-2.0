@@ -73,6 +73,45 @@ export function isAdminPubkey(pubkey: string): boolean {
   return allowedPubkeys.includes(pubkey.toLowerCase());
 }
 
+// Validate NIP-98 auth event for feed ownership (no admin check)
+// Returns the pubkey if valid - caller checks ownership
+export async function validateFeedAuthEvent(event: NostrEvent): Promise<{ valid: boolean; pubkey?: string; error?: string }> {
+  // Check event kind (27235 for NIP-98 HTTP Auth)
+  if (event.kind !== 27235) {
+    return { valid: false, error: 'Invalid event kind' };
+  }
+
+  // Check event is recent (within 5 minutes) - prevents replay attacks
+  const now = Math.floor(Date.now() / 1000);
+  if (Math.abs(now - event.created_at) > 300) {
+    return { valid: false, error: 'Event expired' };
+  }
+
+  // Verify signature - proves user controls the private key
+  if (!await verifyNostrEvent(event)) {
+    return { valid: false, error: 'Invalid signature' };
+  }
+
+  return { valid: true, pubkey: event.pubkey };
+}
+
+// Parse auth header for feed ownership (no admin check)
+export async function parseFeedAuthHeader(authHeader: string | undefined): Promise<{ valid: boolean; pubkey?: string; error?: string }> {
+  if (!authHeader || !authHeader.startsWith('Nostr ')) {
+    return { valid: false, error: 'Missing or invalid auth header' };
+  }
+
+  try {
+    const base64Event = authHeader.slice(6); // Remove 'Nostr ' prefix
+    const eventJson = Buffer.from(base64Event, 'base64').toString('utf-8');
+    const event: NostrEvent = JSON.parse(eventJson);
+
+    return await validateFeedAuthEvent(event);
+  } catch {
+    return { valid: false, error: 'Failed to parse auth event' };
+  }
+}
+
 // Validate NIP-98 auth event for admin access
 // Security: signature proves key ownership, timestamp prevents replay, pubkey check ensures admin
 export async function validateAdminAuthEvent(event: NostrEvent): Promise<{ valid: boolean; error?: string }> {

@@ -339,8 +339,69 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn }: Impo
           ) : mode === 'hosted' ? (
             <div className="form-group">
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '12px' }}>
-                Import a feed hosted on MSP. Enter the Feed ID from your feed URL.
+                Import a feed hosted on MSP. Upload your backup file or enter details manually.
               </p>
+
+              {/* Upload backup file */}
+              <label
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '20px',
+                  marginBottom: '16px',
+                  border: '2px dashed var(--border-color)',
+                  borderRadius: '8px',
+                  backgroundColor: 'var(--bg-tertiary)',
+                  cursor: 'pointer',
+                  transition: 'border-color 0.2s'
+                }}
+              >
+                <span style={{ fontSize: '1.5rem', marginBottom: '8px' }}>📁</span>
+                <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  Upload Backup File
+                </span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                  Click to select your .json backup file
+                </span>
+                <input
+                  type="file"
+                  accept=".json"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                      try {
+                        const json = JSON.parse(event.target?.result as string);
+                        const feedId = json.feedId || json.feed_id || json.msp_hosted_feed_backup?.feed_id;
+                        const token = json.editToken || json.edit_token || json.msp_hosted_feed_backup?.edit_token;
+                        if (feedId) {
+                          setHostedFeedId(feedId);
+                          if (token) setHostedToken(token);
+                          setError('');
+                        } else {
+                          setError('Invalid backup file format');
+                        }
+                      } catch {
+                        setError('Could not parse backup file');
+                      }
+                    };
+                    reader.readAsText(file);
+                    e.target.value = '';
+                  }}
+                  style={{ display: 'none' }}
+                />
+              </label>
+
+              {/* Divider */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '16px 0' }}>
+                <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--border-color)' }} />
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>OR ENTER MANUALLY</span>
+                <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--border-color)' }} />
+              </div>
+
               <label className="form-label">Feed ID</label>
               <input
                 type="text"

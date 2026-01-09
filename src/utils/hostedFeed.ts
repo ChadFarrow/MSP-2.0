@@ -1,5 +1,7 @@
-// Hosted feed API utilities for non-Nostr users
+// Hosted feed API utilities
 import { hostedFeedStorage, type HostedFeedInfo } from './storage';
+import { createAdminAuthHeader } from './adminAuth';
+import { hasSigner } from './nostrSigner';
 
 // Re-export type for backward compatibility
 export type { HostedFeedInfo };
@@ -165,4 +167,107 @@ export function downloadHostedFeedBackup(
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+// ============================================
+// Nostr-authenticated API functions
+// ============================================
+
+/**
+ * Create a hosted feed with Nostr authentication (for logged-in users)
+ * The feed will be linked to the user's Nostr identity
+ */
+export async function createHostedFeedWithNostr(
+  xml: string,
+  title: string,
+  podcastGuid: string,
+  editToken?: string
+): Promise<CreateFeedResponse> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+
+  // Add Nostr auth if available
+  if (hasSigner()) {
+    const url = `${window.location.origin}/api/hosted`;
+    headers['Authorization'] = await createAdminAuthHeader(url, 'POST');
+  }
+
+  const response = await fetch('/api/hosted', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ xml, title, podcastGuid, editToken })
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to create feed' }));
+    throw new Error(error.error || 'Failed to create feed');
+  }
+
+  return response.json();
+}
+
+/**
+ * Update a hosted feed with Nostr authentication
+ */
+export async function updateHostedFeedWithNostr(
+  feedId: string,
+  xml: string,
+  title: string
+): Promise<void> {
+  if (!hasSigner()) {
+    throw new Error('Not logged in with Nostr');
+  }
+
+  const url = `${window.location.origin}/api/hosted/${feedId}`;
+  const authHeader = await createAdminAuthHeader(url, 'PUT');
+
+  const response = await fetch(`/api/hosted/${feedId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': authHeader
+    },
+    body: JSON.stringify({ xml, title })
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to update feed' }));
+    throw new Error(error.error || 'Failed to update feed');
+  }
+}
+
+interface LinkNostrResponse {
+  success: boolean;
+  message: string;
+  pubkey: string;
+}
+
+/**
+ * Link a Nostr identity to an existing feed
+ * Requires both the edit token (proves ownership) and Nostr auth (identity to link)
+ */
+export async function linkNostrToFeed(
+  feedId: string,
+  editToken: string
+): Promise<LinkNostrResponse> {
+  if (!hasSigner()) {
+    throw new Error('Not logged in with Nostr');
+  }
+
+  const url = `${window.location.origin}/api/hosted/${feedId}`;
+  const authHeader = await createAdminAuthHeader(url, 'PATCH');
+
+  const response = await fetch(`/api/hosted/${feedId}`, {
+    method: 'PATCH',
+    headers: {
+      'X-Edit-Token': editToken,
+      'Authorization': authHeader
+    }
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to link Nostr identity' }));
+    throw new Error(error.error || 'Failed to link Nostr identity');
+  }
+
+  return response.json();
 }

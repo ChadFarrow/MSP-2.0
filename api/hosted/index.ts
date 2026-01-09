@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { put, list } from '@vercel/blob';
 import { createHash, randomBytes } from 'crypto';
-import { parseAuthHeader } from '../_utils/adminAuth.js';
+import { parseAuthHeader, parseFeedAuthHeader } from '../_utils/adminAuth.js';
 
 // Generate a secure edit token
 function generateEditToken(): string {
@@ -107,6 +107,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       : generateEditToken();
     const editTokenHash = hashToken(editToken);
 
+    // Check for Nostr auth - if provided, set owner immediately
+    const authHeader = req.headers['authorization'] as string | undefined;
+    let ownerPubkey: string | undefined;
+    let linkedAt: string | undefined;
+
+    if (authHeader?.startsWith('Nostr ')) {
+      const nostrAuth = await parseFeedAuthHeader(authHeader);
+      if (nostrAuth.valid && nostrAuth.pubkey) {
+        ownerPubkey = nostrAuth.pubkey;
+        linkedAt = Date.now().toString();
+      }
+    }
+
     // Store feed XML in Vercel Blob
     const blob = await put(`feeds/${feedId}.xml`, xml, {
       access: 'public',
@@ -118,7 +131,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     await put(`feeds/${feedId}.meta.json`, JSON.stringify({
       editTokenHash,
       createdAt: Date.now().toString(),
-      title: (typeof title === 'string' ? title : 'Untitled Feed').slice(0, 200)
+      title: (typeof title === 'string' ? title : 'Untitled Feed').slice(0, 200),
+      ownerPubkey,
+      linkedAt
     }), {
       access: 'public',
       contentType: 'application/json',

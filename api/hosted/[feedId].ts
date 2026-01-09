@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { put, del, list } from '@vercel/blob';
 import { createHash } from 'crypto';
-import { parseAuthHeader } from '../_utils/adminAuth.js';
+import { parseAuthHeader, parseFeedAuthHeader } from '../_utils/adminAuth.js';
 
 // Hash token for comparison
 function hashToken(token: string): string {
@@ -19,6 +19,8 @@ interface FeedMetadata {
   createdAt: string;
   lastUpdated?: string;
   title?: string;
+  ownerPubkey?: string;  // Nostr pubkey (hex) - if linked
+  linkedAt?: string;     // When Nostr was linked
 }
 
 // Helper to fetch metadata from .meta.json blob
@@ -80,12 +82,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       case 'PUT': {
-        // Validate edit token
-        const editToken = req.headers['x-edit-token'];
-        if (!editToken || typeof editToken !== 'string') {
-          return res.status(401).json({ error: 'Missing edit token' });
-        }
-
         // Get existing feed blob
         const { blobs } = await list({ prefix: blobPath });
         const existingBlob = blobs.find(b => b.pathname === blobPath);
@@ -96,28 +92,56 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         // Get metadata from .meta.json
         const metadata = await getMetadata(feedId as string);
-        const providedHash = hashToken(editToken);
 
-        // Auto-repair: if metadata is missing, create it using provided token
-        // This handles feeds created before metadata was stored separately
+        // Auto-repair: if metadata is missing, require token to create it
         let storedHash: string;
         let createdAt: string;
         let existingTitle: string | undefined;
+        let ownerPubkey: string | undefined;
+        let linkedAt: string | undefined;
+
+        const editToken = req.headers['x-edit-token'];
+        const authHeader = req.headers['authorization'] as string | undefined;
 
         if (!metadata) {
-          // Migration: create metadata for legacy feed
-          storedHash = providedHash;
+          // Legacy feed without metadata - require token to migrate
+          if (!editToken || typeof editToken !== 'string') {
+            return res.status(401).json({ error: 'Missing edit token' });
+          }
+          storedHash = hashToken(editToken);
           createdAt = Date.now().toString();
           existingTitle = undefined;
+          ownerPubkey = undefined;
+          linkedAt = undefined;
         } else {
           storedHash = metadata.editTokenHash;
           createdAt = metadata.createdAt;
           existingTitle = metadata.title;
-        }
+          ownerPubkey = metadata.ownerPubkey;
+          linkedAt = metadata.linkedAt;
 
-        // Verify token
-        if (storedHash !== providedHash) {
-          return res.status(403).json({ error: 'Invalid edit token' });
+          // Validate auth: accept either token or Nostr (if linked)
+          let isAuthorized = false;
+
+          // Try token auth first
+          if (editToken && typeof editToken === 'string') {
+            const providedHash = hashToken(editToken);
+            if (storedHash === providedHash) {
+              isAuthorized = true;
+            }
+          }
+
+          // Try Nostr auth if token didn't work and feed has owner
+          if (!isAuthorized && ownerPubkey && authHeader?.startsWith('Nostr ')) {
+            const nostrAuth = await parseFeedAuthHeader(authHeader);
+            if (nostrAuth.valid && nostrAuth.pubkey === ownerPubkey) {
+              isAuthorized = true;
+            }
+          }
+
+          if (!isAuthorized) {
+            return res.status(403).json({ error: 'Invalid credentials' });
+          }
         }
 
         // Parse request body
@@ -154,7 +178,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           editTokenHash: storedHash,
           createdAt,
           lastUpdated: Date.now().toString(),
-          title: (typeof title === 'string' ? title : existingTitle || 'Untitled Feed').slice(0, 200)
+          title: (typeof title === 'string' ? title : existingTitle || 'Untitled Feed').slice(0, 200),
+          ownerPubkey,
+          linkedAt
         }), {
           access: 'public',
           contentType: 'application/json',
@@ -162,6 +188,58 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
 
         return res.status(200).json({ success: true });
+      }
+
+      case 'PATCH': {
+        // Link Nostr identity to existing feed
+        // Requires BOTH token (proves ownership) AND Nostr auth (identity to link)
+        const editToken = req.headers['x-edit-token'];
+        const authHeader = req.headers['authorization'] as string | undefined;
+
+        if (!editToken || typeof editToken !== 'string') {
+          return res.status(401).json({ error: 'Edit token required to link Nostr identity' });
+        }
+
+        const metadata = await getMetadata(feedId as string);
+        if (!metadata) {
+          return res.status(404).json({ error: 'Feed not found' });
+        }
+
+        // Validate token
+        const providedHash = hashToken(editToken);
+        if (metadata.editTokenHash !== providedHash) {
+          return res.status(403).json({ error: 'Invalid edit token' });
+        }
+
+        // Parse and validate Nostr auth
+        const nostrAuth = await parseFeedAuthHeader(authHeader);
+        if (!nostrAuth.valid || !nostrAuth.pubkey) {
+          return res.status(400).json({ error: nostrAuth.error || 'Invalid Nostr authentication' });
+        }
+
+        // Update metadata with new owner
+        const metaPath = `feeds/${feedId}.meta.json`;
+        const { blobs: metaBlobs } = await list({ prefix: metaPath });
+        const existingMeta = metaBlobs.find(b => b.pathname === metaPath);
+        if (existingMeta) {
+          await del(existingMeta.url);
+        }
+
+        await put(metaPath, JSON.stringify({
+          ...metadata,
+          ownerPubkey: nostrAuth.pubkey,
+          linkedAt: Date.now().toString()
+        }), {
+          access: 'public',
+          contentType: 'application/json',
+          addRandomSuffix: false
+        });
+
+        return res.status(200).json({
+          success: true,
+          message: 'Nostr identity linked successfully',
+          pubkey: nostrAuth.pubkey
+        });
       }
 
       case 'DELETE': {

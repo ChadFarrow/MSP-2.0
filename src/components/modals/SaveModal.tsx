@@ -41,6 +41,7 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
   const [stableUrl, setStableUrl] = useState<string | null>(null);
   const [hostedInfo, setHostedInfo] = useState<HostedFeedInfo | null>(null);
   const [hostedUrl, setHostedUrl] = useState<string | null>(null);
+  const [legacyHostedInfo, setLegacyHostedInfo] = useState<HostedFeedInfo | null>(null); // For feeds with mismatched feedId
   const [showRestore, setShowRestore] = useState(false);
   const [restoreFeedId, setRestoreFeedId] = useState('');
   const [restoreToken, setRestoreToken] = useState('');
@@ -56,27 +57,42 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
 
   // Generate token when selecting hosted mode for a new feed
   useEffect(() => {
-    if (mode === 'hosted' && !hostedInfo && !pendingToken && !showRestore) {
+    if (mode === 'hosted' && !hostedInfo && !legacyHostedInfo && !pendingToken && !showRestore) {
       setPendingToken(generateEditToken());
     }
-  }, [mode, hostedInfo, pendingToken, showRestore]);
+  }, [mode, hostedInfo, legacyHostedInfo, pendingToken, showRestore]);
 
   // Check for existing hosted feed on mount, and apply pending credentials
   useEffect(() => {
     // Check for pending credentials from import
     const pending = pendingHostedStorage.load();
     if (pending) {
-      saveHostedFeedInfo(album.podcastGuid, pending);
-      pendingHostedStorage.clear();
-      setHostedInfo(pending);
-      setHostedUrl(buildHostedUrl(pending.feedId));
-      return;
+      // If pending feedId matches podcastGuid, use it; otherwise it's legacy
+      if (pending.feedId === album.podcastGuid) {
+        saveHostedFeedInfo(album.podcastGuid, pending);
+        pendingHostedStorage.clear();
+        setHostedInfo(pending);
+        setHostedUrl(buildHostedUrl(pending.feedId));
+        return;
+      } else {
+        // Legacy feed with mismatched ID - save as legacy, will update both on save
+        pendingHostedStorage.clear();
+        setLegacyHostedInfo(pending);
+      }
     }
 
     const info = getHostedFeedInfo(album.podcastGuid);
     if (info) {
-      setHostedInfo(info);
-      setHostedUrl(buildHostedUrl(info.feedId));
+      // Check if feedId matches podcastGuid (legacy feeds may have different IDs)
+      if (info.feedId === album.podcastGuid) {
+        setHostedInfo(info);
+        setHostedUrl(buildHostedUrl(info.feedId));
+      } else {
+        // Legacy feed with mismatched ID - keep it to update both URLs on save
+        setLegacyHostedInfo(info);
+        // Show the correct URL (podcastGuid) as the primary
+        setHostedUrl(buildHostedUrl(album.podcastGuid));
+      }
     }
   }, [album.podcastGuid]);
 
@@ -259,6 +275,17 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
           break;
         case 'hosted':
           const hostedXml = generateRssFeed(album);
+
+          // If there's a legacy feed with mismatched feedId, update it first
+          if (legacyHostedInfo && legacyHostedInfo.feedId !== album.podcastGuid) {
+            try {
+              await updateHostedFeed(legacyHostedInfo.feedId, legacyHostedInfo.editToken, hostedXml, album.title);
+            } catch (legacyErr) {
+              // Log but don't fail - legacy feed update is best-effort
+              console.warn('Failed to update legacy feed:', legacyErr);
+            }
+          }
+
           if (hostedInfo) {
             // Update existing feed - use Nostr auth if linked, otherwise token
             if (isNostrLinked) {
@@ -270,26 +297,32 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
             saveHostedFeedInfo(album.podcastGuid, updatedInfo);
             setHostedInfo(updatedInfo);
             showSuccessAndClose('Feed updated!');
-          } else if (pendingToken) {
-            // Create new feed - use Nostr auth if user opted in
+          } else if (pendingToken || legacyHostedInfo) {
+            // Create new feed at correct URL - use Nostr auth if user opted in
+            // Use legacy token if available, otherwise use pending token
+            const tokenToUse = legacyHostedInfo?.editToken || pendingToken;
+            if (!tokenToUse) {
+              throw new Error('No edit token available');
+            }
+
             let hostedResult;
             let newInfo: HostedFeedInfo;
             const shouldLinkNostr = isLoggedIn && linkNostrOnCreate && nostrState.user?.pubkey;
             if (shouldLinkNostr) {
-              hostedResult = await createHostedFeedWithNostr(hostedXml, album.title, album.podcastGuid, pendingToken);
+              hostedResult = await createHostedFeedWithNostr(hostedXml, album.title, album.podcastGuid, tokenToUse);
               newInfo = {
                 feedId: hostedResult.feedId,
-                editToken: pendingToken,
+                editToken: tokenToUse,
                 createdAt: Date.now(),
                 lastUpdated: Date.now(),
                 ownerPubkey: nostrState.user!.pubkey,
                 linkedAt: Date.now()
               };
             } else {
-              hostedResult = await createHostedFeed(hostedXml, album.title, album.podcastGuid, pendingToken);
+              hostedResult = await createHostedFeed(hostedXml, album.title, album.podcastGuid, tokenToUse);
               newInfo = {
                 feedId: hostedResult.feedId,
-                editToken: pendingToken,
+                editToken: tokenToUse,
                 createdAt: Date.now(),
                 lastUpdated: Date.now()
               };
@@ -298,8 +331,12 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
             setHostedInfo(newInfo);
             setHostedUrl(hostedResult.url);
             setPendingToken(null);
+            setLegacyHostedInfo(null);
             setTokenAcknowledged(false);
-            setMessage({ type: 'success', text: shouldLinkNostr ? 'Feed created and linked to your Nostr identity!' : 'Feed created!' });
+            const successMsg = legacyHostedInfo
+              ? 'Feed migrated to new URL and legacy URL updated!'
+              : (shouldLinkNostr ? 'Feed created and linked to your Nostr identity!' : 'Feed created!');
+            setMessage({ type: 'success', text: successMsg });
           }
           break;
       }
@@ -498,11 +535,26 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '12px' }}>
                 {hostedInfo
                   ? 'Your feed is already hosted. Click Save to update it with your latest changes.'
-                  : pendingToken
-                    ? 'Save your edit token before uploading!'
-                    : 'Host your RSS feed on MSP. No account required - just save your edit token!'}
+                  : legacyHostedInfo
+                    ? 'Your feed URL will be migrated to match the Podcast GUID. Both old and new URLs will be updated.'
+                    : pendingToken
+                      ? 'Save your edit token before uploading!'
+                      : 'Host your RSS feed on MSP. No account required - just save your edit token!'}
               </p>
-              {pendingToken && !hostedInfo && (
+              {legacyHostedInfo && !hostedInfo && (
+                <div style={{ marginTop: '12px', padding: '12px', backgroundColor: 'rgba(59, 130, 246, 0.1)', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                    <strong style={{ color: '#3b82f6' }}>Feed Migration</strong>
+                  </p>
+                  <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                    Old URL: <code style={{ fontSize: '0.65rem' }}>{buildHostedUrl(legacyHostedInfo.feedId)}</code>
+                  </p>
+                  <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                    New URL: <code style={{ fontSize: '0.65rem' }}>{buildHostedUrl(album.podcastGuid)}</code>
+                  </p>
+                </div>
+              )}
+              {pendingToken && !hostedInfo && !legacyHostedInfo && (
                 <div style={{ marginTop: '16px', padding: '12px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--warning, #f59e0b)' }}>
                   {isLoggedIn && (
                     <label style={{
@@ -673,7 +725,7 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
                   )}
                 </div>
               )}
-              {!hostedInfo && !pendingToken && (
+              {!hostedInfo && !pendingToken && !legacyHostedInfo && (
                 <div style={{ marginTop: '12px' }}>
                   <p style={{ color: 'var(--warning, #f59e0b)', fontSize: '0.75rem', padding: '8px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '4px', marginBottom: '12px' }}>
                     Your edit token will be saved in this browser. If you clear browser data, you won't be able to update this feed.
@@ -851,7 +903,7 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={handleClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSave} disabled={loading || (mode === 'hosted' && !hostedInfo && !tokenAcknowledged)}>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loading || (mode === 'hosted' && !hostedInfo && !legacyHostedInfo && !tokenAcknowledged)}>
             {loading
               ? (mode === 'nostrMusic' || mode === 'blossom' || mode === 'hosted' ? 'Uploading...' : mode === 'download' ? 'Downloading...' : mode === 'clipboard' ? 'Copying...' : 'Saving...')
               : (mode === 'nostrMusic' ? 'Publish' : mode === 'blossom' || mode === 'hosted' ? 'Upload' : mode === 'download' ? 'Download' : mode === 'clipboard' ? 'Copy to Clipboard' : 'Save')}

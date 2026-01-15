@@ -51,9 +51,20 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
   const [tokenAcknowledged, setTokenAcknowledged] = useState(false);
   const [linkingNostr, setLinkingNostr] = useState(false);
   const [linkNostrOnCreate, setLinkNostrOnCreate] = useState(true); // Default to linking if logged in
+  const [podcastIndexUrl, setPodcastIndexUrl] = useState('');
+  const [submittingToIndex, setSubmittingToIndex] = useState(false);
 
   // Check if feed is linked to current user's Nostr identity
   const isNostrLinked = hostedInfo?.ownerPubkey && nostrState.user?.pubkey === hostedInfo.ownerPubkey;
+
+  // Auto-populate Podcast Index URL when a hosted URL becomes available
+  useEffect(() => {
+    if (hostedUrl) {
+      setPodcastIndexUrl(hostedUrl);
+    } else if (stableUrl) {
+      setPodcastIndexUrl(stableUrl);
+    }
+  }, [hostedUrl, stableUrl]);
 
   // Generate token when selecting hosted mode for a new feed
   useEffect(() => {
@@ -376,6 +387,32 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to link Nostr identity' });
     } finally {
       setLinkingNostr(false);
+    }
+  };
+
+  // Submit feed URL to Podcast Index
+  const handleSubmitToPodcastIndex = async () => {
+    if (!podcastIndexUrl.trim()) {
+      setMessage({ type: 'error', text: 'Please enter a feed URL' });
+      return;
+    }
+
+    setSubmittingToIndex(true);
+    setMessage(null);
+
+    try {
+      const response = await fetch(`/api/pubnotify?url=${encodeURIComponent(podcastIndexUrl.trim())}`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to submit to Podcast Index');
+      }
+
+      setMessage({ type: 'success', text: 'Feed submitted to Podcast Index!' });
+    } catch (err) {
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to submit to Podcast Index' });
+    } finally {
+      setSubmittingToIndex(false);
     }
   };
 
@@ -882,29 +919,59 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
             </div>
           )}
 
-          <div style={{
-            marginTop: '16px',
-            padding: '12px',
-            backgroundColor: 'rgba(59, 130, 246, 0.1)',
-            borderRadius: '8px',
-            border: '1px solid rgba(59, 130, 246, 0.3)'
-          }}>
-            <p style={{ fontSize: '0.875rem', fontWeight: 600, color: '#3b82f6', marginBottom: '8px' }}>
-              Get Discovered by Podcast Apps
-            </p>
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-              Submit your feed to Podcastindex.org so apps like Fountain, Castamatic, and others can find it.
-            </p>
-            <a
-              href="https://podcastindex.org/add"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn btn-secondary"
-              style={{ fontSize: '0.75rem', textDecoration: 'none' }}
-            >
-              Add to Podcast Index
-            </a>
-          </div>
+          {(mode === 'hosted' || mode === 'blossom') && (
+            <div style={{
+              marginTop: '16px',
+              padding: '12px',
+              backgroundColor: 'rgba(59, 130, 246, 0.1)',
+              borderRadius: '8px',
+              border: '1px solid rgba(59, 130, 246, 0.3)'
+            }}>
+              <p style={{ fontSize: '0.875rem', fontWeight: 600, color: '#3b82f6', marginBottom: '8px' }}>
+                Get Discovered by Podcast Apps
+              </p>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                Submit your feed to Podcastindex.org so apps like Fountain, Castamatic, and others can find it.
+              </p>
+              <div style={{ marginBottom: '8px' }}>
+                <input
+                  type="text"
+                  value={podcastIndexUrl}
+                  onChange={(e) => setPodcastIndexUrl(e.target.value)}
+                  placeholder="Enter your feed URL"
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    borderRadius: '4px',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                    backgroundColor: 'var(--bg-secondary)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.75rem',
+                    fontFamily: 'monospace'
+                  }}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button
+                  className="btn btn-primary"
+                  style={{ fontSize: '0.75rem' }}
+                  onClick={handleSubmitToPodcastIndex}
+                  disabled={submittingToIndex || !podcastIndexUrl.trim()}
+                >
+                  {submittingToIndex ? 'Submitting...' : 'Submit to Podcast Index'}
+                </button>
+                <a
+                  href="https://podcastindex.org/add"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-secondary"
+                  style={{ fontSize: '0.75rem', textDecoration: 'none' }}
+                >
+                  Add Manually
+                </a>
+              </div>
+            </div>
+          )}
 
           {progress && (
             <div style={{ marginTop: '12px', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>

@@ -38,6 +38,10 @@ export const FIELD_INFO = {
   fundingUrl: "URL where listeners can support your podcast (e.g., Patreon, Ko-fi, your website).",
   fundingText: "Call-to-action text (max 128 characters). E.g., 'Support the show!' or 'Become a member!'",
 
+  // Publisher Reference
+  publisherGuid: "The GUID of your publisher feed. This links your album to a parent publisher feed that aggregates multiple releases.",
+  publisherUrl: "Optional URL to your publisher feed. Helps apps locate the publisher feed if the GUID lookup fails.",
+
   // Tracks
   trackTitle: "The song title.",
   trackDescription: "Optional description or notes about the track.",

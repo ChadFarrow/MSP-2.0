@@ -627,6 +627,56 @@ export function Editor() {
             </div>
           </Section>
 
+          {/* Publisher Section */}
+          <Section title="Publisher" icon="&#127970;">
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '16px', fontSize: '14px' }}>
+              Link this album to a publisher feed. This allows apps to discover your other releases.
+            </p>
+            <div className="form-grid">
+              <div className="form-group">
+                <label className="form-label">Publisher Feed GUID<InfoIcon text={FIELD_INFO.publisherGuid} /></label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="e.g., a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                  value={album.publisher?.feedGuid || ''}
+                  onChange={e => dispatch({
+                    type: 'UPDATE_ALBUM',
+                    payload: {
+                      publisher: {
+                        feedGuid: e.target.value,
+                        feedUrl: album.publisher?.feedUrl || ''
+                      }
+                    }
+                  })}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Publisher Feed URL<InfoIcon text={FIELD_INFO.publisherUrl} /></label>
+                <input
+                  type="url"
+                  className="form-input"
+                  placeholder="https://example.com/publisher-feed.xml"
+                  value={album.publisher?.feedUrl || ''}
+                  onChange={e => dispatch({
+                    type: 'UPDATE_ALBUM',
+                    payload: {
+                      publisher: {
+                        feedGuid: album.publisher?.feedGuid || '',
+                        feedUrl: e.target.value
+                      }
+                    }
+                  })}
+                />
+              </div>
+            </div>
+            {album.publisher?.feedGuid && (
+              <p style={{ color: 'var(--text-tertiary)', marginTop: '8px', fontSize: '12px' }}>
+                This will add a &lt;podcast:publisher&gt; tag to your feed XML.
+              </p>
+            )}
+          </Section>
+
           {/* Tracks Section */}
           <Section title="Tracks" icon="&#127925;">
             <div className="track-list">

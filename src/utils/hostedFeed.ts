@@ -112,11 +112,12 @@ export async function deleteHostedFeed(
 
 /**
  * Build the stable URL for a hosted feed
+ * Uses VITE_CANONICAL_URL env var if set, otherwise falls back to current origin
  */
 export function buildHostedUrl(feedId: string): string {
-  const origin = window.location.hostname === 'localhost'
-    ? 'https://msp.podtards.com'
-    : window.location.origin;
+  const canonicalUrl = import.meta.env.VITE_CANONICAL_URL;
+  const origin = canonicalUrl
+    || (window.location.hostname === 'localhost' ? 'https://msp.podtards.com' : window.location.origin);
   return `${origin}/api/hosted/${feedId}.xml`;
 }
 

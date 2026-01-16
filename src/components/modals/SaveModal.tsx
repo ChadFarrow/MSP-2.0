@@ -82,18 +82,19 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
     return false;
   };
 
-  // Auto-notify Podcast Index when a feed is uploaded (fire-and-forget)
-  const notifyPodcastIndex = (feedUrl: string) => {
-    fetch(`/api/pubnotify?url=${encodeURIComponent(feedUrl)}`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) {
-          console.log('Podcast Index notified:', feedUrl);
-        }
-      })
-      .catch(err => {
-        console.warn('Failed to notify Podcast Index:', err);
-      });
+  // Notify Podcast Index and return the PI page URL if available
+  const notifyPodcastIndex = async (feedUrl: string): Promise<string | null> => {
+    try {
+      const res = await fetch(`/api/pubnotify?url=${encodeURIComponent(feedUrl)}`);
+      const data = await res.json();
+      if (data.success && data.podcastIndexUrl) {
+        setPodcastIndexPageUrl(data.podcastIndexUrl);
+        return data.podcastIndexUrl;
+      }
+    } catch (err) {
+      console.warn('Failed to notify Podcast Index:', err);
+    }
+    return null;
   };
 
   // Auto-populate Podcast Index URL when a hosted URL becomes available
@@ -346,8 +347,12 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
             const updatedInfo = { ...hostedInfo, lastUpdated: Date.now() };
             saveHostedFeedInfo(album.podcastGuid, updatedInfo);
             setHostedInfo(updatedInfo);
-            notifyPodcastIndex(buildHostedUrl(hostedInfo.feedId));
-            showSuccessAndClose('Feed updated!');
+            const piUrl = await notifyPodcastIndex(buildHostedUrl(hostedInfo.feedId));
+            if (piUrl) {
+              setMessage({ type: 'success', text: 'Feed updated and Podcast Index notified!' });
+            } else {
+              showSuccessAndClose('Feed updated!');
+            }
           } else if (pendingToken || legacyHostedInfo) {
             // Create new feed at correct URL - use Nostr auth if user opted in
             // Use legacy token if available, otherwise use pending token
@@ -384,10 +389,13 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
             setPendingToken(null);
             setLegacyHostedInfo(null);
             setTokenAcknowledged(false);
-            notifyPodcastIndex(hostedResult.url);
-            const successMsg = legacyHostedInfo
+            const piUrl = await notifyPodcastIndex(hostedResult.url);
+            let successMsg = legacyHostedInfo
               ? 'Feed migrated to new URL and legacy URL updated!'
               : (shouldLinkNostr ? 'Feed created and linked to your Nostr identity!' : 'Feed created!');
+            if (piUrl) {
+              successMsg += ' Podcast Index notified!';
+            }
             setMessage({ type: 'success', text: successMsg });
           }
           break;
@@ -791,6 +799,21 @@ export function SaveModal({ onClose, album, isDirty, isLoggedIn, onImport }: Sav
                       Unlink
                     </button>
                   </div>
+                  {podcastIndexPageUrl && (
+                    <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>
+                      <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                        Podcast Index Page
+                      </label>
+                      <a
+                        href={podcastIndexPageUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ fontSize: '0.75rem', color: '#3b82f6', wordBreak: 'break-all' }}
+                      >
+                        {podcastIndexPageUrl}
+                      </a>
+                    </div>
+                  )}
                   {/* Link Nostr button for existing feeds without Nostr link */}
                   {isLoggedIn && hostedInfo && !isNostrLinked && (
                     <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>

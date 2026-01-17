@@ -1,9 +1,18 @@
+import { useState } from 'react';
 import { useFeed } from '../../store/feedStore';
 import { LANGUAGES, createEmptyRemoteItem } from '../../types/feed';
 import { FIELD_INFO } from '../../data/fieldInfo';
 import { InfoIcon } from '../InfoIcon';
 import { Section } from '../Section';
 import { Toggle } from '../Toggle';
+
+interface SearchResult {
+  id: number;
+  title: string;
+  podcastGuid: string;
+  url: string;
+  image: string;
+}
 
 // Field info for publisher-specific fields
 const PUBLISHER_FIELD_INFO = {
@@ -15,6 +24,47 @@ const PUBLISHER_FIELD_INFO = {
 export function PublisherEditor() {
   const { state, dispatch } = useFeed();
   const { publisherFeed } = state;
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState('');
+
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return;
+
+    setIsSearching(true);
+    setSearchError('');
+    setSearchResults([]);
+
+    try {
+      const response = await fetch(`/api/pisearch?q=${encodeURIComponent(searchQuery)}`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        setSearchError(data.error || 'Search failed');
+        return;
+      }
+
+      setSearchResults(data.feeds || []);
+    } catch {
+      setSearchError('Failed to search');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleAddFromSearch = (result: SearchResult) => {
+    dispatch({
+      type: 'ADD_REMOTE_ITEM',
+      payload: {
+        ...createEmptyRemoteItem(),
+        feedGuid: result.podcastGuid,
+        feedUrl: result.url,
+        title: result.title
+      }
+    });
+    setSearchResults(prev => prev.filter(r => r.id !== result.id));
+  };
 
   if (!publisherFeed) {
     return (
@@ -187,6 +237,76 @@ export function PublisherEditor() {
           <p style={{ color: 'var(--text-secondary)', marginBottom: '16px', fontSize: '14px' }}>
             Add the feeds that belong to this publisher. Each feed should have a GUID (from its podcast:guid tag) and optionally a feed URL.
           </p>
+
+          {/* Search UI */}
+          <div style={{ marginBottom: '20px' }}>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="Search Podcast Index..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                style={{ flex: 1 }}
+              />
+              <button
+                className="btn btn-primary"
+                onClick={handleSearch}
+                disabled={isSearching || !searchQuery.trim()}
+              >
+                {isSearching ? 'Searching...' : 'Search Directory'}
+              </button>
+            </div>
+
+            {searchError && (
+              <p style={{ color: 'var(--danger-color)', fontSize: '14px', marginBottom: '12px' }}>{searchError}</p>
+            )}
+
+            {searchResults.length > 0 && (
+              <div style={{
+                border: '1px solid var(--border-color)',
+                borderRadius: '8px',
+                overflow: 'hidden',
+                marginBottom: '16px'
+              }}>
+                {searchResults.map(result => (
+                  <div
+                    key={result.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      padding: '12px',
+                      gap: '12px',
+                      borderBottom: '1px solid var(--border-color)'
+                    }}
+                  >
+                    <img
+                      src={result.image}
+                      alt=""
+                      style={{
+                        width: '48px',
+                        height: '48px',
+                        borderRadius: '4px',
+                        objectFit: 'cover',
+                        backgroundColor: 'var(--surface-color)'
+                      }}
+                      onError={e => (e.target as HTMLImageElement).style.display = 'none'}
+                    />
+                    <span style={{ flex: 1, fontWeight: 500 }}>{result.title}</span>
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => handleAddFromSearch(result)}
+                      style={{ padding: '6px 16px' }}
+                    >
+                      Add
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="repeatable-list">
             {publisherFeed.remoteItems.map((item, index) => (
               <div key={index} className="repeatable-item">

@@ -267,7 +267,7 @@ export function PublisherEditor() {
         {/* Catalog Feeds Section */}
         <Section title="Catalog Feeds" icon="&#128218;">
           <p style={{ color: 'var(--text-secondary)', marginBottom: '16px', fontSize: '14px' }}>
-            Add the feeds that belong to this publisher. Each feed should have a GUID (from its podcast:guid tag) and optionally a feed URL.
+            Add the feeds that belong to this publisher. Search by name, Podcast Index ID, or podcastindex.org URL.
           </p>
 
           {/* Search UI */}

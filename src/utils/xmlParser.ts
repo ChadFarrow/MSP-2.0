@@ -81,11 +81,82 @@ export const parseRssFeed = (xmlString: string): Album => {
     tracks: []
   };
 
+  // Podcast Index tags
+  album.podcastGuid = getText(channel['podcast:guid']) || '';
+  album.medium = (getText(channel['podcast:medium']) as 'music' | 'musicL') || 'music';
+  album.location = getText(channel['podcast:location']) || '';
+
+  // Locked
+  const locked = channel['podcast:locked'];
+  if (locked) {
+    album.locked = getText(locked) === 'yes';
+    album.lockedOwner = getAttr(locked, 'owner') || '';
+  }
+
+  // Categories - handle both content format and text attribute format
+  const categories = channel['itunes:category'];
+  if (categories) {
+    const catArray = Array.isArray(categories) ? categories : [categories];
+    album.categories = catArray.map(c => getText(c) || getAttr(c, 'text')).filter(Boolean) as string[];
+  }
+
+  // Keywords
+  album.keywords = getText(channel['itunes:keywords']) || '';
+
+  // Explicit
+  const explicitVal = channel['itunes:explicit'];
+  album.explicit = explicitVal === true || explicitVal === 'true' || getText(explicitVal) === 'true';
+
+  // Owner
+  const owner = channel['itunes:owner'];
+  if (owner) {
+    album.ownerName = getText((owner as Record<string, unknown>)['itunes:name']) || '';
+    album.ownerEmail = getText((owner as Record<string, unknown>)['itunes:email']) || '';
+  }
+
+  // Image
+  const image = channel.image;
+  if (image) {
+    album.imageUrl = getText(image.url) || '';
+    album.imageTitle = getText(image.title) || '';
+    album.imageLink = getText(image.link) || '';
+    album.imageDescription = getText(image.description) || '';
+  }
+
+  // iTunes image fallback
+  const itunesImage = channel['itunes:image'];
+  if (itunesImage && !album.imageUrl) {
+    album.imageUrl = getAttr(itunesImage, 'href') || '';
+  }
+
+  // Contact
+  album.managingEditor = getText(channel.managingEditor) || '';
+  album.webMaster = getText(channel.webMaster) || '';
+
+  // Persons
+  album.persons = parsePersons(channel['podcast:person']);
+
+  // Value block
+  const value = channel['podcast:value'];
+  if (value) {
+    album.value = parseValueBlock(value);
+  }
+
+  // Funding
+  const funding = channel['podcast:funding'];
+  if (funding) {
+    const fundingArray = Array.isArray(funding) ? funding : [funding];
+    album.funding = fundingArray.map(parseFunding).filter(Boolean) as Funding[];
+  }
+
   // Publisher reference (if this album belongs to a publisher)
   const publisher = channel['podcast:publisher'];
   if (publisher) {
     album.publisher = parsePublisherReference(publisher);
   }
+
+  // Capture unknown channel elements
+  album.unknownChannelElements = captureUnknownElements(channel, KNOWN_CHANNEL_KEYS);
 
   // Tracks
   const items = channel.item;

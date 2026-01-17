@@ -276,7 +276,7 @@ export function PublisherEditor() {
               <input
                 type="text"
                 className="form-input"
-                placeholder="Search Podcast Index..."
+                placeholder="Search by name, ID, or podcastindex.org URL..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleSearch()}

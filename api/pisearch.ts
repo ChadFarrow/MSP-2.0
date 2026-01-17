@@ -21,6 +21,18 @@ function getAuthHeaders() {
   };
 }
 
+// Extract Podcast Index feed ID from URL or plain number
+function extractFeedId(input: string): string | null {
+  // Check for podcastindex.org URL pattern
+  const urlMatch = input.match(/podcastindex\.org\/podcast\/(\d+)/);
+  if (urlMatch) return urlMatch[1];
+
+  // Check if it's a plain number
+  if (/^\d+$/.test(input.trim())) return input.trim();
+
+  return null;
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -38,7 +50,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const searchUrl = `https://api.podcastindex.org/api/1.0/search/byterm?q=${encodeURIComponent(q)}`;
+    // Check if input is a feed ID (number or podcastindex URL)
+    const feedId = extractFeedId(q);
+    const searchUrl = feedId
+      ? `https://api.podcastindex.org/api/1.0/podcasts/byfeedid?id=${feedId}`
+      : `https://api.podcastindex.org/api/1.0/search/byterm?q=${encodeURIComponent(q)}`;
+
     const response = await fetch(searchUrl, { headers: authHeaders });
     const data = await response.json();
 
@@ -49,7 +66,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const feeds = (data.feeds || []).map((feed: {
+    // Handle both byfeedid (single feed) and byterm (array of feeds) responses
+    const rawFeeds = feedId && data.feed ? [data.feed] : (data.feeds || []);
+
+    const feeds = rawFeeds.map((feed: {
       id: number;
       title: string;
       podcastGuid: string;

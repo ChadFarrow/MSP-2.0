@@ -1,6 +1,6 @@
-import type { Album, Track, Person, ValueRecipient } from '../types/feed';
+import type { Album, Track, Person, ValueRecipient, PublisherFeed } from '../types/feed';
 import type { NostrEvent, SavedAlbumInfo, NostrMusicTrackInfo, NostrMusicAlbumGroup, NostrZapSplit, NostrMusicContent, PublishedTrackRef } from '../types/nostr';
-import { generateRssFeed } from './xmlGenerator';
+import { generateRssFeed, generatePublisherRssFeed } from './xmlGenerator';
 import { parseRssFeed } from './xmlParser';
 import { formatReleasedDate } from './dateUtils';
 import {
@@ -125,6 +125,65 @@ export async function saveAlbumToNostr(
 
     // Create and sign the event
     const unsignedEvent = createFeedEvent(rssXml, album.podcastGuid, album.title, pubkey);
+    const signedEvent = await signer.signEvent(unsignedEvent);
+
+    // Publish to relays
+    const { successCount } = await publishEventToRelays(signedEvent as NostrEvent, relays);
+
+    if (successCount === 0) {
+      return { success: false, message: 'Failed to publish to any relay' };
+    }
+
+    return {
+      success: true,
+      message: `Published to ${successCount}/${relays.length} relays`
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return { success: false, message };
+  }
+}
+
+// Generic save feed to Nostr - works with both album and publisher feeds
+export async function saveFeedToNostr(
+  feed: Album | PublisherFeed,
+  feedType: 'album' | 'publisher',
+  hasChanges = true,
+  relays = DEFAULT_RELAYS
+): Promise<{ success: boolean; message: string }> {
+  if (!hasSigner()) {
+    return { success: false, message: 'Not logged in' };
+  }
+
+  try {
+    const signer = getSigner();
+    const pubkey = await signer.getPublicKey();
+
+    // Generate RSS XML based on feed type
+    let rssXml: string;
+    let feedGuid: string;
+    let feedTitle: string;
+
+    if (feedType === 'publisher') {
+      const publisherFeed = feed as PublisherFeed;
+      const updatedFeed = hasChanges
+        ? { ...publisherFeed, lastBuildDate: new Date().toUTCString() }
+        : publisherFeed;
+      rssXml = generatePublisherRssFeed(updatedFeed);
+      feedGuid = publisherFeed.podcastGuid;
+      feedTitle = publisherFeed.title;
+    } else {
+      const album = feed as Album;
+      const updatedAlbum = hasChanges
+        ? { ...album, lastBuildDate: new Date().toUTCString() }
+        : album;
+      rssXml = generateRssFeed(updatedAlbum);
+      feedGuid = album.podcastGuid;
+      feedTitle = album.title;
+    }
+
+    // Create and sign the event
+    const unsignedEvent = createFeedEvent(rssXml, feedGuid, feedTitle, pubkey);
     const signedEvent = await signer.signEvent(unsignedEvent);
 
     // Publish to relays

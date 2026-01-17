@@ -1,7 +1,7 @@
 // Blossom server upload utilities
-import type { Album } from '../types/feed';
+import type { Album, PublisherFeed } from '../types/feed';
 import type { NostrEvent } from '../types/nostr';
-import { generateRssFeed } from './xmlGenerator';
+import { generateRssFeed, generatePublisherRssFeed } from './xmlGenerator';
 import { hexToNpub } from './nostr';
 import { DEFAULT_RELAYS, publishEventToRelays } from './nostrRelay';
 import { getSigner, hasSigner } from './nostrSigner';
@@ -173,6 +173,100 @@ export async function uploadToBlossom(
     if (metadataResult.success) {
       const npub = hexToNpub(pubkey);
       stableUrl = `${window.location.origin}/api/feed/${npub}/${album.podcastGuid}.xml`;
+    }
+
+    return {
+      success: true,
+      message: metadataResult.success
+        ? 'Feed uploaded and metadata published'
+        : 'Feed uploaded (metadata publish failed)',
+      url: fileUrl,
+      stableUrl
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return { success: false, message };
+  }
+}
+
+/**
+ * Generic upload feed to Blossom server - works with both album and publisher feeds
+ */
+export async function uploadFeedToBlossom(
+  feed: Album | PublisherFeed,
+  feedType: 'album' | 'publisher',
+  blossomServer: string
+): Promise<{ success: boolean; message: string; url?: string; stableUrl?: string }> {
+  if (!hasSigner()) {
+    return { success: false, message: 'Not logged in' };
+  }
+
+  try {
+    const signer = getSigner();
+    const pubkey = await signer.getPublicKey();
+
+    // Generate RSS XML based on feed type
+    let rssXml: string;
+    let feedGuid: string;
+
+    if (feedType === 'publisher') {
+      const publisherFeed = feed as PublisherFeed;
+      rssXml = generatePublisherRssFeed(publisherFeed);
+      feedGuid = publisherFeed.podcastGuid;
+    } else {
+      const album = feed as Album;
+      rssXml = generateRssFeed(album);
+      feedGuid = album.podcastGuid;
+    }
+
+    // Calculate hash
+    const hash = await sha256Hash(rssXml);
+
+    // Create and sign auth event
+    const authEvent = await createBlossomAuthEvent(hash, pubkey, 'upload');
+    const signedAuthEvent = await signer.signEvent(authEvent);
+
+    // Base64 encode the signed event for Authorization header
+    const authHeader = 'Nostr ' + btoa(JSON.stringify(signedAuthEvent));
+
+    // Normalize server URL
+    const serverUrl = blossomServer.replace(/\/$/, '');
+
+    // Upload to Blossom server
+    const response = await fetch(`${serverUrl}/upload`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/xml'
+      },
+      body: rssXml
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { success: false, message: `Upload failed: ${response.status} - ${errorText}` };
+    }
+
+    const result = await response.json();
+
+    // Blossom returns the URL in the response
+    const fileUrl = result.url || `${serverUrl}/${hash}.xml`;
+
+    // Publish NIP-94 file metadata event to enable stable URL
+    const fileSize = new Blob([rssXml]).size;
+    const metadataResult = await publishFileMetadata(
+      fileUrl,
+      hash,
+      fileSize,
+      feed as Album, // Type assertion for compatibility
+      DEFAULT_RELAYS
+    );
+
+    // Construct stable URL if metadata was published
+    let stableUrl: string | undefined;
+    if (metadataResult.success) {
+      const npub = hexToNpub(pubkey);
+      stableUrl = `${window.location.origin}/api/feed/${npub}/${feedGuid}.xml`;
     }
 
     return {

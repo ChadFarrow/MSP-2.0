@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { generateRssFeed, generatePublisherRssFeed, downloadXml, copyToClipboard } from '../../utils/xmlGenerator';
-import { saveAlbumToNostr, publishNostrMusicTracks, uploadToBlossom } from '../../utils/nostrSync';
+import { saveAlbumToNostr, saveFeedToNostr, publishNostrMusicTracks, uploadToBlossom } from '../../utils/nostrSync';
+import { uploadFeedToBlossom } from '../../utils/blossom';
 import type { PublishProgress } from '../../utils/nostrSync';
 import type { Album, PublisherFeed } from '../../types/feed';
 import type { FeedType } from '../../store/feedStore';
@@ -37,6 +38,10 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
   const { state: nostrState } = useNostr();
   const [mode, setMode] = useState<'local' | 'download' | 'clipboard' | 'nostr' | 'nostrMusic' | 'blossom' | 'hosted' | 'podcastIndex'>('local');
   const isPublisherMode = feedType === 'publisher';
+
+  // Helper to get current feed's GUID and title based on mode
+  const currentFeedGuid = isPublisherMode && publisherFeed ? publisherFeed.podcastGuid : album.podcastGuid;
+  const currentFeedTitle = isPublisherMode && publisherFeed ? publisherFeed.title : album.title;
 
   // Helper function to generate XML for current feed type
   const generateCurrentFeedXml = () => {
@@ -131,12 +136,14 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
 
   // Check for existing hosted feed on mount, and apply pending credentials
   useEffect(() => {
+    if (!currentFeedGuid) return;
+
     // Check for pending credentials from import
     const pending = pendingHostedStorage.load();
     if (pending) {
       // If pending feedId matches podcastGuid, use it; otherwise it's legacy
-      if (pending.feedId === album.podcastGuid) {
-        saveHostedFeedInfo(album.podcastGuid, pending);
+      if (pending.feedId === currentFeedGuid) {
+        saveHostedFeedInfo(currentFeedGuid, pending);
         pendingHostedStorage.clear();
         setHostedInfo(pending);
         setHostedUrl(buildHostedUrl(pending.feedId));
@@ -148,20 +155,20 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
       }
     }
 
-    const info = getHostedFeedInfo(album.podcastGuid);
+    const info = getHostedFeedInfo(currentFeedGuid);
     if (info) {
       // Check if feedId matches podcastGuid (legacy feeds may have different IDs)
-      if (info.feedId === album.podcastGuid) {
+      if (info.feedId === currentFeedGuid) {
         setHostedInfo(info);
         setHostedUrl(buildHostedUrl(info.feedId));
       } else {
         // Legacy feed with mismatched ID - keep it to update both URLs on save
         setLegacyHostedInfo(info);
         // Show the correct URL (podcastGuid) as the primary
-        setHostedUrl(buildHostedUrl(album.podcastGuid));
+        setHostedUrl(buildHostedUrl(currentFeedGuid));
       }
     }
-  }, [album.podcastGuid]);
+  }, [currentFeedGuid]);
 
   // Restore feed credentials from saved token
   const handleRestore = async () => {
@@ -176,7 +183,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
     try {
       // Try to update the feed with the provided credentials to verify they work
       const xml = generateCurrentFeedXml();
-      await updateHostedFeed(restoreFeedId.trim(), restoreToken.trim(), xml, album.title);
+      await updateHostedFeed(restoreFeedId.trim(), restoreToken.trim(), xml, currentFeedTitle);
 
       // Credentials work - save them
       const newInfo: HostedFeedInfo = {
@@ -185,7 +192,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
         createdAt: Date.now(),
         lastUpdated: Date.now()
       };
-      saveHostedFeedInfo(album.podcastGuid, newInfo);
+      saveHostedFeedInfo(currentFeedGuid, newInfo);
       setHostedInfo(newInfo);
       setHostedUrl(buildHostedUrl(restoreFeedId.trim()));
       setShowRestore(false);
@@ -320,11 +327,13 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
           showSuccessAndClose('Copied to clipboard');
           break;
         case 'nostr':
-          const result = await saveAlbumToNostr(album, isDirty);
-          if (result.success) {
-            showSuccessAndClose(result.message);
+          const nostrResult = isPublisherMode && publisherFeed
+            ? await saveFeedToNostr(publisherFeed, 'publisher', isDirty)
+            : await saveFeedToNostr(album, 'album', isDirty);
+          if (nostrResult.success) {
+            showSuccessAndClose(nostrResult.message);
           } else {
-            setMessage({ type: 'error', text: result.message });
+            setMessage({ type: 'error', text: nostrResult.message });
           }
           break;
         case 'nostrMusic':
@@ -341,7 +350,9 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
           }
           break;
         case 'blossom':
-          const blossomResult = await uploadToBlossom(album, blossomServer);
+          const blossomResult = isPublisherMode && publisherFeed
+            ? await uploadFeedToBlossom(publisherFeed, 'publisher', blossomServer)
+            : await uploadFeedToBlossom(album, 'album', blossomServer);
           if (blossomResult.success) {
             if (blossomResult.url) {
               setFeedUrl(blossomResult.url);
@@ -359,9 +370,9 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
           const hostedXml = generateCurrentFeedXml();
 
           // If there's a legacy feed with mismatched feedId, update it first
-          if (legacyHostedInfo && legacyHostedInfo.feedId !== album.podcastGuid) {
+          if (legacyHostedInfo && legacyHostedInfo.feedId !== currentFeedGuid) {
             try {
-              await updateHostedFeed(legacyHostedInfo.feedId, legacyHostedInfo.editToken, hostedXml, album.title);
+              await updateHostedFeed(legacyHostedInfo.feedId, legacyHostedInfo.editToken, hostedXml, currentFeedTitle);
             } catch (legacyErr) {
               // Log but don't fail - legacy feed update is best-effort
               console.warn('Failed to update legacy feed:', legacyErr);
@@ -371,12 +382,12 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
           if (hostedInfo) {
             // Update existing feed - use Nostr auth if linked, otherwise token
             if (isNostrLinked) {
-              await updateHostedFeedWithNostr(hostedInfo.feedId, hostedXml, album.title);
+              await updateHostedFeedWithNostr(hostedInfo.feedId, hostedXml, currentFeedTitle);
             } else {
-              await updateHostedFeed(hostedInfo.feedId, hostedInfo.editToken, hostedXml, album.title);
+              await updateHostedFeed(hostedInfo.feedId, hostedInfo.editToken, hostedXml, currentFeedTitle);
             }
             const updatedInfo = { ...hostedInfo, lastUpdated: Date.now() };
-            saveHostedFeedInfo(album.podcastGuid, updatedInfo);
+            saveHostedFeedInfo(currentFeedGuid, updatedInfo);
             setHostedInfo(updatedInfo);
             const piUrl = await notifyPodcastIndex(buildHostedUrl(hostedInfo.feedId));
             if (piUrl) {
@@ -396,7 +407,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
             let newInfo: HostedFeedInfo;
             const shouldLinkNostr = isLoggedIn && linkNostrOnCreate && nostrState.user?.pubkey;
             if (shouldLinkNostr) {
-              hostedResult = await createHostedFeedWithNostr(hostedXml, album.title, album.podcastGuid, tokenToUse);
+              hostedResult = await createHostedFeedWithNostr(hostedXml, currentFeedTitle, currentFeedGuid, tokenToUse);
               newInfo = {
                 feedId: hostedResult.feedId,
                 editToken: tokenToUse,
@@ -406,7 +417,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                 linkedAt: Date.now()
               };
             } else {
-              hostedResult = await createHostedFeed(hostedXml, album.title, album.podcastGuid, tokenToUse);
+              hostedResult = await createHostedFeed(hostedXml, currentFeedTitle, currentFeedGuid, tokenToUse);
               newInfo = {
                 feedId: hostedResult.feedId,
                 editToken: tokenToUse,
@@ -414,7 +425,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                 lastUpdated: Date.now()
               };
             }
-            saveHostedFeedInfo(album.podcastGuid, newInfo);
+            saveHostedFeedInfo(currentFeedGuid, newInfo);
             setHostedInfo(newInfo);
             setHostedUrl(hostedResult.url);
             setPendingToken(null);
@@ -459,7 +470,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
         ownerPubkey: result.pubkey,
         linkedAt: Date.now()
       };
-      saveHostedFeedInfo(album.podcastGuid, updatedInfo);
+      saveHostedFeedInfo(currentFeedGuid, updatedInfo);
       setHostedInfo(updatedInfo);
 
       setMessage({ type: 'success', text: 'Nostr identity linked! You can now sign in to edit.' });
@@ -526,11 +537,11 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
               <option value="local">Local Storage</option>
               <option value="download">Download XML</option>
               <option value="clipboard">Copy to Clipboard</option>
-              {!isPublisherMode && <option value="hosted">Host on MSP</option>}
-              {!isPublisherMode && <option value="podcastIndex">Submit to Podcast Index</option>}
-              {!isPublisherMode && isLoggedIn && <option value="nostr">Save to Nostr</option>}
+              <option value="hosted">Host on MSP</option>
+              <option value="podcastIndex">Submit to Podcast Index</option>
+              {isLoggedIn && <option value="nostr">Save to Nostr</option>}
               {!isPublisherMode && isLoggedIn && <option value="nostrMusic">Publish Nostr Music</option>}
-              {!isPublisherMode && isLoggedIn && <option value="blossom">Publish to Blossom</option>}
+              {isLoggedIn && <option value="blossom">Publish to Blossom</option>}
             </select>
           </div>
 
@@ -682,7 +693,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                     Old URL: <code style={{ fontSize: '0.65rem' }}>{buildHostedUrl(legacyHostedInfo.feedId)}</code>
                   </p>
                   <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-                    New URL: <code style={{ fontSize: '0.65rem' }}>{buildHostedUrl(album.podcastGuid)}</code>
+                    New URL: <code style={{ fontSize: '0.65rem' }}>{buildHostedUrl(currentFeedGuid)}</code>
                   </p>
                 </div>
               )}
@@ -747,7 +758,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                     <button
                       className="btn btn-secondary"
                       onClick={() => {
-                        downloadHostedFeedBackup(album.podcastGuid, pendingToken, album.title, album.podcastGuid);
+                        downloadHostedFeedBackup(currentFeedGuid, pendingToken, currentFeedTitle, currentFeedGuid);
                         setMessage({ type: 'success', text: 'Backup file downloaded' });
                       }}
                     >
@@ -830,7 +841,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                       className="btn btn-secondary"
                       style={{ fontSize: '0.75rem' }}
                       onClick={() => {
-                        clearHostedFeedInfo(album.podcastGuid);
+                        clearHostedFeedInfo(currentFeedGuid);
                         setHostedInfo(null);
                         setHostedUrl(null);
                         setMessage({ type: 'success', text: 'Feed unlinked from this browser' });

@@ -93,6 +93,42 @@ export function PublisherEditor() {
   const [isAddingReferences, setIsAddingReferences] = useState(false);
   const [referenceResults, setReferenceResults] = useState<FeedUpdateResult[] | null>(null);
 
+  // Refresh artwork state
+  const [refreshingIndex, setRefreshingIndex] = useState<number | null>(null);
+
+  // Refresh feed info from Podcast Index by GUID
+  const handleRefreshArtwork = async (index: number) => {
+    if (!publisherFeed) return;
+    const item = publisherFeed.remoteItems[index];
+    if (!item.feedGuid) return;
+
+    setRefreshingIndex(index);
+    try {
+      const response = await fetch(`/api/pisearch?q=${encodeURIComponent(item.feedGuid)}`);
+      const data = await response.json();
+
+      if (response.ok && data.feeds && data.feeds.length > 0) {
+        const feed = data.feeds[0];
+        dispatch({
+          type: 'UPDATE_REMOTE_ITEM',
+          payload: {
+            index,
+            item: {
+              ...item,
+              image: feed.image || item.image,
+              title: feed.title || item.title,
+              feedUrl: feed.url || item.feedUrl
+            }
+          }
+        });
+      }
+    } catch {
+      // Silent fail
+    } finally {
+      setRefreshingIndex(null);
+    }
+  };
+
   // Get hosted URL for the current publisher feed
   const getPublisherFeedUrl = (): string | null => {
     if (!publisherFeed?.podcastGuid) return null;
@@ -539,7 +575,7 @@ export function PublisherEditor() {
               <div key={index} className="repeatable-item">
                 <div className="repeatable-item-content" style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
                   {/* Album Art Preview */}
-                  <div style={{ flexShrink: 0 }}>
+                  <div style={{ flexShrink: 0, position: 'relative' }}>
                     {item.image ? (
                       <img
                         src={item.image}
@@ -555,20 +591,35 @@ export function PublisherEditor() {
                         onError={e => (e.target as HTMLImageElement).style.display = 'none'}
                       />
                     ) : (
-                      <div style={{
-                        width: '80px',
-                        height: '80px',
-                        borderRadius: '8px',
-                        backgroundColor: 'var(--surface-color)',
-                        border: '1px solid var(--border-color)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: 'var(--text-secondary)',
-                        fontSize: '24px'
-                      }}>
-                        &#127911;
-                      </div>
+                      <button
+                        onClick={() => handleRefreshArtwork(index)}
+                        disabled={refreshingIndex === index || !item.feedGuid}
+                        title="Fetch artwork from Podcast Index"
+                        style={{
+                          width: '80px',
+                          height: '80px',
+                          borderRadius: '8px',
+                          backgroundColor: 'var(--surface-color)',
+                          border: '1px solid var(--border-color)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: 'var(--text-secondary)',
+                          fontSize: '12px',
+                          cursor: item.feedGuid ? 'pointer' : 'default',
+                          gap: '4px'
+                        }}
+                      >
+                        {refreshingIndex === index ? (
+                          <span>...</span>
+                        ) : (
+                          <>
+                            <span style={{ fontSize: '20px' }}>&#128260;</span>
+                            <span>Refresh</span>
+                          </>
+                        )}
+                      </button>
                     )}
                   </div>
                   {/* Form Fields */}

@@ -33,6 +33,11 @@ function extractFeedId(input: string): string | null {
   return null;
 }
 
+// Check if input looks like a UUID/GUID
+function isGuid(input: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.trim());
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -50,11 +55,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    // Check if input is a feed ID (number or podcastindex URL)
+    // Check if input is a feed ID (number or podcastindex URL) or GUID
     const feedId = extractFeedId(q);
-    const searchUrl = feedId
-      ? `https://api.podcastindex.org/api/1.0/podcasts/byfeedid?id=${feedId}`
-      : `https://api.podcastindex.org/api/1.0/search/byterm?q=${encodeURIComponent(q)}`;
+    const guid = isGuid(q) ? q.trim() : null;
+
+    let searchUrl: string;
+    if (feedId) {
+      searchUrl = `https://api.podcastindex.org/api/1.0/podcasts/byfeedid?id=${feedId}`;
+    } else if (guid) {
+      searchUrl = `https://api.podcastindex.org/api/1.0/podcasts/byguid?guid=${guid}`;
+    } else {
+      searchUrl = `https://api.podcastindex.org/api/1.0/search/byterm?q=${encodeURIComponent(q)}`;
+    }
 
     const response = await fetch(searchUrl, { headers: authHeaders });
     const data = await response.json();
@@ -66,8 +78,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // Handle both byfeedid (single feed) and byterm (array of feeds) responses
-    const rawFeeds = feedId && data.feed ? [data.feed] : (data.feeds || []);
+    // Handle byfeedid/byguid (single feed) and byterm (array of feeds) responses
+    const rawFeeds = (feedId || guid) && data.feed ? [data.feed] : (data.feeds || []);
 
     const feeds = rawFeeds.map((feed: {
       id: number;

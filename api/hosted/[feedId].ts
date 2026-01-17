@@ -38,6 +38,14 @@ async function getMetadata(feedId: string): Promise<FeedMetadata | null> {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, DELETE, PATCH, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Edit-Token, Authorization, X-Admin-Key');
+    return res.status(204).end();
+  }
+
   let { feedId } = req.query;
 
   // Strip .xml extension if present (support both /guid and /guid.xml)
@@ -73,12 +81,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(404).json({ error: 'Feed not found' });
         }
 
-        // Set cache headers (5 minutes for CDN efficiency)
+        // Fetch the blob content and return it directly with CORS headers
+        // (redirect would fail CORS for cross-origin requests)
+        const blobResponse = await fetch(blob.url);
+        const content = await blobResponse.text();
+
+        // Set cache and CORS headers
         res.setHeader('Cache-Control', 'public, max-age=300');
         res.setHeader('Content-Type', 'application/rss+xml');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
 
-        // Redirect to the blob URL for efficient delivery
-        return res.redirect(302, blob.url);
+        return res.status(200).send(content);
       }
 
       case 'PUT': {

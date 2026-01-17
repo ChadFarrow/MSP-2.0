@@ -647,8 +647,8 @@ export function PublisherEditor() {
                           type="text"
                           className="form-input"
                           value={item.title || ''}
-                          readOnly
-                          style={{ backgroundColor: 'var(--bg-secondary)', cursor: 'default' }}
+                          disabled
+                          style={{ backgroundColor: 'var(--bg-secondary)', cursor: 'default', opacity: 1 }}
                         />
                       </div>
                       <div className="form-group">
@@ -657,8 +657,8 @@ export function PublisherEditor() {
                           type="text"
                           className="form-input"
                           value={item.feedGuid || ''}
-                          readOnly
-                          style={{ backgroundColor: 'var(--bg-secondary)', cursor: 'default' }}
+                          disabled
+                          style={{ backgroundColor: 'var(--bg-secondary)', cursor: 'default', opacity: 1 }}
                         />
                       </div>
                       <div className="form-group">
@@ -667,8 +667,8 @@ export function PublisherEditor() {
                           type="url"
                           className="form-input"
                           value={item.feedUrl || ''}
-                          readOnly
-                          style={{ backgroundColor: 'var(--bg-secondary)', cursor: 'default' }}
+                          disabled
+                          style={{ backgroundColor: 'var(--bg-secondary)', cursor: 'default', opacity: 1 }}
                         />
                       </div>
                     </div>

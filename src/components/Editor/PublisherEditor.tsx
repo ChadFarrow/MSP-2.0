@@ -201,15 +201,9 @@ export function PublisherEditor() {
       }
 
       // No credentials or not MSP-hosted - download for manual upload
-      // Extract filename from original URL, or fall back to GUID
-      let filename = 'feed.xml';
-      try {
-        const urlPath = new URL(feedUrl).pathname;
-        const lastSegment = urlPath.split('/').pop() || '';
-        filename = lastSegment.endsWith('.xml') ? lastSegment : `${lastSegment}.xml`;
-      } catch {
-        filename = `${album.podcastGuid || item.feedGuid}.xml`;
-      }
+      // Use feed title as filename (sanitized), matching common naming convention
+      const safeTitle = feedTitle.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '') || 'feed';
+      const filename = `${safeTitle}.xml`;
       downloadXml(updatedXml, filename);
       return {
         title: feedTitle,

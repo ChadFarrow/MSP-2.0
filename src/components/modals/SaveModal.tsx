@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { generateRssFeed, generatePublisherRssFeed, downloadXml, copyToClipboard } from '../../utils/xmlGenerator';
-import { saveAlbumToNostr, saveFeedToNostr, publishNostrMusicTracks, uploadToBlossom } from '../../utils/nostrSync';
+import { saveFeedToNostr, publishNostrMusicTracks } from '../../utils/nostrSync';
 import { uploadFeedToBlossom } from '../../utils/blossom';
 import type { PublishProgress } from '../../utils/nostrSync';
 import type { Album, PublisherFeed } from '../../types/feed';

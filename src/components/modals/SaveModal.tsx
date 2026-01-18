@@ -324,7 +324,8 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
         case 'download':
           const xml = generateCurrentFeedXml();
           const feedTitle = isPublisherMode && publisherFeed ? publisherFeed.title : album.title;
-          const filename = `${feedTitle || 'feed'}.xml`.replace(/[^a-z0-9.-]/gi, '_');
+          const publisherName = isPublisherMode && publisherFeed?.author ? `_${publisherFeed.author}` : '';
+          const filename = `${feedTitle || 'feed'}${publisherName}.xml`.replace(/[^a-z0-9.-]/gi, '_');
           downloadXml(xml, filename);
           showSuccessAndClose('Download started');
           break;

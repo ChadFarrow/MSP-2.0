@@ -24,9 +24,9 @@ export function PublisherEditor() {
     );
   }
 
-  // Only show PublishSection if all catalog feeds are MSP-hosted
+  // Only show PublishSection if there are catalog feeds and all are MSP-hosted
   const catalogStatus = getCatalogFeedsStatus(publisherFeed.remoteItems);
-  const allFeedsHosted = catalogStatus.items.every(item => item.isHosted);
+  const allFeedsHosted = catalogStatus.items.length > 0 && catalogStatus.items.every(item => item.isHosted);
 
   return (
     <div className="main-content">

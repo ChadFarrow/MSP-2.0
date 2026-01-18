@@ -1,5 +1,6 @@
-/* MSP 2.0 - Dark Theme Styles */
+/* MSP 2.0 - Theme Styles */
 
+/* Dark Theme (Default) */
 :root {
   --bg-primary: #0a0a0f;
   --bg-secondary: #12121a;
@@ -14,6 +15,8 @@
   --accent-primary: #8b5cf6;
   --accent-secondary: #a78bfa;
   --accent-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --accent-bg-subtle: rgba(139, 92, 246, 0.1);
+  --accent-bg-light: rgba(139, 92, 246, 0.05);
 
   --border-color: rgba(255, 255, 255, 0.1);
   --border-focus: rgba(139, 92, 246, 0.5);
@@ -21,16 +24,54 @@
   --success: #10b981;
   --warning: #f59e0b;
   --error: #ef4444;
+  --warning-bg: rgba(245, 158, 11, 0.1);
+  --error-bg: rgba(239, 68, 68, 0.1);
 
   --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+  
+  --overlay-bg: rgba(0, 0, 0, 0.7);
 
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 12px;
 
   --transition: 0.2s ease;
+}
+
+/* Light Theme */
+[data-theme="light"] {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f5f5f7;
+  --bg-tertiary: #e8e8ea;
+  --bg-card: rgba(255, 255, 255, 0.9);
+  --bg-input: rgba(245, 245, 247, 0.95);
+
+  --text-primary: #1d1d1f;
+  --text-secondary: #6e6e73;
+  --text-muted: #86868b;
+
+  --accent-primary: #8b5cf6;
+  --accent-secondary: #a78bfa;
+  --accent-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --accent-bg-subtle: rgba(139, 92, 246, 0.15);
+  --accent-bg-light: rgba(139, 92, 246, 0.08);
+  
+  --border-color: rgba(0, 0, 0, 0.12);
+  --border-focus: rgba(139, 92, 246, 0.4);
+
+  --success: #10b981;
+  --warning: #f59e0b;
+  --error: #ef4444;
+  --warning-bg: rgba(245, 158, 11, 0.15);
+  --error-bg: rgba(239, 68, 68, 0.15);
+
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.12);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.16);
+  
+  --overlay-bg: rgba(0, 0, 0, 0.5);
 }
 
 * {
@@ -165,10 +206,10 @@ body {
   top: calc(100% + 4px);
   right: 0;
   min-width: 140px;
-  background: #1a1a2e;
-  border: 2px solid rgba(139, 92, 246, 0.5);
+  background: var(--bg-tertiary);
+  border: 2px solid var(--border-focus);
   border-radius: var(--radius-md);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-lg);
   z-index: 100;
   overflow: hidden;
 }
@@ -190,7 +231,7 @@ body {
 }
 
 .dropdown-item:hover {
-  background: rgba(139, 92, 246, 0.15);
+  background: var(--bg-secondary);
 }
 
 .dropdown-divider {
@@ -290,7 +331,7 @@ body {
 }
 
 .section-header:hover {
-  background: rgba(139, 92, 246, 0.1);
+  background: var(--accent-bg-subtle);
 }
 
 .section-header h2 {
@@ -470,7 +511,7 @@ body {
 }
 
 .btn-secondary:hover {
-  background: rgba(139, 92, 246, 0.1);
+  background: var(--accent-bg-subtle);
   border-color: var(--accent-primary);
 }
 
@@ -544,7 +585,7 @@ body {
 .add-item-btn:hover {
   border-color: var(--accent-primary);
   color: var(--accent-primary);
-  background: rgba(139, 92, 246, 0.05);
+  background: var(--accent-bg-light);
 }
 
 /* Track List */
@@ -637,7 +678,7 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--overlay-bg);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -836,7 +877,7 @@ body {
 
 .template-card:hover {
   border-color: var(--accent-primary);
-  background: rgba(139, 92, 246, 0.05);
+  background: var(--accent-bg-light);
 }
 
 .template-card h3 {
@@ -1358,7 +1399,7 @@ body {
 
 .nostr-album-item:hover {
   border-color: var(--accent-primary);
-  background: rgba(139, 92, 246, 0.1);
+  background: var(--accent-bg-subtle);
 }
 
 .nostr-album-item-title {
@@ -1427,7 +1468,7 @@ body {
 
 .connect-warning {
   padding: 12px 16px;
-  background: rgba(245, 158, 11, 0.1);
+  background: var(--warning-bg);
   border: 1px solid var(--warning, #f59e0b);
   border-radius: var(--radius-md);
   color: var(--warning, #f59e0b);
@@ -1537,7 +1578,7 @@ body {
 
 .connect-error {
   padding: 12px 16px;
-  background: rgba(239, 68, 68, 0.1);
+  background: var(--error-bg);
   border: 1px solid var(--error);
   border-radius: var(--radius-md);
   color: var(--error);

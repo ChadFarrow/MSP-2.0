@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { FeedProvider, useFeed } from './store/feedStore.tsx';
 import type { FeedType } from './store/feedStore.tsx';
 import { NostrProvider, useNostr } from './store/nostrStore.tsx';
+import { ThemeProvider, useTheme } from './store/themeStore.tsx';
 import { parseRssFeed, isPublisherFeed, parsePublisherRssFeed } from './utils/xmlParser';
 import { createEmptyAlbum, createEmptyPublisherFeed } from './types/feed';
 import { generateTestAlbum } from './utils/testData';
@@ -21,6 +22,7 @@ import './App.css';
 // Main App Content (needs access to context)
 function AppContent() {
   const { state, dispatch } = useFeed();
+  const { theme, toggleTheme } = useTheme();
   const [showImportModal, setShowImportModal] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
@@ -158,6 +160,12 @@ function AppContent() {
                   >
                     🎬 Overview Video
                   </a>
+                  <button
+                    className="dropdown-item"
+                    onClick={() => { toggleTheme(); setShowDropdown(false); }}
+                  >
+                    {theme === 'dark' ? '☀️' : '🌙'} Switch to {theme === 'dark' ? 'Light' : 'Dark'} Mode
+                  </button>
                   <div className="dropdown-divider" />
                   {nostrState.isLoggedIn ? (
                     <button
@@ -234,18 +242,22 @@ function App() {
 
   if (isAdminRoute) {
     return (
-      <NostrProvider>
-        <AdminPage />
-      </NostrProvider>
+      <ThemeProvider>
+        <NostrProvider>
+          <AdminPage />
+        </NostrProvider>
+      </ThemeProvider>
     );
   }
 
   return (
-    <NostrProvider>
-      <FeedProvider>
-        <AppContent />
-      </FeedProvider>
-    </NostrProvider>
+    <ThemeProvider>
+      <NostrProvider>
+        <FeedProvider>
+          <AppContent />
+        </FeedProvider>
+      </NostrProvider>
+    </ThemeProvider>
   );
 }
 

@@ -301,18 +301,59 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn }: Impo
             </div>
           ) : mode === 'file' ? (
             <div className="form-group">
-              <label className="form-label">Select XML File</label>
-              <input
-                type="file"
-                accept=".xml,application/xml,text/xml"
-                onChange={handleFileChange}
-                style={{ marginBottom: '12px' }}
-              />
-              {fileName && (
-                <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-                  Selected: {fileName}
-                </div>
-              )}
+              <label
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.currentTarget.style.borderColor = 'var(--primary-color)';
+                  e.currentTarget.style.backgroundColor = 'rgba(139, 92, 246, 0.1)';
+                }}
+                onDragLeave={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--border-color)';
+                  e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)';
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.currentTarget.style.borderColor = 'var(--border-color)';
+                  e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)';
+                  const file = e.dataTransfer.files?.[0];
+                  if (file) {
+                    setFileName(file.name);
+                    setError('');
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                      setXmlContent(event.target?.result as string);
+                    };
+                    reader.onerror = () => setError('Failed to read file');
+                    reader.readAsText(file);
+                  }
+                }}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '32px 20px',
+                  border: '2px dashed var(--border-color)',
+                  borderRadius: '8px',
+                  backgroundColor: 'var(--bg-tertiary)',
+                  cursor: 'pointer',
+                  transition: 'border-color 0.2s, background-color 0.2s'
+                }}
+              >
+                <span style={{ fontSize: '2rem', marginBottom: '12px' }}>📄</span>
+                <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  {fileName || 'Drop XML file here'}
+                </span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                  or click to select
+                </span>
+                <input
+                  type="file"
+                  accept=".xml,application/xml,text/xml"
+                  onChange={handleFileChange}
+                  style={{ display: 'none' }}
+                />
+              </label>
             </div>
           ) : mode === 'paste' ? (
             <div className="form-group">

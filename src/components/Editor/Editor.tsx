@@ -597,7 +597,7 @@ export function Editor() {
             </div>
           </Section>
 
-          {/* Publisher Section */}
+          {/* Publisher Section - Hidden for now
           <Section title="Publisher" icon="&#127970;">
             <p style={{ color: 'var(--text-secondary)', marginBottom: '16px', fontSize: '14px' }}>
               Link this album to a publisher feed. This allows apps to discover your other releases.
@@ -646,6 +646,7 @@ export function Editor() {
               </p>
             )}
           </Section>
+          */}
 
           {/* Tracks Section */}
           <Section title="Tracks" icon="&#127925;">

@@ -9,8 +9,8 @@
   --bg-input: rgba(30, 30, 42, 0.9);
 
   --text-primary: #ffffff;
-  --text-secondary: #a0a0b0;
-  --text-muted: #606070;
+  --text-secondary: #d0d0dc;
+  --text-muted: #9999aa;
 
   --accent-primary: #8b5cf6;
   --accent-secondary: #a78bfa;
@@ -18,7 +18,7 @@
   --accent-bg-subtle: rgba(139, 92, 246, 0.1);
   --accent-bg-light: rgba(139, 92, 246, 0.05);
 
-  --border-color: rgba(255, 255, 255, 0.1);
+  --border-color: rgba(255, 255, 255, 0.18);
   --border-focus: rgba(139, 92, 246, 0.5);
 
   --success: #10b981;

@@ -167,6 +167,15 @@ function AppContent() {
                   >
                     🎬 Overview Video
                   </a>
+                  <a
+                    className="dropdown-item"
+                    href="https://podtards.com/579676ff386928d3eb1275ead3d11be25200707dccc20f40ad95c3192f5faf0c.mp4"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => setShowDropdown(false)}
+                  >
+                    🎬 Publisher Overview
+                  </a>
                   <button
                     className="dropdown-item"
                     onClick={() => { toggleTheme(); setShowDropdown(false); }}

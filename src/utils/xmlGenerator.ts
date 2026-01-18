@@ -328,6 +328,9 @@ const generateCommonChannelElements = (data: BaseChannelData, medium: string, le
     lines.push(`${indent(level)}<image>`);
     lines.push(`${indent(level + 1)}<url>${escapeXml(data.imageUrl)}</url>`);
     lines.push(`${indent(level + 1)}<title>${escapeXml(data.imageTitle || data.title)}</title>`);
+    if (data.imageLink) {
+      lines.push(`${indent(level + 1)}<link>${escapeXml(data.imageLink)}</link>`);
+    }
     if (data.imageDescription) {
       lines.push(`${indent(level + 1)}<description>${escapeXml(data.imageDescription)}</description>`);
     }

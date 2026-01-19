@@ -58,7 +58,7 @@
   --accent-bg-subtle: rgba(139, 92, 246, 0.15);
   --accent-bg-light: rgba(139, 92, 246, 0.08);
   
-  --border-color: rgba(0, 0, 0, 0.12);
+  --border-color: rgba(0, 0, 0, 0.25);
   --border-focus: rgba(139, 92, 246, 0.4);
 
   --success: #10b981;
@@ -72,6 +72,10 @@
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.16);
   
   --overlay-bg: rgba(0, 0, 0, 0.5);
+}
+
+[data-theme="light"] .track-number {
+  background: #9e9ea3;
 }
 
 * {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useFeed } from '../../store/feedStore';
 import { LANGUAGES, PERSON_GROUPS, PERSON_ROLES, createEmptyPersonRole } from '../../types/feed';
 import type { PersonGroup } from '../../types/feed';
@@ -77,6 +77,13 @@ export function Editor() {
   const [collapsedTracks, setCollapsedTracks] = useState<Set<string>>(new Set());
   const [showRolesModal, setShowRolesModal] = useState(false);
 
+  // Collapse all tracks by default when album changes (e.g., on import)
+  useEffect(() => {
+    if (album?.tracks) {
+      setCollapsedTracks(new Set(album.tracks.map(t => t.id)));
+    }
+  }, [album]);
+
   const toggleTrackCollapse = (trackId: string) => {
     setCollapsedTracks(prev => {
       const next = new Set(prev);
@@ -87,6 +94,16 @@ export function Editor() {
       }
       return next;
     });
+  };
+
+  const allTracksCollapsed = album?.tracks?.length > 0 && album.tracks.every(t => collapsedTracks.has(t.id));
+
+  const toggleAllTracks = () => {
+    if (allTracksCollapsed) {
+      setCollapsedTracks(new Set());
+    } else {
+      setCollapsedTracks(new Set(album?.tracks?.map(t => t.id) || []));
+    }
   };
 
   return (
@@ -500,23 +517,34 @@ export function Editor() {
 
           {/* Tracks Section */}
           <Section title="Tracks" icon="&#127925;">
+            {album.tracks.length > 0 && (
+              <div style={{ marginBottom: '12px', textAlign: 'right' }}>
+                <button
+                  className="btn btn-secondary"
+                  onClick={toggleAllTracks}
+                  style={{ fontSize: '0.875rem', padding: '4px 12px' }}
+                >
+                  {allTracksCollapsed ? 'Expand All' : 'Collapse All'}
+                </button>
+              </div>
+            )}
             <div className="track-list">
               {album.tracks.map((track, index) => (
                 <div key={track.id} className="repeatable-item" style={{ flexDirection: 'column' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px', width: '100%' }}>
-                    <span className="track-number">{track.trackNumber}</span>
-                    <span style={{ flex: 1, fontWeight: 500 }}>{track.title || 'Untitled Track'}</span>
-                    {track.duration && track.duration !== '00:00:00' && (
-                      <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>{track.duration}</span>
-                    )}
-                    <button
-                      className="btn btn-icon"
-                      style={{ background: 'transparent', color: 'var(--text-secondary)' }}
+                    <div
+                      style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, cursor: 'pointer' }}
                       onClick={() => toggleTrackCollapse(track.id)}
-                      title={collapsedTracks.has(track.id) ? 'Expand' : 'Collapse'}
                     >
-                      {collapsedTracks.has(track.id) ? '▶' : '▼'}
-                    </button>
+                      <span className="track-number">{track.trackNumber}</span>
+                      <span style={{ flex: 1, fontWeight: 500 }}>{track.title || 'Untitled Track'}</span>
+                      {track.duration && track.duration !== '00:00:00' && (
+                        <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>{track.duration}</span>
+                      )}
+                      <span style={{ color: 'var(--text-secondary)' }}>
+                        {collapsedTracks.has(track.id) ? '▶' : '▼'}
+                      </span>
+                    </div>
                     <button
                       className="btn btn-icon btn-danger"
                       onClick={() => dispatch({ type: 'REMOVE_TRACK', payload: index })}

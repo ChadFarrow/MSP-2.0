@@ -138,7 +138,7 @@ export interface Album {
 
   // Podcast Index
   podcastGuid: string;
-  medium: 'music' | 'musicL';
+  medium: 'music' | 'video';
   locked: boolean;
   lockedOwner: string;
   location: string;
@@ -237,7 +237,7 @@ export interface FeedState {
 }
 
 // Default empty track (defined first so createEmptyAlbum can use it)
-export const createEmptyTrack = (trackNumber: number): Track => ({
+export const createEmptyTrack = (trackNumber: number, enclosureType: string = 'audio/mpeg'): Track => ({
   id: crypto.randomUUID(),
   trackNumber,
   season: undefined,
@@ -248,7 +248,7 @@ export const createEmptyTrack = (trackNumber: number): Track => ({
   guid: crypto.randomUUID(),
   enclosureUrl: '',
   enclosureLength: '',
-  enclosureType: 'audio/mpeg',
+  enclosureType,
   duration: '',
   explicit: false,
   trackArtUrl: '',
@@ -260,6 +260,9 @@ export const createEmptyTrack = (trackNumber: number): Track => ({
   overrideValue: false,
   value: undefined
 });
+
+// Helper to check if medium is video
+export const isVideoMedium = (medium: string): boolean => medium === 'video';
 
 // Default empty album
 export const createEmptyAlbum = (): Album => ({
@@ -297,6 +300,44 @@ export const createEmptyAlbum = (): Album => ({
   },
   funding: [],
   tracks: [createEmptyTrack(1)]
+});
+
+// Default empty video album
+export const createEmptyVideoAlbum = (): Album => ({
+  title: '',
+  author: '',
+  description: '',
+  link: '',
+  language: 'en',
+  generator: 'MSP 2.0 - Music Side Project Studio',
+  pubDate: new Date().toUTCString(),
+  lastBuildDate: new Date().toUTCString(),
+  podcastGuid: crypto.randomUUID(),
+  medium: 'video',
+  locked: false,
+  lockedOwner: '',
+  location: '',
+  categories: [],
+  keywords: '',
+  explicit: false,
+  ownerName: '',
+  ownerEmail: '',
+  imageUrl: '',
+  imageTitle: '',
+  imageLink: '',
+  imageDescription: '',
+  bannerArtUrl: '',
+  managingEditor: '',
+  webMaster: '',
+  persons: [],
+  value: {
+    type: 'lightning',
+    method: 'keysend',
+    suggested: '0.000033333',
+    recipients: []
+  },
+  funding: [],
+  tracks: [createEmptyTrack(1, 'video/mp4')]
 });
 
 // Default empty person role

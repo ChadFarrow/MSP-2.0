@@ -19,7 +19,7 @@ import {
   linkNostrToFeed,
   type HostedFeedInfo
 } from '../../utils/hostedFeed';
-import { albumStorage, publisherStorage, pendingHostedStorage } from '../../utils/storage';
+import { albumStorage, videoStorage, publisherStorage, pendingHostedStorage } from '../../utils/storage';
 import { useNostr } from '../../store/nostrStore';
 import { ModalWrapper } from './ModalWrapper';
 
@@ -39,6 +39,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
   const { state: nostrState } = useNostr();
   const [mode, setMode] = useState<'local' | 'download' | 'clipboard' | 'nostr' | 'nostrMusic' | 'blossom' | 'hosted' | 'podcastIndex'>('local');
   const isPublisherMode = feedType === 'publisher';
+  const isVideoMode = feedType === 'video';
 
   // Helper to get current feed's GUID and title based on mode
   const currentFeedGuid = isPublisherMode && publisherFeed ? publisherFeed.podcastGuid : album.podcastGuid;
@@ -290,11 +291,13 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
         if (!album.language?.trim()) errors.push('Language');
         if (!album.podcastGuid?.trim()) errors.push('Podcast GUID');
 
+        const itemLabel = isVideoMode ? 'Video' : 'Track';
+        const urlLabel = isVideoMode ? 'Video URL' : 'MP3 URL';
         album.tracks.forEach((track, i) => {
-          if (!track.title?.trim()) errors.push(`Track ${i + 1} Title`);
-          if (!track.duration?.trim()) errors.push(`Track ${i + 1} Duration`);
-          if (!track.enclosureUrl?.trim()) errors.push(`Track ${i + 1} MP3 URL`);
-          if (!track.enclosureLength?.trim()) errors.push(`Track ${i + 1} File Size`);
+          if (!track.title?.trim()) errors.push(`${itemLabel} ${i + 1} Title`);
+          if (!track.duration?.trim()) errors.push(`${itemLabel} ${i + 1} Duration`);
+          if (!track.enclosureUrl?.trim()) errors.push(`${itemLabel} ${i + 1} ${urlLabel}`);
+          if (!track.enclosureLength?.trim()) errors.push(`${itemLabel} ${i + 1} File Size`);
         });
       }
 
@@ -316,6 +319,8 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
         case 'local':
           if (isPublisherMode && publisherFeed) {
             publisherStorage.save(publisherFeed);
+          } else if (isVideoMode) {
+            videoStorage.save(album);
           } else {
             albumStorage.save(album);
           }
@@ -576,9 +581,9 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
               </>
             ) : (
               <>
-                <h3>{album.title || 'Untitled Album'}</h3>
+                <h3>{album.title || (isVideoMode ? 'Untitled Video Feed' : 'Untitled Album')}</h3>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-                  {album.author || 'No author'} &bull; {album.tracks.length} track{album.tracks.length !== 1 ? 's' : ''}
+                  {album.author || 'No author'} &bull; {album.tracks.length} {isVideoMode ? 'video' : 'track'}{album.tracks.length !== 1 ? 's' : ''}
                 </p>
               </>
             )}

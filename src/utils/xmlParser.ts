@@ -75,7 +75,7 @@ export const parseRssFeed = (xmlString: string): Album => {
   // Create album with common elements
   const album: Album = {
     ...common,
-    medium: (getText(channel['podcast:medium']) as 'music' | 'musicL') || 'music',
+    medium: (getText(channel['podcast:medium']) as 'music' | 'video') || 'music',
     bannerArtUrl: '',
     unknownChannelElements: captureUnknownElements(channel, KNOWN_CHANNEL_KEYS),
     tracks: []
@@ -83,7 +83,7 @@ export const parseRssFeed = (xmlString: string): Album => {
 
   // Podcast Index tags
   album.podcastGuid = getText(channel['podcast:guid']) || '';
-  album.medium = (getText(channel['podcast:medium']) as 'music' | 'musicL') || 'music';
+  album.medium = (getText(channel['podcast:medium']) as 'music' | 'video') || 'music';
   album.location = getText(channel['podcast:location']) || '';
 
   // Locked
@@ -619,6 +619,28 @@ export const fetchFeedFromUrl = async (url: string): Promise<string> => {
   }
 
   throw new Error('Failed to fetch feed from URL. Please paste the XML content directly.');
+};
+
+// Detect if XML is a video feed based on medium tag
+export const isVideoFeed = (xmlString: string): boolean => {
+  const parser = new XMLParser({
+    ignoreAttributes: false,
+    attributeNamePrefix: '@_',
+    textNodeName: '#text',
+    parseAttributeValue: true,
+    trimValues: true
+  });
+
+  try {
+    const result = parser.parse(xmlString);
+    const channel = result?.rss?.channel;
+    if (!channel) return false;
+
+    const medium = getText(channel['podcast:medium']);
+    return medium === 'video';
+  } catch {
+    return false;
+  }
 };
 
 // Detect if XML is a publisher feed based on medium tag

@@ -2,11 +2,11 @@
 import { createContext, useContext, useReducer, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import type { Album, Track, Person, PersonRole, ValueRecipient, Funding, PublisherFeed, RemoteItem } from '../types/feed';
-import { createEmptyAlbum, createEmptyTrack, createEmptyPerson, createEmptyPersonRole, createEmptyRecipient, createEmptyFunding, createEmptyPublisherFeed, createEmptyRemoteItem } from '../types/feed';
-import { albumStorage, publisherStorage } from '../utils/storage';
+import { createEmptyAlbum, createEmptyTrack, createEmptyPerson, createEmptyPersonRole, createEmptyRecipient, createEmptyFunding, createEmptyPublisherFeed, createEmptyRemoteItem, createEmptyVideoAlbum } from '../types/feed';
+import { albumStorage, videoStorage, publisherStorage } from '../utils/storage';
 
 // Feed type enum
-export type FeedType = 'album' | 'publisher';
+export type FeedType = 'album' | 'video' | 'publisher';
 
 // Action types
 export type FeedAction =
@@ -46,12 +46,17 @@ export type FeedAction =
   | { type: 'CREATE_NEW_PUBLISHER_FEED' }
   | { type: 'ADD_PUBLISHER_RECIPIENT'; payload?: ValueRecipient }
   | { type: 'UPDATE_PUBLISHER_RECIPIENT'; payload: { index: number; recipient: ValueRecipient } }
-  | { type: 'REMOVE_PUBLISHER_RECIPIENT'; payload: number };
+  | { type: 'REMOVE_PUBLISHER_RECIPIENT'; payload: number }
+  // Video feed actions
+  | { type: 'SET_VIDEO_FEED'; payload: Album }
+  | { type: 'UPDATE_VIDEO_FEED'; payload: Partial<Album> }
+  | { type: 'CREATE_NEW_VIDEO_FEED' };
 
 // State interface
 interface FeedState {
   feedType: FeedType;
   album: Album;
+  videoFeed: Album | null;
   publisherFeed: PublisherFeed | null;
   isDirty: boolean;
 }
@@ -61,57 +66,61 @@ interface FeedState {
 const initialState: FeedState = {
   feedType: 'album',
   album: albumStorage.load() || createEmptyAlbum(),
+  videoFeed: videoStorage.load() || null,
   publisherFeed: publisherStorage.load() || null,
   isDirty: false
 };
 
+// Helper to get the current active album (album or videoFeed based on feedType)
+function getActiveAlbum(state: FeedState): Album {
+  if (state.feedType === 'video' && state.videoFeed) {
+    return state.videoFeed;
+  }
+  return state.album;
+}
+
+// Helper to update the correct feed based on feedType
+function updateActiveFeed(state: FeedState, albumUpdate: Album): FeedState {
+  if (state.feedType === 'video') {
+    return { ...state, videoFeed: albumUpdate, isDirty: true };
+  }
+  return { ...state, album: albumUpdate, isDirty: true };
+}
+
 // Reducer
 function feedReducer(state: FeedState, action: FeedAction): FeedState {
+  // Get the active album for actions that work on the current feed
+  const activeAlbum = getActiveAlbum(state);
+
   switch (action.type) {
     case 'SET_ALBUM':
       return { ...state, album: action.payload, feedType: 'album', isDirty: false };
 
     case 'UPDATE_ALBUM':
-      return {
-        ...state,
-        album: { ...state.album, ...action.payload },
-        isDirty: true
-      };
+      return updateActiveFeed(state, { ...activeAlbum, ...action.payload });
 
     case 'ADD_PERSON':
-      return {
-        ...state,
-        album: {
-          ...state.album,
-          persons: [...state.album.persons, action.payload || createEmptyPerson()]
-        },
-        isDirty: true
-      };
+      return updateActiveFeed(state, {
+        ...activeAlbum,
+        persons: [...activeAlbum.persons, action.payload || createEmptyPerson()]
+      });
 
     case 'UPDATE_PERSON':
-      return {
-        ...state,
-        album: {
-          ...state.album,
-          persons: state.album.persons.map((p, i) =>
-            i === action.payload.index ? action.payload.person : p
-          )
-        },
-        isDirty: true
-      };
+      return updateActiveFeed(state, {
+        ...activeAlbum,
+        persons: activeAlbum.persons.map((p, i) =>
+          i === action.payload.index ? action.payload.person : p
+        )
+      });
 
     case 'REMOVE_PERSON':
-      return {
-        ...state,
-        album: {
-          ...state.album,
-          persons: state.album.persons.filter((_, i) => i !== action.payload)
-        },
-        isDirty: true
-      };
+      return updateActiveFeed(state, {
+        ...activeAlbum,
+        persons: activeAlbum.persons.filter((_, i) => i !== action.payload)
+      });
 
     case 'ADD_PERSON_ROLE': {
-      const persons = [...state.album.persons];
+      const persons = [...activeAlbum.persons];
       const person = persons[action.payload.personIndex];
       if (person) {
         persons[action.payload.personIndex] = {
@@ -119,11 +128,11 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
           roles: [...person.roles, action.payload.role || createEmptyPersonRole()]
         };
       }
-      return { ...state, album: { ...state.album, persons }, isDirty: true };
+      return updateActiveFeed(state, { ...activeAlbum, persons });
     }
 
     case 'UPDATE_PERSON_ROLE': {
-      const persons = [...state.album.persons];
+      const persons = [...activeAlbum.persons];
       const person = persons[action.payload.personIndex];
       if (person) {
         persons[action.payload.personIndex] = {
@@ -133,11 +142,11 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
           )
         };
       }
-      return { ...state, album: { ...state.album, persons }, isDirty: true };
+      return updateActiveFeed(state, { ...activeAlbum, persons });
     }
 
     case 'REMOVE_PERSON_ROLE': {
-      const persons = [...state.album.persons];
+      const persons = [...activeAlbum.persons];
       const person = persons[action.payload.personIndex];
       if (person && person.roles.length > 1) {
         persons[action.payload.personIndex] = {
@@ -145,191 +154,176 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
           roles: person.roles.filter((_, i) => i !== action.payload.roleIndex)
         };
       }
-      return { ...state, album: { ...state.album, persons }, isDirty: true };
+      return updateActiveFeed(state, { ...activeAlbum, persons });
     }
 
     case 'ADD_RECIPIENT':
-      return {
-        ...state,
-        album: {
-          ...state.album,
-          value: {
-            ...state.album.value,
-            recipients: [...state.album.value.recipients, action.payload || createEmptyRecipient()]
-          }
-        },
-        isDirty: true
-      };
+      return updateActiveFeed(state, {
+        ...activeAlbum,
+        value: {
+          ...activeAlbum.value,
+          recipients: [...activeAlbum.value.recipients, action.payload || createEmptyRecipient()]
+        }
+      });
 
     case 'UPDATE_RECIPIENT':
-      return {
-        ...state,
-        album: {
-          ...state.album,
-          value: {
-            ...state.album.value,
-            recipients: state.album.value.recipients.map((r, i) =>
-              i === action.payload.index ? action.payload.recipient : r
-            )
-          }
-        },
-        isDirty: true
-      };
+      return updateActiveFeed(state, {
+        ...activeAlbum,
+        value: {
+          ...activeAlbum.value,
+          recipients: activeAlbum.value.recipients.map((r, i) =>
+            i === action.payload.index ? action.payload.recipient : r
+          )
+        }
+      });
 
     case 'REMOVE_RECIPIENT':
-      return {
-        ...state,
-        album: {
-          ...state.album,
-          value: {
-            ...state.album.value,
-            recipients: state.album.value.recipients.filter((_, i) => i !== action.payload)
-          }
-        },
-        isDirty: true
-      };
+      return updateActiveFeed(state, {
+        ...activeAlbum,
+        value: {
+          ...activeAlbum.value,
+          recipients: activeAlbum.value.recipients.filter((_, i) => i !== action.payload)
+        }
+      });
 
     case 'ADD_FUNDING':
-      return {
-        ...state,
-        album: {
-          ...state.album,
-          funding: [...(state.album.funding || []), action.payload || createEmptyFunding()]
-        },
-        isDirty: true
-      };
+      return updateActiveFeed(state, {
+        ...activeAlbum,
+        funding: [...(activeAlbum.funding || []), action.payload || createEmptyFunding()]
+      });
 
     case 'UPDATE_FUNDING':
-      return {
-        ...state,
-        album: {
-          ...state.album,
-          funding: (state.album.funding || []).map((f, i) =>
-            i === action.payload.index ? action.payload.funding : f
-          )
-        },
-        isDirty: true
-      };
+      return updateActiveFeed(state, {
+        ...activeAlbum,
+        funding: (activeAlbum.funding || []).map((f, i) =>
+          i === action.payload.index ? action.payload.funding : f
+        )
+      });
 
     case 'REMOVE_FUNDING':
-      return {
-        ...state,
-        album: {
-          ...state.album,
-          funding: (state.album.funding || []).filter((_, i) => i !== action.payload)
-        },
-        isDirty: true
-      };
+      return updateActiveFeed(state, {
+        ...activeAlbum,
+        funding: (activeAlbum.funding || []).filter((_, i) => i !== action.payload)
+      });
 
     case 'ADD_TRACK': {
-      const newTrack = action.payload || createEmptyTrack(state.album.tracks.length + 1);
-      return {
-        ...state,
-        album: {
-          ...state.album,
-          tracks: [...state.album.tracks, newTrack]
-        },
-        isDirty: true
-      };
+      const newTrack = action.payload || createEmptyTrack(activeAlbum.tracks.length + 1);
+      return updateActiveFeed(state, {
+        ...activeAlbum,
+        tracks: [...activeAlbum.tracks, newTrack]
+      });
     }
 
     case 'UPDATE_TRACK':
-      return {
-        ...state,
-        album: {
-          ...state.album,
-          tracks: state.album.tracks.map((t, i) =>
-            i === action.payload.index ? { ...t, ...action.payload.track } : t
-          )
-        },
-        isDirty: true
-      };
+      return updateActiveFeed(state, {
+        ...activeAlbum,
+        tracks: activeAlbum.tracks.map((t, i) =>
+          i === action.payload.index ? { ...t, ...action.payload.track } : t
+        )
+      });
 
     case 'REMOVE_TRACK':
-      return {
-        ...state,
-        album: {
-          ...state.album,
-          tracks: state.album.tracks
-            .filter((_, i) => i !== action.payload)
-            .map((t, i) => ({ ...t, trackNumber: i + 1 }))
-        },
-        isDirty: true
-      };
+      return updateActiveFeed(state, {
+        ...activeAlbum,
+        tracks: activeAlbum.tracks
+          .filter((_, i) => i !== action.payload)
+          .map((t, i) => ({ ...t, trackNumber: i + 1 }))
+      });
 
     case 'REORDER_TRACKS': {
-      const tracks = [...state.album.tracks];
+      const tracks = [...activeAlbum.tracks];
       const [removed] = tracks.splice(action.payload.fromIndex, 1);
       tracks.splice(action.payload.toIndex, 0, removed);
-      return {
-        ...state,
-        album: {
-          ...state.album,
-          tracks: tracks.map((t, i) => ({ ...t, trackNumber: i + 1 }))
-        },
-        isDirty: true
-      };
+      return updateActiveFeed(state, {
+        ...activeAlbum,
+        tracks: tracks.map((t, i) => ({ ...t, trackNumber: i + 1 }))
+      });
     }
 
     case 'ADD_TRACK_PERSON': {
-      const tracks = [...state.album.tracks];
+      const tracks = [...activeAlbum.tracks];
       const track = tracks[action.payload.trackIndex];
       if (track) {
-        track.persons = [...track.persons, action.payload.person || createEmptyPerson()];
+        tracks[action.payload.trackIndex] = {
+          ...track,
+          persons: [...track.persons, action.payload.person || createEmptyPerson()]
+        };
       }
-      return { ...state, album: { ...state.album, tracks }, isDirty: true };
+      return updateActiveFeed(state, { ...activeAlbum, tracks });
     }
 
     case 'UPDATE_TRACK_PERSON': {
-      const tracks = [...state.album.tracks];
+      const tracks = [...activeAlbum.tracks];
       const track = tracks[action.payload.trackIndex];
       if (track) {
-        track.persons = track.persons.map((p, i) =>
-          i === action.payload.personIndex ? action.payload.person : p
-        );
+        tracks[action.payload.trackIndex] = {
+          ...track,
+          persons: track.persons.map((p, i) =>
+            i === action.payload.personIndex ? action.payload.person : p
+          )
+        };
       }
-      return { ...state, album: { ...state.album, tracks }, isDirty: true };
+      return updateActiveFeed(state, { ...activeAlbum, tracks });
     }
 
     case 'REMOVE_TRACK_PERSON': {
-      const tracks = [...state.album.tracks];
+      const tracks = [...activeAlbum.tracks];
       const track = tracks[action.payload.trackIndex];
       if (track) {
-        track.persons = track.persons.filter((_, i) => i !== action.payload.personIndex);
+        tracks[action.payload.trackIndex] = {
+          ...track,
+          persons: track.persons.filter((_, i) => i !== action.payload.personIndex)
+        };
       }
-      return { ...state, album: { ...state.album, tracks }, isDirty: true };
+      return updateActiveFeed(state, { ...activeAlbum, tracks });
     }
 
     case 'ADD_TRACK_RECIPIENT': {
-      const tracks = [...state.album.tracks];
+      const tracks = [...activeAlbum.tracks];
       const track = tracks[action.payload.trackIndex];
       if (track) {
-        if (!track.value) {
-          track.value = { type: 'lightning', method: 'keysend', recipients: [] };
-        }
-        track.value.recipients = [...track.value.recipients, action.payload.recipient || createEmptyRecipient()];
+        const value = track.value || { type: 'lightning' as const, method: 'keysend' as const, recipients: [] };
+        tracks[action.payload.trackIndex] = {
+          ...track,
+          value: {
+            ...value,
+            recipients: [...value.recipients, action.payload.recipient || createEmptyRecipient()]
+          }
+        };
       }
-      return { ...state, album: { ...state.album, tracks }, isDirty: true };
+      return updateActiveFeed(state, { ...activeAlbum, tracks });
     }
 
     case 'UPDATE_TRACK_RECIPIENT': {
-      const tracks = [...state.album.tracks];
+      const tracks = [...activeAlbum.tracks];
       const track = tracks[action.payload.trackIndex];
       if (track && track.value) {
-        track.value.recipients = track.value.recipients.map((r, i) =>
-          i === action.payload.recipientIndex ? action.payload.recipient : r
-        );
+        tracks[action.payload.trackIndex] = {
+          ...track,
+          value: {
+            ...track.value,
+            recipients: track.value.recipients.map((r, i) =>
+              i === action.payload.recipientIndex ? action.payload.recipient : r
+            )
+          }
+        };
       }
-      return { ...state, album: { ...state.album, tracks }, isDirty: true };
+      return updateActiveFeed(state, { ...activeAlbum, tracks });
     }
 
     case 'REMOVE_TRACK_RECIPIENT': {
-      const tracks = [...state.album.tracks];
+      const tracks = [...activeAlbum.tracks];
       const track = tracks[action.payload.trackIndex];
       if (track && track.value) {
-        track.value.recipients = track.value.recipients.filter((_, i) => i !== action.payload.recipientIndex);
+        tracks[action.payload.trackIndex] = {
+          ...track,
+          value: {
+            ...track.value,
+            recipients: track.value.recipients.filter((_, i) => i !== action.payload.recipientIndex)
+          }
+        };
       }
-      return { ...state, album: { ...state.album, tracks }, isDirty: true };
+      return updateActiveFeed(state, { ...activeAlbum, tracks });
     }
 
     case 'RESET':
@@ -453,6 +447,26 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
         isDirty: true
       };
 
+    // Video feed actions
+    case 'SET_VIDEO_FEED':
+      return { ...state, videoFeed: action.payload, feedType: 'video', isDirty: false };
+
+    case 'UPDATE_VIDEO_FEED':
+      if (!state.videoFeed) return state;
+      return {
+        ...state,
+        videoFeed: { ...state.videoFeed, ...action.payload },
+        isDirty: true
+      };
+
+    case 'CREATE_NEW_VIDEO_FEED':
+      return {
+        ...state,
+        videoFeed: createEmptyVideoAlbum(),
+        feedType: 'video',
+        isDirty: true
+      };
+
     default:
       return state;
   }
@@ -474,6 +488,13 @@ export function FeedProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     albumStorage.save(state.album);
   }, [state.album]);
+
+  // Auto-save video feed to localStorage
+  useEffect(() => {
+    if (state.videoFeed) {
+      videoStorage.save(state.videoFeed);
+    }
+  }, [state.videoFeed]);
 
   // Auto-save publisher feed to localStorage
   useEffect(() => {

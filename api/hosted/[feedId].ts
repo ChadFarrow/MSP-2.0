@@ -6,9 +6,9 @@ import { parseAuthHeader, parseFeedAuthHeader } from '../_utils/adminAuth.js';
 const PI_API_KEY = process.env.PODCASTINDEX_API_KEY;
 const PI_API_SECRET = process.env.PODCASTINDEX_API_SECRET;
 
-// Notify Podcast Index to refresh feed (fire and forget)
-async function notifyPodcastIndex(feedUrl: string): Promise<void> {
-  if (!PI_API_KEY || !PI_API_SECRET) return;
+// Notify Podcast Index to refresh feed and return PI ID if available
+async function notifyPodcastIndex(feedUrl: string): Promise<number | null> {
+  if (!PI_API_KEY || !PI_API_SECRET) return null;
 
   try {
     const apiHeaderTime = Math.floor(Date.now() / 1000);
@@ -23,13 +23,26 @@ async function notifyPodcastIndex(feedUrl: string): Promise<void> {
       'User-Agent': 'MSP2.0/1.0 (Music Side Project Studio)'
     };
 
-    await fetch(`https://api.podcastindex.org/api/1.0/add/byfeedurl?url=${encodeURIComponent(feedUrl)}`, {
+    const response = await fetch(`https://api.podcastindex.org/api/1.0/add/byfeedurl?url=${encodeURIComponent(feedUrl)}`, {
       method: 'POST',
       headers
     });
+
+    const text = await response.text();
+    if (text) {
+      try {
+        const data = JSON.parse(text);
+        if (data.feed?.id) {
+          return data.feed.id;
+        }
+      } catch {
+        // JSON parse failed, ignore
+      }
+    }
   } catch {
     // Silent fail - don't block feed update
   }
+  return null;
 }
 
 // Get base URL from request
@@ -149,6 +162,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         let existingTitle: string | undefined;
         let ownerPubkey: string | undefined;
         let linkedAt: string | undefined;
+        let existingPodcastIndexId: number | undefined;
 
         const editToken = req.headers['x-edit-token'];
         const authHeader = req.headers['authorization'] as string | undefined;
@@ -163,12 +177,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           existingTitle = undefined;
           ownerPubkey = undefined;
           linkedAt = undefined;
+          existingPodcastIndexId = undefined;
         } else {
           storedHash = metadata.editTokenHash;
           createdAt = metadata.createdAt;
           existingTitle = metadata.title;
           ownerPubkey = metadata.ownerPubkey;
           linkedAt = metadata.linkedAt;
+          existingPodcastIndexId = metadata.podcastIndexId;
 
           // Validate auth: accept either token or Nostr (if linked)
           let isAuthorized = false;
@@ -224,24 +240,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           await del(existingMeta.url);
         }
 
+        // Notify Podcast Index and get PI ID (may update existing ID)
+        const stableUrl = `${getBaseUrl(req)}/api/hosted/${feedId}.xml`;
+        const newPodcastIndexId = await notifyPodcastIndex(stableUrl);
+        const podcastIndexId = newPodcastIndexId || existingPodcastIndexId;
+
         await put(metaPath, JSON.stringify({
           editTokenHash: storedHash,
           createdAt,
           lastUpdated: Date.now().toString(),
           title: (typeof title === 'string' ? title : existingTitle || 'Untitled Feed').slice(0, 200),
           ownerPubkey,
-          linkedAt
+          linkedAt,
+          podcastIndexId
         }), {
           access: 'public',
           contentType: 'application/json',
           addRandomSuffix: false
         });
 
-        // Notify Podcast Index to refresh (fire and forget)
-        const stableUrl = `${getBaseUrl(req)}/api/hosted/${feedId}.xml`;
-        notifyPodcastIndex(stableUrl);
-
-        return res.status(200).json({ success: true });
+        return res.status(200).json({ success: true, podcastIndexId });
       }
 
       case 'PATCH': {

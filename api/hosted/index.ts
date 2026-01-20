@@ -6,9 +6,9 @@ import { parseAuthHeader, parseFeedAuthHeader } from '../_utils/adminAuth.js';
 const PI_API_KEY = process.env.PODCASTINDEX_API_KEY;
 const PI_API_SECRET = process.env.PODCASTINDEX_API_SECRET;
 
-// Submit feed to Podcast Index (fire and forget)
-async function notifyPodcastIndex(feedUrl: string): Promise<void> {
-  if (!PI_API_KEY || !PI_API_SECRET) return;
+// Submit feed to Podcast Index and return PI ID if available
+async function notifyPodcastIndex(feedUrl: string): Promise<number | null> {
+  if (!PI_API_KEY || !PI_API_SECRET) return null;
 
   try {
     const apiHeaderTime = Math.floor(Date.now() / 1000);
@@ -23,13 +23,64 @@ async function notifyPodcastIndex(feedUrl: string): Promise<void> {
       'User-Agent': 'MSP2.0/1.0 (Music Side Project Studio)'
     };
 
-    await fetch(`https://api.podcastindex.org/api/1.0/add/byfeedurl?url=${encodeURIComponent(feedUrl)}`, {
+    const response = await fetch(`https://api.podcastindex.org/api/1.0/add/byfeedurl?url=${encodeURIComponent(feedUrl)}`, {
       method: 'POST',
       headers
     });
+
+    const text = await response.text();
+    if (text) {
+      try {
+        const data = JSON.parse(text);
+        if (data.feed?.id) {
+          return data.feed.id;
+        }
+      } catch {
+        // JSON parse failed, ignore
+      }
+    }
   } catch {
     // Silent fail - don't block feed creation
   }
+  return null;
+}
+
+// Look up existing feed's PI ID from Podcast Index
+async function lookupPodcastIndexId(feedUrl: string): Promise<number | null> {
+  if (!PI_API_KEY || !PI_API_SECRET) return null;
+
+  try {
+    const apiHeaderTime = Math.floor(Date.now() / 1000);
+    const hash = createHash('sha1')
+      .update(PI_API_KEY + PI_API_SECRET + apiHeaderTime)
+      .digest('hex');
+
+    const headers = {
+      'X-Auth-Key': PI_API_KEY,
+      'X-Auth-Date': apiHeaderTime.toString(),
+      'Authorization': hash,
+      'User-Agent': 'MSP2.0/1.0 (Music Side Project Studio)'
+    };
+
+    const response = await fetch(`https://api.podcastindex.org/api/1.0/podcasts/byfeedurl?url=${encodeURIComponent(feedUrl)}`, {
+      headers
+    });
+
+    const text = await response.text();
+    if (text) {
+      try {
+        const data = JSON.parse(text);
+        if (data.feed?.id) {
+          return data.feed.id;
+        }
+      } catch {
+        // JSON parse failed, ignore
+      }
+    }
+  } catch {
+    // Silent fail
+  }
+  return null;
 }
 
 // Generate a secure edit token
@@ -64,6 +115,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
+    const baseUrl = getBaseUrl(req);
+
     try {
       const { blobs } = await list({ prefix: 'feeds/' });
       const metaBlobs = blobs.filter(b => b.pathname.endsWith('.meta.json'));
@@ -92,7 +145,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             }
           }
 
-          return { feedId, author, ...meta };
+          // Look up PI ID if missing and update metadata in background
+          let podcastIndexId = meta.podcastIndexId;
+          if (!podcastIndexId) {
+            const feedUrl = `${baseUrl}/api/hosted/${feedId}.xml`;
+            podcastIndexId = await lookupPodcastIndexId(feedUrl);
+            if (podcastIndexId) {
+              // Update metadata with PI ID (don't await - fire and forget)
+              put(`feeds/${feedId}.meta.json`, JSON.stringify({
+                ...meta,
+                podcastIndexId
+              }), {
+                access: 'public',
+                contentType: 'application/json',
+                addRandomSuffix: false
+              }).catch(() => {});
+            }
+          }
+
+          return { feedId, author, ...meta, podcastIndexId };
         })
       );
 
@@ -175,30 +246,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       addRandomSuffix: false
     });
 
+    // Build stable URL
+    const stableUrl = `${getBaseUrl(req)}/api/hosted/${feedId}.xml`;
+
+    // Notify Podcast Index and get PI ID
+    const podcastIndexId = await notifyPodcastIndex(stableUrl);
+
     // Store metadata separately (Vercel Blob doesn't support custom metadata)
     await put(`feeds/${feedId}.meta.json`, JSON.stringify({
       editTokenHash,
       createdAt: Date.now().toString(),
       title: (typeof title === 'string' ? title : 'Untitled Feed').slice(0, 200),
       ownerPubkey,
-      linkedAt
+      linkedAt,
+      podcastIndexId
     }), {
       access: 'public',
       contentType: 'application/json',
       addRandomSuffix: false
     });
 
-    // Build stable URL
-    const stableUrl = `${getBaseUrl(req)}/api/hosted/${feedId}.xml`;
-
-    // Notify Podcast Index (fire and forget)
-    notifyPodcastIndex(stableUrl);
-
     return res.status(201).json({
       feedId,
       editToken, // Only returned once at creation!
       url: stableUrl,
-      blobUrl: blob.url
+      blobUrl: blob.url,
+      podcastIndexId
     });
   } catch (error) {
     console.error('Error creating hosted feed:', error);

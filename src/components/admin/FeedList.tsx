@@ -9,6 +9,7 @@ interface FeedInfo {
   createdAt?: string;
   lastUpdated?: string;
   ownerPubkey?: string;
+  podcastIndexId?: number;
 }
 
 interface FeedListProps {
@@ -118,12 +119,14 @@ export function FeedList({ onError, currentUserPubkey }: FeedListProps) {
                 </td>
                 <td>
                   <a
-                    href={`https://podcastindex.org/search?q=${encodeURIComponent(`${window.location.origin}/api/hosted/${feed.feedId}.xml`)}`}
+                    href={feed.podcastIndexId
+                      ? `https://podcastindex.org/podcast/${feed.podcastIndexId}`
+                      : `https://podcastindex.org/search?q=${encodeURIComponent(feed.title || feed.feedId)}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="rss-link"
                   >
-                    View on PI
+                    {feed.podcastIndexId ? 'View on PI' : 'Search PI'}
                   </a>
                 </td>
                 <td>{formatDate(feed.createdAt)}</td>
@@ -180,12 +183,14 @@ export function FeedList({ onError, currentUserPubkey }: FeedListProps) {
                   </td>
                   <td>
                     <a
-                      href={`https://podcastindex.org/search?q=${encodeURIComponent(`${window.location.origin}/api/hosted/${feed.feedId}.xml`)}`}
+                      href={feed.podcastIndexId
+                        ? `https://podcastindex.org/podcast/${feed.podcastIndexId}`
+                        : `https://podcastindex.org/search?q=${encodeURIComponent(feed.title || feed.feedId)}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="rss-link"
                     >
-                      View on PI
+                      {feed.podcastIndexId ? 'View on PI' : 'Search PI'}
                     </a>
                   </td>
                   <td className="feed-id">{feed.ownerPubkey ? truncatePubkey(feed.ownerPubkey) : 'Unknown'}</td>

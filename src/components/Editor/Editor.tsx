@@ -111,20 +111,20 @@ export function Editor() {
 
   // Handle album changes during session (e.g., importing a new album)
   useEffect(() => {
-    if (album?.tracks && albumGuid !== lastProcessedGuidRef.current) {
+    if (albumGuid && albumGuid !== lastProcessedGuidRef.current) {
       lastProcessedGuidRef.current = albumGuid;
       // Check cache first
-      if (albumGuid && collapsedCache.has(albumGuid)) {
+      if (collapsedCache.has(albumGuid)) {
         setCollapsedTracks(new Set(collapsedCache.get(albumGuid)!));
-      } else {
+      } else if (album?.tracks) {
         // New album - collapse tracks with content
         const tracksWithContent = album.tracks.filter(t => t.title || t.enclosureUrl);
         const collapsed = new Set(tracksWithContent.map(t => t.id));
-        if (albumGuid) collapsedCache.set(albumGuid, collapsed);
+        collapsedCache.set(albumGuid, collapsed);
         setCollapsedTracks(collapsed);
       }
     }
-  }, [albumGuid, album?.tracks]);
+  }, [albumGuid]); // Only depend on albumGuid, not tracks
 
   const toggleTrackCollapse = (trackId: string) => {
     setCollapsedTracks(prev => {

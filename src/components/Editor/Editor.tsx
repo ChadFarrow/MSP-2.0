@@ -79,9 +79,21 @@ export function Editor() {
   const [collapsedTracks, setCollapsedTracks] = useState<Record<string, boolean>>({});
   const [showRolesModal, setShowRolesModal] = useState(false);
 
-  // Reset collapse state when album changes (new album, import, etc.)
+  // Set collapse state when album changes (new album, import, etc.)
+  // Imported tracks (with content) start collapsed, empty tracks start expanded
   useEffect(() => {
-    setCollapsedTracks({});
+    if (album?.tracks) {
+      const collapsed: Record<string, boolean> = {};
+      album.tracks.forEach(t => {
+        // Collapse tracks that have content (imported), expand empty tracks (new)
+        if (t.title || t.enclosureUrl) {
+          collapsed[t.id] = true;
+        }
+      });
+      setCollapsedTracks(collapsed);
+    } else {
+      setCollapsedTracks({});
+    }
   }, [album?.podcastGuid]);
 
   const toggleTrackCollapse = (trackId: string) => {

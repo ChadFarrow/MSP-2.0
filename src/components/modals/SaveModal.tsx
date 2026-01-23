@@ -104,7 +104,11 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
   // Notify Podcast Index and return the PI page URL if available
   const notifyPodcastIndex = async (feedUrl: string): Promise<string | null> => {
     try {
-      const res = await fetch(`/api/pubnotify?url=${encodeURIComponent(feedUrl)}`);
+      let apiUrl = `/api/pubnotify?url=${encodeURIComponent(feedUrl)}`;
+      if (currentFeedGuid) {
+        apiUrl += `&guid=${encodeURIComponent(currentFeedGuid)}`;
+      }
+      const res = await fetch(apiUrl);
       const data = await res.json();
       if (data.success) {
         if (data.podcastIndexUrl) {
@@ -500,14 +504,18 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
     setMessage(null);
 
     try {
-      const response = await fetch(`/api/pubnotify?url=${encodeURIComponent(podcastIndexUrl.trim())}`);
+      let apiUrl = `/api/pubnotify?url=${encodeURIComponent(podcastIndexUrl.trim())}`;
+      if (currentFeedGuid) {
+        apiUrl += `&guid=${encodeURIComponent(currentFeedGuid)}`;
+      }
+      const response = await fetch(apiUrl);
       const data = await response.json();
 
       if (!response.ok) {
         throw new Error(data.error || 'Failed to submit to Podcast Index');
       }
 
-      // Generate search URL so user can view their feed on Podcast Index
+      // Use direct link if available, otherwise fall back to search URL
       const searchUrl = `https://podcastindex.org/search?q=${encodeURIComponent(podcastIndexUrl.trim())}`;
       setPodcastIndexPageUrl(data.podcastIndexUrl || searchUrl);
       setMessage({ type: 'success', text: 'Feed submitted! It may take a moment to appear in the index.' });

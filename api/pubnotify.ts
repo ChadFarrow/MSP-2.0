@@ -27,11 +27,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { url } = req.query;
+  const { url, guid } = req.query;
 
   if (!url || typeof url !== 'string') {
     return res.status(400).json({ error: 'Missing url parameter' });
   }
+
+  // GUID is optional but preferred for lookup
+  const podcastGuid = typeof guid === 'string' ? guid : undefined;
 
   try {
     // Validate URL format
@@ -68,23 +71,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // Then, look up the feed to get its Podcast Index ID (requires auth)
+    // Try GUID lookup first (more reliable), fall back to URL lookup
     let podcastIndexId: number | null = null;
     let podcastIndexPageUrl: string | null = null;
 
     const authHeaders = getAuthHeaders();
     if (authHeaders) {
-      try {
-        const lookupUrl = `https://api.podcastindex.org/api/1.0/podcasts/byfeedurl?url=${encodeURIComponent(url)}`;
-        const lookupResponse = await fetch(lookupUrl, { headers: authHeaders });
-        const lookupData = await lookupResponse.json();
+      // Try lookup by GUID first if available
+      if (podcastGuid) {
+        try {
+          const lookupUrl = `https://api.podcastindex.org/api/1.0/podcasts/byguid?guid=${encodeURIComponent(podcastGuid)}`;
+          const lookupResponse = await fetch(lookupUrl, { headers: authHeaders });
+          const lookupData = await lookupResponse.json();
 
-        if (lookupResponse.ok && lookupData.feed?.id) {
-          podcastIndexId = lookupData.feed.id;
-          podcastIndexPageUrl = `https://podcastindex.org/podcast/${podcastIndexId}`;
+          if (lookupResponse.ok && lookupData.feed?.id) {
+            podcastIndexId = lookupData.feed.id;
+            podcastIndexPageUrl = `https://podcastindex.org/podcast/${podcastIndexId}`;
+          }
+        } catch (lookupErr) {
+          console.warn('Failed to lookup feed by GUID:', lookupErr);
         }
-      } catch (lookupErr) {
-        // Lookup failed but pubnotify succeeded, continue without ID
-        console.warn('Failed to lookup feed ID:', lookupErr);
+      }
+
+      // Fall back to URL lookup if GUID lookup didn't find a result
+      if (!podcastIndexId) {
+        try {
+          const lookupUrl = `https://api.podcastindex.org/api/1.0/podcasts/byfeedurl?url=${encodeURIComponent(url)}`;
+          const lookupResponse = await fetch(lookupUrl, { headers: authHeaders });
+          const lookupData = await lookupResponse.json();
+
+          if (lookupResponse.ok && lookupData.feed?.id) {
+            podcastIndexId = lookupData.feed.id;
+            podcastIndexPageUrl = `https://podcastindex.org/podcast/${podcastIndexId}`;
+          }
+        } catch (lookupErr) {
+          // Lookup failed but pubnotify succeeded, continue without ID
+          console.warn('Failed to lookup feed by URL:', lookupErr);
+        }
       }
     }
 

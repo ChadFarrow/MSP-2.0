@@ -208,10 +208,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Use podcast GUID as feed ID (one feed per podcast)
     const feedId = podcastGuid;
 
-    // Check if feed already exists
-    const { blobs } = await list({ prefix: `feeds/${feedId}.xml` });
-    const existingFeed = blobs.find(b => b.pathname === `feeds/${feedId}.xml`);
-    if (existingFeed) {
+    // Check if feed already exists by looking for metadata file
+    // (metadata is what defines a "managed" feed with credentials)
+    const { blobs } = await list({ prefix: `feeds/${feedId}.meta.json` });
+    const existingMeta = blobs.find(b => b.pathname === `feeds/${feedId}.meta.json`);
+    if (existingMeta) {
       return res.status(409).json({
         error: 'Feed already exists for this podcast. Use your edit token to update it, or use the Restore flow.',
         feedId
@@ -238,10 +239,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // Store feed XML in Vercel Blob
+    // allowOverwrite handles orphaned blobs from incomplete deletions
     const blob = await put(`feeds/${feedId}.xml`, xml, {
       access: 'public',
       contentType: 'application/rss+xml',
-      addRandomSuffix: false
+      addRandomSuffix: false,
+      allowOverwrite: true
     });
 
     // Build stable URL
@@ -261,7 +264,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }), {
       access: 'public',
       contentType: 'application/json',
-      addRandomSuffix: false
+      addRandomSuffix: false,
+      allowOverwrite: true
     });
 
     return res.status(201).json({

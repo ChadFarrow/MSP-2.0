@@ -234,7 +234,7 @@ const generateRemoteItemXml = (item: RemoteItem, level: number): string => {
   if (item.feedGuid) attrs.push(`feedGuid="${escapeXml(item.feedGuid)}"`);
   if (item.feedUrl) attrs.push(`feedUrl="${escapeXml(item.feedUrl)}"`);
   if (item.itemGuid) attrs.push(`itemGuid="${escapeXml(item.itemGuid)}"`);
-  if (item.medium) attrs.push(`medium="${escapeXml(item.medium)}"`);
+  attrs.push(`medium="${escapeXml(item.medium || 'music')}"`);
   if (item.image) attrs.push(`feedImg="${escapeXml(item.image)}"`);
 
   if (item.title) {

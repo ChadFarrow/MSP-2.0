@@ -98,7 +98,8 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
         feedGuid: result.podcastGuid,
         feedUrl: result.url,
         title: result.title,
-        image: result.image
+        image: result.image,
+        medium: 'music'
       }
     });
     setSearchResults(prev => prev.filter(r => r.id !== result.id));
@@ -319,7 +320,7 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
         ))}
         <button
           className="add-item-btn"
-          onClick={() => dispatch({ type: 'ADD_REMOTE_ITEM', payload: createEmptyRemoteItem() })}
+          onClick={() => dispatch({ type: 'ADD_REMOTE_ITEM', payload: { ...createEmptyRemoteItem(), medium: 'music' } })}
         >
           + Add Feed
         </button>

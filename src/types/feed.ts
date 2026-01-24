@@ -331,7 +331,8 @@ export const createEmptyFunding = (): Funding => ({
 export const createEmptyRemoteItem = (): RemoteItem => ({
   feedGuid: '',
   feedUrl: '',
-  title: ''
+  title: '',
+  medium: 'music'
 });
 
 // Default empty publisher reference

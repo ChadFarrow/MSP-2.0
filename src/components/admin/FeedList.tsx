@@ -121,12 +121,12 @@ export function FeedList({ onError, currentUserPubkey }: FeedListProps) {
                   <a
                     href={feed.podcastIndexId
                       ? `https://podcastindex.org/podcast/${feed.podcastIndexId}`
-                      : `https://podcastindex.org/search?q=${encodeURIComponent(feed.title || feed.feedId)}`}
+                      : `https://podcastindex.org/podcast/podcastguid:${feed.feedId}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="rss-link"
                   >
-                    {feed.podcastIndexId ? 'View on PI' : 'Search PI'}
+                    View on PI
                   </a>
                 </td>
                 <td>{formatDate(feed.createdAt)}</td>
@@ -185,12 +185,12 @@ export function FeedList({ onError, currentUserPubkey }: FeedListProps) {
                     <a
                       href={feed.podcastIndexId
                         ? `https://podcastindex.org/podcast/${feed.podcastIndexId}`
-                        : `https://podcastindex.org/search?q=${encodeURIComponent(feed.title || feed.feedId)}`}
+                        : `https://podcastindex.org/podcast/podcastguid:${feed.feedId}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="rss-link"
                     >
-                      {feed.podcastIndexId ? 'View on PI' : 'Search PI'}
+                      View on PI
                     </a>
                   </td>
                   <td className="feed-id">{feed.ownerPubkey ? truncatePubkey(feed.ownerPubkey) : 'Unknown'}</td>

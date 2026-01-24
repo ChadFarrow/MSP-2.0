@@ -106,7 +106,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
   useEffect(() => {
     if (mode === 'blossom' && stableUrl) {
       setPodcastIndexUrl(stableUrl);
-    } else if (mode === 'hosted' && hostedUrl) {
+    } else if ((mode === 'hosted' || mode === 'podcastIndex') && hostedUrl) {
       setPodcastIndexUrl(hostedUrl);
     }
   }, [mode, hostedUrl, stableUrl]);

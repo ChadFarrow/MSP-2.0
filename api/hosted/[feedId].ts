@@ -30,7 +30,8 @@ async function getMetadata(feedId: string): Promise<FeedMetadata | null> {
   }
 
   const response = await fetch(metaBlob.url);
-  return response.json();
+  const text = await response.text();
+  return text ? JSON.parse(text) : null;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {

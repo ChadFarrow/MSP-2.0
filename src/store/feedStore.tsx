@@ -272,63 +272,79 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
     }
 
     case 'ADD_TRACK_PERSON': {
-      const tracks = [...state.album.tracks];
-      const track = tracks[action.payload.trackIndex];
-      if (track) {
-        track.persons = [...track.persons, action.payload.person || createEmptyPerson()];
-      }
+      const tracks = state.album.tracks.map((track, i) =>
+        i === action.payload.trackIndex
+          ? { ...track, persons: [...track.persons, action.payload.person || createEmptyPerson()] }
+          : track
+      );
       return { ...state, album: { ...state.album, tracks }, isDirty: true };
     }
 
     case 'UPDATE_TRACK_PERSON': {
-      const tracks = [...state.album.tracks];
-      const track = tracks[action.payload.trackIndex];
-      if (track) {
-        track.persons = track.persons.map((p, i) =>
-          i === action.payload.personIndex ? action.payload.person : p
-        );
-      }
+      const tracks = state.album.tracks.map((track, i) =>
+        i === action.payload.trackIndex
+          ? {
+              ...track,
+              persons: track.persons.map((p, pi) =>
+                pi === action.payload.personIndex ? action.payload.person : p
+              )
+            }
+          : track
+      );
       return { ...state, album: { ...state.album, tracks }, isDirty: true };
     }
 
     case 'REMOVE_TRACK_PERSON': {
-      const tracks = [...state.album.tracks];
-      const track = tracks[action.payload.trackIndex];
-      if (track) {
-        track.persons = track.persons.filter((_, i) => i !== action.payload.personIndex);
-      }
+      const tracks = state.album.tracks.map((track, i) =>
+        i === action.payload.trackIndex
+          ? { ...track, persons: track.persons.filter((_, pi) => pi !== action.payload.personIndex) }
+          : track
+      );
       return { ...state, album: { ...state.album, tracks }, isDirty: true };
     }
 
     case 'ADD_TRACK_RECIPIENT': {
-      const tracks = [...state.album.tracks];
-      const track = tracks[action.payload.trackIndex];
-      if (track) {
-        if (!track.value) {
-          track.value = { type: 'lightning', method: 'keysend', recipients: [] };
-        }
-        track.value.recipients = [...track.value.recipients, action.payload.recipient || createEmptyRecipient()];
-      }
+      const tracks = state.album.tracks.map((track, i) => {
+        if (i !== action.payload.trackIndex) return track;
+        const value = track.value || { type: 'lightning', method: 'keysend', recipients: [] };
+        return {
+          ...track,
+          value: {
+            ...value,
+            recipients: [...value.recipients, action.payload.recipient || createEmptyRecipient()]
+          }
+        };
+      });
       return { ...state, album: { ...state.album, tracks }, isDirty: true };
     }
 
     case 'UPDATE_TRACK_RECIPIENT': {
-      const tracks = [...state.album.tracks];
-      const track = tracks[action.payload.trackIndex];
-      if (track && track.value) {
-        track.value.recipients = track.value.recipients.map((r, i) =>
-          i === action.payload.recipientIndex ? action.payload.recipient : r
-        );
-      }
+      const tracks = state.album.tracks.map((track, i) => {
+        if (i !== action.payload.trackIndex || !track.value) return track;
+        return {
+          ...track,
+          value: {
+            ...track.value,
+            recipients: track.value.recipients.map((r, ri) =>
+              ri === action.payload.recipientIndex ? action.payload.recipient : r
+            )
+          }
+        };
+      });
       return { ...state, album: { ...state.album, tracks }, isDirty: true };
     }
 
     case 'REMOVE_TRACK_RECIPIENT': {
-      const tracks = [...state.album.tracks];
-      const track = tracks[action.payload.trackIndex];
-      if (track && track.value) {
-        track.value.recipients = track.value.recipients.filter((_, i) => i !== action.payload.recipientIndex);
-      }
+      const tracks = state.album.tracks.map((track, i) => {
+        if (i !== action.payload.trackIndex || !track.value) return track;
+        return {
+          ...track,
+          value: {
+            ...track.value,
+            recipients: track.value.recipients.filter((_, ri) => ri !== action.payload.recipientIndex)
+          }
+        };
+      });
       return { ...state, album: { ...state.album, tracks }, isDirty: true };
     }
 

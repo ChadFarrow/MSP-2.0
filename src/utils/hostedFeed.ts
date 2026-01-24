@@ -32,6 +32,7 @@ interface CreateFeedResponse {
   editToken: string;
   url: string;
   blobUrl: string;
+  podcastIndexId?: number;
 }
 
 /**
@@ -68,6 +69,11 @@ export async function createHostedFeed(
   return response.json();
 }
 
+interface UpdateFeedResponse {
+  success: boolean;
+  podcastIndexId?: number;
+}
+
 /**
  * Update an existing hosted feed
  */
@@ -76,7 +82,7 @@ export async function updateHostedFeed(
   editToken: string,
   xml: string,
   title: string
-): Promise<void> {
+): Promise<UpdateFeedResponse> {
   const response = await fetch(`/api/hosted/${feedId}`, {
     method: 'PUT',
     headers: {
@@ -90,6 +96,8 @@ export async function updateHostedFeed(
     const error = await response.json().catch(() => ({ error: 'Failed to update feed' }));
     throw new Error(error.error || 'Failed to update feed');
   }
+
+  return response.json();
 }
 
 /**
@@ -129,6 +137,7 @@ export interface HostedFeedBackup {
   album: string;
   feedUrl: string;
   feedId: string;
+  podcastGuid: string;
   editToken: string;
   createdAt: string;
 }
@@ -139,13 +148,15 @@ export interface HostedFeedBackup {
 export function downloadHostedFeedBackup(
   feedId: string,
   editToken: string,
-  albumTitle: string
+  albumTitle: string,
+  podcastGuid?: string
 ): void {
   const backup: HostedFeedBackup = {
     _info: 'MSP Hosted Feed Backup - Keep this file safe!',
     album: albumTitle,
     feedUrl: buildHostedUrl(feedId),
     feedId: feedId,
+    podcastGuid: podcastGuid || feedId,
     editToken: editToken,
     createdAt: new Date().toISOString()
   };
@@ -215,7 +226,7 @@ export async function updateHostedFeedWithNostr(
   feedId: string,
   xml: string,
   title: string
-): Promise<void> {
+): Promise<UpdateFeedResponse> {
   if (!hasSigner()) {
     throw new Error('Not logged in with Nostr');
   }
@@ -236,6 +247,8 @@ export async function updateHostedFeedWithNostr(
     const error = await response.json().catch(() => ({ error: 'Failed to update feed' }));
     throw new Error(error.error || 'Failed to update feed');
   }
+
+  return response.json();
 }
 
 interface LinkNostrResponse {

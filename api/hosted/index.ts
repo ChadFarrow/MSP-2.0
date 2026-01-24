@@ -37,7 +37,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const feeds = await Promise.all(
         metaBlobs.map(async (blob) => {
           const response = await fetch(blob.url);
-          const meta = await response.json();
+          const text = await response.text();
+          const meta = text ? JSON.parse(text) : {};
           const feedId = blob.pathname.replace('feeds/', '').replace('.meta.json', '');
 
           // Try to extract author and medium from the XML feed

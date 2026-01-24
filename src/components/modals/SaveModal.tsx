@@ -19,7 +19,7 @@ import {
   linkNostrToFeed,
   type HostedFeedInfo
 } from '../../utils/hostedFeed';
-import { albumStorage, publisherStorage, pendingHostedStorage } from '../../utils/storage';
+import { albumStorage, videoStorage, publisherStorage, pendingHostedStorage } from '../../utils/storage';
 import { useNostr } from '../../store/nostrStore';
 import { ModalWrapper } from './ModalWrapper';
 
@@ -39,6 +39,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
   const { state: nostrState } = useNostr();
   const [mode, setMode] = useState<'local' | 'download' | 'clipboard' | 'nostr' | 'nostrMusic' | 'blossom' | 'hosted' | 'podcastIndex'>('local');
   const isPublisherMode = feedType === 'publisher';
+  const isVideoMode = feedType === 'video';
 
   // Helper to get current feed's GUID and title based on mode
   const currentFeedGuid = isPublisherMode && publisherFeed ? publisherFeed.podcastGuid : album.podcastGuid;
@@ -266,11 +267,13 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
         if (!album.language?.trim()) errors.push('Language');
         if (!album.podcastGuid?.trim()) errors.push('Podcast GUID');
 
+        const itemLabel = isVideoMode ? 'Video' : 'Track';
+        const urlLabel = isVideoMode ? 'Video URL' : 'MP3 URL';
         album.tracks.forEach((track, i) => {
-          if (!track.title?.trim()) errors.push(`Track ${i + 1} Title`);
-          if (!track.duration?.trim()) errors.push(`Track ${i + 1} Duration`);
-          if (!track.enclosureUrl?.trim()) errors.push(`Track ${i + 1} MP3 URL`);
-          if (!track.enclosureLength?.trim()) errors.push(`Track ${i + 1} File Size`);
+          if (!track.title?.trim()) errors.push(`${itemLabel} ${i + 1} Title`);
+          if (!track.duration?.trim()) errors.push(`${itemLabel} ${i + 1} Duration`);
+          if (!track.enclosureUrl?.trim()) errors.push(`${itemLabel} ${i + 1} ${urlLabel}`);
+          if (!track.enclosureLength?.trim()) errors.push(`${itemLabel} ${i + 1} File Size`);
         });
       }
 
@@ -292,6 +295,8 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
         case 'local':
           if (isPublisherMode && publisherFeed) {
             publisherStorage.save(publisherFeed);
+          } else if (isVideoMode) {
+            videoStorage.save(album);
           } else {
             albumStorage.save(album);
           }
@@ -374,11 +379,11 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
             const updatedInfo = { ...hostedInfo, lastUpdated: Date.now() };
             saveHostedFeedInfo(currentFeedGuid, updatedInfo);
             setHostedInfo(updatedInfo);
-            // Use PI notification result from API response
+
+            // Show PI notification result
             if (updateResult.podcastIndexId) {
-              setPodcastIndexPageUrl(`https://podcastindex.org/podcast/${updateResult.podcastIndexId}`);
-              setPodcastIndexPending(false);
-              setMessage({ type: 'success', text: 'Feed updated and Podcast Index notified!' });
+              setPodcastIndexPending(true);
+              setMessage({ type: 'success', text: 'Feed updated! Podcast Index notified.' });
             } else {
               showSuccessAndClose('Feed updated!');
             }
@@ -414,18 +419,19 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
             }
             saveHostedFeedInfo(currentFeedGuid, newInfo);
             setHostedInfo(newInfo);
-            setHostedUrl(buildHostedUrl(hostedResult.feedId));
+            setHostedUrl(hostedResult.url);
             setPendingToken(null);
             setLegacyHostedInfo(null);
             setTokenAcknowledged(false);
-            // Use PI notification result from API response
+
+            // Build success message with PI result
             let successMsg = legacyHostedInfo
               ? 'Feed migrated to new URL and legacy URL updated!'
               : (shouldLinkNostr ? 'Feed created and linked to your Nostr identity!' : 'Feed created!');
+
             if (hostedResult.podcastIndexId) {
-              setPodcastIndexPageUrl(`https://podcastindex.org/podcast/${hostedResult.podcastIndexId}`);
-              setPodcastIndexPending(false);
-              successMsg += ' Podcast Index notified!';
+              setPodcastIndexPending(true);
+              successMsg += ' Podcast Index notified.';
             }
             setMessage({ type: 'success', text: successMsg });
           }
@@ -481,18 +487,14 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
     setMessage(null);
 
     try {
-      let apiUrl = `/api/pubnotify?url=${encodeURIComponent(podcastIndexUrl.trim())}`;
-      if (currentFeedGuid) {
-        apiUrl += `&guid=${encodeURIComponent(currentFeedGuid)}`;
-      }
-      const response = await fetch(apiUrl);
+      const response = await fetch(`/api/pubnotify?url=${encodeURIComponent(podcastIndexUrl.trim())}`);
       const data = await response.json();
 
       if (!response.ok) {
         throw new Error(data.error || 'Failed to submit to Podcast Index');
       }
 
-      // Use direct link if available, otherwise fall back to search URL
+      // Generate search URL so user can view their feed on Podcast Index
       const searchUrl = `https://podcastindex.org/search?q=${encodeURIComponent(podcastIndexUrl.trim())}`;
       setPodcastIndexPageUrl(data.podcastIndexUrl || searchUrl);
       setMessage({ type: 'success', text: 'Feed submitted! It may take a moment to appear in the index.' });
@@ -561,9 +563,9 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
               </>
             ) : (
               <>
-                <h3>{album.title || 'Untitled Album'}</h3>
+                <h3>{album.title || (isVideoMode ? 'Untitled Video Feed' : 'Untitled Album')}</h3>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-                  {album.author || 'No author'} &bull; {album.tracks.length} track{album.tracks.length !== 1 ? 's' : ''}
+                  {album.author || 'No author'} &bull; {album.tracks.length} {isVideoMode ? 'video' : 'track'}{album.tracks.length !== 1 ? 's' : ''}
                 </p>
               </>
             )}
@@ -740,7 +742,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                     <button
                       className="btn btn-secondary"
                       onClick={() => {
-                        downloadHostedFeedBackup(currentFeedGuid, pendingToken, currentFeedTitle);
+                        downloadHostedFeedBackup(currentFeedGuid, pendingToken, currentFeedTitle, currentFeedGuid);
                         setMessage({ type: 'success', text: 'Backup file downloaded' });
                       }}
                     >

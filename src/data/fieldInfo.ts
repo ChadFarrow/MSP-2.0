@@ -10,7 +10,6 @@ export const FIELD_INFO = {
   language: "The language the feed is written in. See rssboard.org/rss-language-codes for codes.",
   podcastGuid: "A Globally Unique ID used to identify your feed across platforms and services.",
   keywords: "Comma-separated keywords for search and discovery (e.g., rock, indie, guitar).",
-  medium: "Content type: 'music' for standard albums, 'musicL' for long-form music content.",
   ownerName: "The feed owner's name. Used for podcast directory contact info.",
   ownerEmail: "The feed owner's email address. Used for podcast directory contact info.",
   explicit: "Mark if your content contains explicit language or themes.",
@@ -61,4 +60,8 @@ export const FIELD_INFO = {
   trackExplicit: "Mark if this specific track contains explicit content.",
   overridePersons: "Enable to set different credits for this track than the album level. Track-level persons replace album-level.",
   overrideValue: "Enable to set different payment splits for this track. Used for featuring guest artists or different producers per track.",
+
+  // Music Video (Alternate Enclosure)
+  musicVideoUrl: "Optional URL to a music video for this track. Creates a podcast:alternateEnclosure tag so apps can offer both audio and video versions.",
+  musicVideoLength: "File size of the music video in bytes. Optional but recommended for podcast apps to show download size.",
 };

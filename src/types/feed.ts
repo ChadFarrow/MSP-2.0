@@ -61,6 +61,32 @@ export interface RemoteItem {
   image?: string;
 }
 
+// Alternate enclosure types (podcast:alternateEnclosure)
+export interface AlternateEnclosureSource {
+  uri: string;
+  contentType?: string;
+}
+
+export interface AlternateEnclosureIntegrity {
+  type: 'sri';
+  value: string;
+}
+
+export interface AlternateEnclosure {
+  id: string;
+  type: string;                    // Required: MIME type
+  length?: string;                 // File size in bytes
+  bitrate?: string;                // bits/sec
+  height?: string;                 // Video height
+  lang?: string;                   // BCP 47 language tag
+  title?: string;                  // Max 32 chars
+  rel?: string;                    // Grouping ID, max 32 chars
+  codecs?: string;                 // RFC 6381
+  default?: boolean;
+  sources: AlternateEnclosureSource[];
+  integrity?: AlternateEnclosureIntegrity;
+}
+
 // Base channel data shared between Album and PublisherFeed
 export interface BaseChannelData {
   title: string;
@@ -122,6 +148,7 @@ export interface Track {
   persons: Person[];
   overrideValue: boolean;
   value?: ValueBlock;
+  alternateEnclosures?: AlternateEnclosure[];
   unknownItemElements?: Record<string, unknown>;
 }
 
@@ -138,7 +165,7 @@ export interface Album {
 
   // Podcast Index
   podcastGuid: string;
-  medium: 'music' | 'musicL';
+  medium: 'music' | 'video';
   locked: boolean;
   lockedOwner: string;
   location: string;
@@ -237,7 +264,7 @@ export interface FeedState {
 }
 
 // Default empty track (defined first so createEmptyAlbum can use it)
-export const createEmptyTrack = (trackNumber: number): Track => ({
+export const createEmptyTrack = (trackNumber: number, enclosureType: string = 'audio/mpeg'): Track => ({
   id: crypto.randomUUID(),
   trackNumber,
   season: undefined,
@@ -248,7 +275,7 @@ export const createEmptyTrack = (trackNumber: number): Track => ({
   guid: crypto.randomUUID(),
   enclosureUrl: '',
   enclosureLength: '',
-  enclosureType: 'audio/mpeg',
+  enclosureType,
   duration: '',
   explicit: false,
   trackArtUrl: '',
@@ -260,6 +287,9 @@ export const createEmptyTrack = (trackNumber: number): Track => ({
   overrideValue: false,
   value: undefined
 });
+
+// Helper to check if medium is video
+export const isVideoMedium = (medium: string): boolean => medium === 'video';
 
 // Default empty album
 export const createEmptyAlbum = (): Album => ({
@@ -299,6 +329,44 @@ export const createEmptyAlbum = (): Album => ({
   tracks: [createEmptyTrack(1)]
 });
 
+// Default empty video album
+export const createEmptyVideoAlbum = (): Album => ({
+  title: '',
+  author: '',
+  description: '',
+  link: '',
+  language: 'en',
+  generator: 'MSP 2.0 - Music Side Project Studio',
+  pubDate: new Date().toUTCString(),
+  lastBuildDate: new Date().toUTCString(),
+  podcastGuid: crypto.randomUUID(),
+  medium: 'video',
+  locked: false,
+  lockedOwner: '',
+  location: '',
+  categories: [],
+  keywords: '',
+  explicit: false,
+  ownerName: '',
+  ownerEmail: '',
+  imageUrl: '',
+  imageTitle: '',
+  imageLink: '',
+  imageDescription: '',
+  bannerArtUrl: '',
+  managingEditor: '',
+  webMaster: '',
+  persons: [],
+  value: {
+    type: 'lightning',
+    method: 'keysend',
+    suggested: '0.000033333',
+    recipients: []
+  },
+  funding: [],
+  tracks: [createEmptyTrack(1, 'video/mp4')]
+});
+
 // Default empty person role
 export const createEmptyPersonRole = (): PersonRole => ({
   group: 'music',
@@ -334,6 +402,27 @@ export const createEmptyRemoteItem = (): RemoteItem => ({
   title: '',
   medium: 'music'
 });
+
+// Default empty alternate enclosure source
+export const createEmptyAlternateEnclosureSource = (): AlternateEnclosureSource => ({
+  uri: ''
+});
+
+// Default empty alternate enclosure
+export const createEmptyAlternateEnclosure = (mimeType = 'video/mp4'): AlternateEnclosure => ({
+  id: crypto.randomUUID(),
+  type: mimeType,
+  sources: [createEmptyAlternateEnclosureSource()]
+});
+
+// Common MIME types for alternate enclosures
+export const ALTERNATE_ENCLOSURE_MIME_TYPES = [
+  { value: 'video/mp4', label: 'Video (MP4)' },
+  { value: 'video/webm', label: 'Video (WebM)' },
+  { value: 'audio/mpeg', label: 'Audio (MP3)' },
+  { value: 'audio/ogg', label: 'Audio (OGG)' },
+  { value: 'audio/flac', label: 'Audio (FLAC)' }
+];
 
 // Default empty publisher reference
 export const createEmptyPublisherReference = (): PublisherReference => ({

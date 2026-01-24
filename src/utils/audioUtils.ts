@@ -1,4 +1,5 @@
 // Audio and duration utilities
+import { getVideoDuration, isVideoUrl } from './videoUtils';
 
 /**
  * Get MP3 duration from URL using Audio API (works without CORS)
@@ -74,4 +75,14 @@ export function formatDuration(input: string): string {
   }
 
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+/**
+ * Get media duration - detects URL type and calls appropriate function
+ */
+export function getMediaDuration(url: string): Promise<number | null> {
+  if (isVideoUrl(url)) {
+    return getVideoDuration(url);
+  }
+  return getAudioDuration(url);
 }

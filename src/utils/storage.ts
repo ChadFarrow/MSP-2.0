@@ -5,6 +5,7 @@ import type { NostrUser } from '../types/nostr';
 // Storage keys
 export const STORAGE_KEYS = {
   ALBUM_DATA: 'msp2-album-data',
+  VIDEO_DATA: 'msp2-video-data',
   PUBLISHER_DATA: 'msp2-publisher-data',
   NOSTR_USER: 'msp2-nostr-user',
   HOSTED_PREFIX: 'msp2-hosted-',
@@ -108,6 +109,19 @@ export const albumStorage = {
   },
   save: (album: Album): boolean => setItem(STORAGE_KEYS.ALBUM_DATA, album),
   clear: (): boolean => removeItem(STORAGE_KEYS.ALBUM_DATA)
+};
+
+// Video feed storage operations
+export const videoStorage = {
+  load: (): Album | null => {
+    const album = getItem<Album>(STORAGE_KEYS.VIDEO_DATA);
+    if (album) {
+      return migrateAlbum(album);
+    }
+    return null;
+  },
+  save: (album: Album): boolean => setItem(STORAGE_KEYS.VIDEO_DATA, album),
+  clear: (): boolean => removeItem(STORAGE_KEYS.VIDEO_DATA)
 };
 
 // Publisher feed storage operations

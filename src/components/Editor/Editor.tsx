@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useFeed } from '../../store/feedStore';
-import { LANGUAGES, PERSON_GROUPS, PERSON_ROLES, createEmptyPersonRole } from '../../types/feed';
-import type { PersonGroup } from '../../types/feed';
+import { LANGUAGES, PERSON_GROUPS, PERSON_ROLES, createEmptyPersonRole, createEmptyTrack, isVideoMedium, createEmptyAlternateEnclosure } from '../../types/feed';
+import type { PersonGroup, AlternateEnclosure } from '../../types/feed';
 import { FIELD_INFO } from '../../data/fieldInfo';
 import { detectAddressType } from '../../utils/addressUtils';
-import { getAudioDuration, secondsToHHMMSS, formatDuration } from '../../utils/audioUtils';
+import { getMediaDuration, secondsToHHMMSS, formatDuration } from '../../utils/audioUtils';
 import { InfoIcon } from '../InfoIcon';
 import { Section } from '../Section';
 import { Toggle } from '../Toggle';
@@ -73,28 +73,16 @@ function RolesModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
 
 export function Editor() {
   const { state, dispatch } = useFeed();
-  const { album } = state;
+  // Get the active album based on feedType (album or videoFeed)
+  const album = state.feedType === 'video' && state.videoFeed ? state.videoFeed : state.album;
 
-  // Track collapse state - empty object means all tracks expanded
+  // Simple collapse state - all tracks start expanded (empty object = nothing collapsed)
+  // Editor remounts on album change (via key prop), so this always starts fresh
   const [collapsedTracks, setCollapsedTracks] = useState<Record<string, boolean>>({});
   const [showRolesModal, setShowRolesModal] = useState(false);
 
-  // Set collapse state when album changes (new album, import, etc.)
-  // Imported tracks (with content) start collapsed, empty tracks start expanded
-  useEffect(() => {
-    if (album?.tracks) {
-      const collapsed: Record<string, boolean> = {};
-      album.tracks.forEach(t => {
-        // Collapse tracks that have content (imported), expand empty tracks (new)
-        if (t.title || t.enclosureUrl) {
-          collapsed[t.id] = true;
-        }
-      });
-      setCollapsedTracks(collapsed);
-    } else {
-      setCollapsedTracks({});
-    }
-  }, [album?.podcastGuid]);
+  // Determine if this is a video feed
+  const isVideo = isVideoMedium(album.medium);
 
   const toggleTrackCollapse = (trackId: string) => {
     setCollapsedTracks(prev => ({
@@ -119,8 +107,8 @@ export function Editor() {
     <>
       <div className="main-content">
         <div className="editor-panel">
-          {/* Album Info Section */}
-          <Section title="Album Info" icon="&#128191;">
+          {/* Album/Video Info Section */}
+          <Section title={isVideo ? "Video Info" : "Album Info"} icon={isVideo ? "🎬" : "💿"}>
             <div className="form-grid">
               <div className="form-group">
                 <label className="form-label">Artist/Band <span className="required">*</span><InfoIcon text={FIELD_INFO.author} /></label>
@@ -133,11 +121,11 @@ export function Editor() {
                 />
               </div>
               <div className="form-group">
-                <label className="form-label">Album Title <span className="required">*</span><InfoIcon text={FIELD_INFO.title} /></label>
+                <label className="form-label">{isVideo ? 'Video Title' : 'Album Title'} <span className="required">*</span><InfoIcon text={FIELD_INFO.title} /></label>
                 <input
                   type="text"
                   className="form-input"
-                  placeholder="Enter album title"
+                  placeholder={isVideo ? "Enter video title" : "Enter album title"}
                   value={album.title || ''}
                   onChange={e => dispatch({ type: 'UPDATE_ALBUM', payload: { title: e.target.value } })}
                 />
@@ -225,16 +213,16 @@ export function Editor() {
           </Section>
 
           {/* Artwork Section */}
-          <Section title="Album Artwork" icon="&#127912;">
+          <Section title={isVideo ? "Video Artwork" : "Album Artwork"} icon={isVideo ? "🎬" : "🎨"}>
             <ArtworkFields
               imageUrl={album.imageUrl}
               imageTitle={album.imageTitle}
               imageDescription={album.imageDescription}
               onUpdate={(field, value) => dispatch({ type: 'UPDATE_ALBUM', payload: { [field]: value } })}
-              urlLabel="Album Art URL"
-              urlPlaceholder="https://example.com/album-art.jpg"
-              titlePlaceholder="Album cover description"
-              previewAlt="Album preview"
+              urlLabel={isVideo ? "Video Art URL" : "Album Art URL"}
+              urlPlaceholder={isVideo ? "https://example.com/video-art.jpg" : "https://example.com/album-art.jpg"}
+              titlePlaceholder={isVideo ? "Video cover description" : "Album cover description"}
+              previewAlt={isVideo ? "Video preview" : "Album preview"}
             />
           </Section>
 
@@ -513,8 +501,8 @@ export function Editor() {
           </Section>
           */}
 
-          {/* Tracks Section */}
-          <Section title="Tracks" icon="&#127925;">
+          {/* Tracks/Videos Section */}
+          <Section title={isVideo ? "Videos" : "Tracks"} icon={isVideo ? "🎬" : "🎵"}>
             {album.tracks.length > 0 && (
               <div style={{ marginBottom: '12px', textAlign: 'right' }}>
                 <button
@@ -535,7 +523,7 @@ export function Editor() {
                       onClick={() => toggleTrackCollapse(track.id)}
                     >
                       <span className="track-number">{track.trackNumber}</span>
-                      <span style={{ flex: 1, fontWeight: 500 }}>{track.title || 'Untitled Track'}</span>
+                      <span style={{ flex: 1, fontWeight: 500 }}>{track.title || (isVideo ? 'Untitled Video' : 'Untitled Track')}</span>
                       {track.duration && track.duration !== '00:00:00' && (
                         <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>{track.duration}</span>
                       )}
@@ -553,11 +541,11 @@ export function Editor() {
                   {!collapsedTracks[track.id] && (
                   <div className="form-grid" style={{ marginTop: '12px' }}>
                     <div className="form-group">
-                      <label className="form-label">Track Title <span className="required">*</span><InfoIcon text={FIELD_INFO.trackTitle} /></label>
+                      <label className="form-label">{isVideo ? 'Video Title' : 'Track Title'} <span className="required">*</span><InfoIcon text={FIELD_INFO.trackTitle} /></label>
                       <input
                         type="text"
                         className="form-input"
-                        placeholder="Enter track title"
+                        placeholder={isVideo ? "Enter video title" : "Enter track title"}
                         value={track.title || ''}
                         onChange={e => dispatch({
                           type: 'UPDATE_TRACK',
@@ -566,11 +554,11 @@ export function Editor() {
                       />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">MP3 URL <span className="required">*</span><InfoIcon text={FIELD_INFO.enclosureUrl} /></label>
+                      <label className="form-label">{isVideo ? 'Video URL' : 'MP3 URL'} <span className="required">*</span><InfoIcon text={FIELD_INFO.enclosureUrl} /></label>
                       <input
                         type="url"
                         className="form-input"
-                        placeholder="https://example.com/track.mp3"
+                        placeholder={isVideo ? "https://example.com/video.mp4" : "https://example.com/track.mp3"}
                         value={track.enclosureUrl || ''}
                         onChange={e => dispatch({
                           type: 'UPDATE_TRACK',
@@ -585,9 +573,9 @@ export function Editor() {
                               type: 'UPDATE_TRACK',
                               payload: { index, track: { enclosureUrl: url } }
                             });
-                            // Fetch duration using Audio API (always fetch for new URLs)
+                            // Fetch duration using unified Media API (works for both audio and video)
                             if (isNewUrl || !track.duration) {
-                              const duration = await getAudioDuration(url);
+                              const duration = await getMediaDuration(url);
                               if (duration !== null) {
                                 dispatch({
                                   type: 'UPDATE_TRACK',
@@ -607,9 +595,9 @@ export function Editor() {
                         onBlur={async e => {
                           const url = e.target.value;
                           if (url && url.startsWith('http')) {
-                            // Fetch duration using Audio API (works without CORS)
+                            // Fetch duration using unified Media API (works for both audio and video)
                             if (!track.duration) {
-                              const duration = await getAudioDuration(url);
+                              const duration = await getMediaDuration(url);
                               if (duration !== null) {
                                 dispatch({
                                   type: 'UPDATE_TRACK',
@@ -628,12 +616,21 @@ export function Editor() {
                         }}
                       />
                       {track.enclosureUrl && (
-                        <audio
-                          src={track.enclosureUrl}
-                          controls
-                          style={{ width: '100%', marginTop: '8px' }}
-                          onError={e => (e.target as HTMLAudioElement).style.display = 'none'}
-                        />
+                        isVideo ? (
+                          <video
+                            src={track.enclosureUrl}
+                            controls
+                            style={{ width: '100%', marginTop: '8px', maxHeight: '300px' }}
+                            onError={e => (e.target as HTMLVideoElement).style.display = 'none'}
+                          />
+                        ) : (
+                          <audio
+                            src={track.enclosureUrl}
+                            controls
+                            style={{ width: '100%', marginTop: '8px' }}
+                            onError={e => (e.target as HTMLAudioElement).style.display = 'none'}
+                          />
+                        )
                       )}
                     </div>
                     <div className="form-group">
@@ -674,7 +671,7 @@ export function Editor() {
                       />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">Track # (Episode)<InfoIcon text={FIELD_INFO.trackEpisode} /></label>
+                      <label className="form-label">{isVideo ? 'Video #' : 'Track #'} (Episode)<InfoIcon text={FIELD_INFO.trackEpisode} /></label>
                       <input
                         type="number"
                         className="form-input"
@@ -741,17 +738,17 @@ export function Editor() {
                             )}
                           </div>
                           <span style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', width: '100%' }}>
-                            {track.trackArtUrl ? 'Track art' : 'No track art'}
+                            {track.trackArtUrl ? (isVideo ? 'Thumbnail' : 'Track art') : (isVideo ? 'No thumbnail' : 'No track art')}
                           </span>
                         </div>
                       </div>
                     </div>
                     <div className="form-group">
-                      <label className="form-label">Track Art URL<InfoIcon text={FIELD_INFO.trackArtUrl} /></label>
+                      <label className="form-label">{isVideo ? 'Thumbnail URL' : 'Track Art URL'}<InfoIcon text={FIELD_INFO.trackArtUrl} /></label>
                       <input
                         type="url"
                         className="form-input"
-                        placeholder="Override album art for this track"
+                        placeholder={isVideo ? "Override cover art for this video" : "Override album art for this track"}
                         value={track.trackArtUrl || ''}
                         onChange={e => dispatch({
                           type: 'UPDATE_TRACK',
@@ -772,6 +769,107 @@ export function Editor() {
                         })}
                       />
                     </div>
+                    {/* Music Video fields - only shown on Album page (not Video page) */}
+                    {!isVideo && (
+                      <>
+                        <div className="form-group full-width" style={{ marginTop: '8px' }}>
+                          <p style={{ color: 'var(--text-secondary)', fontSize: '13px', margin: '0 0 12px 0' }}>
+                            <strong>Alternate Enclosure:</strong> Add an optional music video for this track. The audio file remains the main enclosure,
+                            while the video is offered as an alternate version via <code style={{ background: 'var(--bg-tertiary)', padding: '2px 4px', borderRadius: '3px' }}>&lt;podcast:alternateEnclosure&gt;</code>.
+                            Apps that support this tag can let listeners choose between audio and video.
+                          </p>
+                        </div>
+                        <div className="form-group">
+                          <label className="form-label">Music Video URL<InfoIcon text={FIELD_INFO.musicVideoUrl} /></label>
+                          <input
+                            type="url"
+                            className="form-input"
+                            placeholder="https://example.com/video.mp4"
+                            value={track.alternateEnclosures?.[0]?.sources?.[0]?.uri || ''}
+                            onChange={e => {
+                              const videoUrl = e.target.value;
+                              if (videoUrl) {
+                                // Create or update alternate enclosure for music video
+                                const existingAltEnc = track.alternateEnclosures?.[0];
+                                const altEnc: AlternateEnclosure = existingAltEnc
+                                  ? {
+                                      ...existingAltEnc,
+                                      sources: [{ uri: videoUrl }]
+                                    }
+                                  : {
+                                      ...createEmptyAlternateEnclosure('video/mp4'),
+                                      title: 'Music Video',
+                                      sources: [{ uri: videoUrl }]
+                                    };
+                                dispatch({
+                                  type: 'UPDATE_TRACK',
+                                  payload: { index, track: { alternateEnclosures: [altEnc] } }
+                                });
+                              } else {
+                                // Clear alternate enclosures if URL is empty
+                                dispatch({
+                                  type: 'UPDATE_TRACK',
+                                  payload: { index, track: { alternateEnclosures: undefined } }
+                                });
+                              }
+                            }}
+                            onPaste={async e => {
+                              const url = e.clipboardData.getData('text').trim();
+                              if (url && url.startsWith('http')) {
+                                // Detect MIME type from extension
+                                const ext = url.split('.').pop()?.toLowerCase();
+                                const mimeType = ext === 'webm' ? 'video/webm' : 'video/mp4';
+
+                                const altEnc: AlternateEnclosure = {
+                                  ...createEmptyAlternateEnclosure(mimeType),
+                                  title: 'Music Video',
+                                  sources: [{ uri: url }]
+                                };
+                                dispatch({
+                                  type: 'UPDATE_TRACK',
+                                  payload: { index, track: { alternateEnclosures: [altEnc] } }
+                                });
+                              }
+                            }}
+                          />
+                          {track.alternateEnclosures?.[0]?.sources?.[0]?.uri && (
+                            <video
+                              src={track.alternateEnclosures[0].sources[0].uri}
+                              controls
+                              style={{ width: '100%', marginTop: '8px', maxHeight: '200px' }}
+                              onError={e => (e.target as HTMLVideoElement).style.display = 'none'}
+                            />
+                          )}
+                        </div>
+                        <div className="form-group">
+                          <label className="form-label">Video File Size (bytes)<InfoIcon text={FIELD_INFO.musicVideoLength} /></label>
+                          <input
+                            type="text"
+                            className="form-input"
+                            placeholder="e.g., 58390859"
+                            value={track.alternateEnclosures?.[0]?.length || ''}
+                            onChange={e => {
+                              const existingAltEnc = track.alternateEnclosures?.[0];
+                              if (existingAltEnc) {
+                                dispatch({
+                                  type: 'UPDATE_TRACK',
+                                  payload: {
+                                    index,
+                                    track: {
+                                      alternateEnclosures: [{
+                                        ...existingAltEnc,
+                                        length: e.target.value || undefined
+                                      }]
+                                    }
+                                  }
+                                });
+                              }
+                            }}
+                            disabled={!track.alternateEnclosures?.[0]?.sources?.[0]?.uri}
+                          />
+                        </div>
+                      </>
+                    )}
                     <div className="form-group">
                       <Toggle
                         checked={track.explicit}
@@ -890,9 +988,9 @@ export function Editor() {
                 </div>
               ))}
               <button className="add-item-btn" onClick={() => {
-                dispatch({ type: 'ADD_TRACK' });
+                dispatch({ type: 'ADD_TRACK', payload: createEmptyTrack(album.tracks.length + 1, isVideo ? 'video/mp4' : 'audio/mpeg') });
               }}>
-                + Add Track
+                + Add {isVideo ? 'Video' : 'Track'}
               </button>
             </div>
           </Section>

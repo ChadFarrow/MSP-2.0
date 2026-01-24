@@ -4,8 +4,8 @@ import { FeedProvider, useFeed } from './store/feedStore.tsx';
 import type { FeedType } from './store/feedStore.tsx';
 import { NostrProvider, useNostr } from './store/nostrStore.tsx';
 import { ThemeProvider, useTheme } from './store/themeStore.tsx';
-import { parseRssFeed, isPublisherFeed, parsePublisherRssFeed } from './utils/xmlParser';
-import { createEmptyAlbum, createEmptyPublisherFeed } from './types/feed';
+import { parseRssFeed, isPublisherFeed, isVideoFeed, parsePublisherRssFeed } from './utils/xmlParser';
+import { createEmptyAlbum, createEmptyPublisherFeed, createEmptyVideoAlbum } from './types/feed';
 import { generateTestAlbum } from './utils/testData';
 import { NostrLoginButton } from './components/NostrLoginButton';
 import { ImportModal } from './components/modals/ImportModal';
@@ -54,12 +54,18 @@ function AppContent() {
         return;
       }
 
+      // Check if this is a video feed
+      if (isVideoFeed(xml)) {
+        const videoFeed = parseRssFeed(xml);
+        dispatch({ type: 'SET_VIDEO_FEED', payload: videoFeed });
+        return;
+      }
+
       // Parse as regular album feed
       const album = parseRssFeed(xml);
 
-      // Warn if not a music feed (case-insensitive check)
-      const normalizedMedium = album.medium?.toLowerCase();
-      if (!normalizedMedium || (normalizedMedium !== 'music' && normalizedMedium !== 'musicl')) {
+      // Warn if not a music feed
+      if (album.medium !== 'music') {
         const mediumMsg = album.medium
           ? `This feed has medium "${album.medium}" which is not a music feed.`
           : `This feed has no medium tag specified.`;
@@ -88,6 +94,8 @@ function AppContent() {
   const handleConfirmNew = () => {
     if (pendingNewFeedType === 'publisher') {
       dispatch({ type: 'SET_PUBLISHER_FEED', payload: createEmptyPublisherFeed() });
+    } else if (pendingNewFeedType === 'video') {
+      dispatch({ type: 'SET_VIDEO_FEED', payload: createEmptyVideoAlbum() });
     } else {
       dispatch({ type: 'SET_ALBUM', payload: createEmptyAlbum() });
     }
@@ -96,6 +104,10 @@ function AppContent() {
 
   const handleSwitchFeedType = (feedType: FeedType) => {
     dispatch({ type: 'SET_FEED_TYPE', payload: feedType });
+    // If switching to video and no video feed exists, create one
+    if (feedType === 'video' && !state.videoFeed) {
+      dispatch({ type: 'CREATE_NEW_VIDEO_FEED' });
+    }
     // If switching to publisher and no publisher feed exists, create one
     if (feedType === 'publisher' && !state.publisherFeed) {
       dispatch({ type: 'CREATE_NEW_PUBLISHER_FEED' });
@@ -118,6 +130,7 @@ function AppContent() {
               onChange={(e) => handleSwitchFeedType(e.target.value as FeedType)}
             >
               <option value="album">Album</option>
+              <option value="video">Video</option>
               <option value="publisher">Publisher</option>
             </select>
           </div>
@@ -138,7 +151,7 @@ function AppContent() {
                     className="dropdown-item"
                     onClick={() => { handleNew(state.feedType); setShowDropdown(false); }}
                   >
-                    📂 New {state.feedType === 'publisher' ? 'Publisher' : 'Album'}
+                    📂 New {state.feedType === 'publisher' ? 'Publisher' : state.feedType === 'video' ? 'Video Feed' : 'Album'}
                   </button>
                   <button
                     className="dropdown-item"
@@ -227,7 +240,7 @@ function AppContent() {
             </div>
           </div>
         </header>
-        {state.feedType === 'publisher' ? <PublisherEditor /> : <Editor />}
+        {state.feedType === 'publisher' ? <PublisherEditor /> : <Editor key={`${state.feedType}-${state.album?.podcastGuid}-${state.videoFeed?.podcastGuid}`} />}
       </div>
 
       {showImportModal && (
@@ -242,7 +255,7 @@ function AppContent() {
       {showSaveModal && (
         <SaveModal
           onClose={() => setShowSaveModal(false)}
-          album={state.album}
+          album={state.feedType === 'video' && state.videoFeed ? state.videoFeed : state.album}
           publisherFeed={state.publisherFeed}
           feedType={state.feedType}
           isDirty={state.isDirty}
@@ -261,8 +274,8 @@ function AppContent() {
 
       <ConfirmModal
         isOpen={showConfirmNewModal}
-        title={pendingNewFeedType === 'publisher' ? 'Create New Publisher Feed' : 'Create New Album'}
-        message={`Create a new ${pendingNewFeedType === 'publisher' ? 'Publisher Feed' : 'Album'}? This will clear all current data for this feed type.`}
+        title={pendingNewFeedType === 'publisher' ? 'Create New Publisher Feed' : pendingNewFeedType === 'video' ? 'Create New Video Feed' : 'Create New Album'}
+        message={`Create a new ${pendingNewFeedType === 'publisher' ? 'Publisher Feed' : pendingNewFeedType === 'video' ? 'Video Feed' : 'Album'}? This will clear all current data for this feed type.`}
         confirmText="Create"
         cancelText="Cancel"
         variant="warning"

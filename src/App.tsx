@@ -212,6 +212,16 @@ function AppContent() {
                       </button>
                     </>
                   )}
+                  <div className="dropdown-divider" />
+                  <a
+                    className="dropdown-item"
+                    href="https://msp-2-0-git-fafo-chadfs-projects.vercel.app/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => setShowDropdown(false)}
+                  >
+                    🧪 Experimental (FAFO)
+                  </a>
                 </div>
               )}
             </div>

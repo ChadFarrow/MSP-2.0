@@ -820,9 +820,22 @@ export function Editor() {
                                 const ext = url.split('.').pop()?.toLowerCase();
                                 const mimeType = ext === 'webm' ? 'video/webm' : 'video/mp4';
 
+                                // Try to get file size via HEAD request
+                                let fileSize: string | undefined;
+                                try {
+                                  const response = await fetch(url, { method: 'HEAD' });
+                                  const contentLength = response.headers.get('content-length');
+                                  if (contentLength) {
+                                    fileSize = contentLength;
+                                  }
+                                } catch {
+                                  // Ignore errors - file size is optional
+                                }
+
                                 const altEnc: AlternateEnclosure = {
                                   ...createEmptyAlternateEnclosure(mimeType),
                                   title: 'Music Video',
+                                  length: fileSize,
                                   sources: [{ uri: url }]
                                 };
                                 dispatch({

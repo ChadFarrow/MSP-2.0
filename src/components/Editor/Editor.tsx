@@ -5,6 +5,7 @@ import type { PersonGroup } from '../../types/feed';
 import { FIELD_INFO } from '../../data/fieldInfo';
 import { detectAddressType } from '../../utils/addressUtils';
 import { getMediaDuration, secondsToHHMMSS, formatDuration } from '../../utils/audioUtils';
+import { getVideoMimeType } from '../../utils/videoUtils';
 import { InfoIcon } from '../InfoIcon';
 import { Section } from '../Section';
 import { Toggle } from '../Toggle';
@@ -559,10 +560,20 @@ export function Editor() {
                         className="form-input"
                         placeholder={isVideo ? "https://example.com/video.mp4" : "https://example.com/track.mp3"}
                         value={track.enclosureUrl || ''}
-                        onChange={e => dispatch({
-                          type: 'UPDATE_TRACK',
-                          payload: { index, track: { enclosureUrl: e.target.value } }
-                        })}
+                        onChange={e => {
+                          const url = e.target.value;
+                          dispatch({
+                            type: 'UPDATE_TRACK',
+                            payload: { index, track: { enclosureUrl: url } }
+                          });
+                          // Auto-detect MIME type for video feeds
+                          if (isVideo && url) {
+                            dispatch({
+                              type: 'UPDATE_TRACK',
+                              payload: { index, track: { enclosureType: getVideoMimeType(url) } }
+                            });
+                          }
+                        }}
                         onPaste={async e => {
                           const url = e.clipboardData.getData('text').trim();
                           if (url && url.startsWith('http')) {
@@ -572,6 +583,13 @@ export function Editor() {
                               type: 'UPDATE_TRACK',
                               payload: { index, track: { enclosureUrl: url } }
                             });
+                            // Auto-detect MIME type for video feeds
+                            if (isVideo) {
+                              dispatch({
+                                type: 'UPDATE_TRACK',
+                                payload: { index, track: { enclosureType: getVideoMimeType(url) } }
+                              });
+                            }
                             // Fetch duration using unified Media API (works for both audio and video)
                             if (isNewUrl || !track.duration) {
                               const duration = await getMediaDuration(url);

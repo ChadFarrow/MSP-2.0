@@ -510,7 +510,7 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn }: Impo
                           : 'No feeds found'}
                     </option>
                     {hostedFeeds.map((feed) => {
-                      const feedType = feed.medium === 'publisher' ? '[Publisher]' : '[Album]';
+                      const feedType = feed.medium === 'publisher' ? '[Publisher]' : feed.medium === 'video' ? '[Video]' : '[Album]';
                       return (
                         <option key={feed.feedId} value={feed.feedId}>
                           {feedType} {feed.title || 'Untitled Feed'} {feed.author ? `- ${feed.author}` : ''}

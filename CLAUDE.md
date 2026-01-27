@@ -80,10 +80,19 @@ api/                # Vercel serverless endpoints
 
 ## Git Workflow
 
+- Run `git pull` on startup to get latest changes
 - Main branch: `master`
 - Commit style: imperative tense ("Fix bug", "Add feature")
 - Include Co-Authored-By for Claude-assisted commits
 - No pre-commit hooks configured
+
+## GitHub Issues
+
+Check GitHub issues for feature requests and bug reports:
+```bash
+gh issue list              # List open issues
+gh issue view <number>     # View issue details
+```
 
 ## Commands
 

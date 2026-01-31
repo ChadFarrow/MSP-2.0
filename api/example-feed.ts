@@ -96,7 +96,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // Set cache and CORS headers
   res.setHeader('Cache-Control', 'public, max-age=3600');
-  res.setHeader('Content-Type', 'application/rss+xml');
+  res.setHeader('Content-Type', 'text/xml; charset=utf-8');
   res.setHeader('Access-Control-Allow-Origin', '*');
 
   return res.status(200).send(EXAMPLE_FEED);

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useFeed } from '../../store/feedStore';
+import { useNostr } from '../../store/nostrStore';
 import { LANGUAGES, PERSON_GROUPS, PERSON_ROLES, createEmptyPersonRole, createEmptyTrack, isVideoMedium } from '../../types/feed';
 import type { PersonGroup } from '../../types/feed';
 import { FIELD_INFO } from '../../data/fieldInfo';
@@ -74,6 +75,7 @@ function RolesModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
 
 export function Editor() {
   const { state, dispatch } = useFeed();
+  const { state: nostrState } = useNostr();
   // Get the active album based on feedType (album or videoFeed)
   const album = state.feedType === 'video' && state.videoFeed ? state.videoFeed : state.album;
 
@@ -319,13 +321,26 @@ export function Editor() {
               </div>
               <div className="form-group">
                 <label className="form-label">Artist Npub<InfoIcon text={FIELD_INFO.artistNpub} /></label>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="npub1..."
-                  value={album.artistNpub || ''}
-                  onChange={e => dispatch({ type: 'UPDATE_ALBUM', payload: { artistNpub: e.target.value } })}
-                />
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="npub1..."
+                    value={album.artistNpub || ''}
+                    onChange={e => dispatch({ type: 'UPDATE_ALBUM', payload: { artistNpub: e.target.value } })}
+                    style={{ flex: 1 }}
+                  />
+                  {nostrState.isLoggedIn && nostrState.user?.npub && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => dispatch({ type: 'UPDATE_ALBUM', payload: { artistNpub: nostrState.user!.npub } })}
+                      title="Use your logged-in Nostr npub"
+                    >
+                      Use Mine
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </Section>

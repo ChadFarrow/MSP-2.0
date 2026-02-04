@@ -262,6 +262,14 @@ export function Editor() {
                   ))}
                 </select>
               </div>
+              <div className="form-group" style={{ display: 'flex', alignItems: 'center', paddingTop: '28px', marginLeft: '-20px' }}>
+                <Toggle
+                  checked={album.explicit}
+                  onChange={val => dispatch({ type: 'UPDATE_ALBUM', payload: { explicit: val } })}
+                  label="Explicit Content"
+                  labelSuffix={<InfoIcon text={FIELD_INFO.explicit} />}
+                />
+              </div>
               <div className="form-group full-width">
                 <label className="form-label">Description <span className="required">*</span><InfoIcon text={FIELD_INFO.description} /></label>
                 <textarea
@@ -279,14 +287,6 @@ export function Editor() {
                   placeholder="Auto-generated UUID"
                   value={album.podcastGuid || ''}
                   onChange={e => dispatch({ type: 'UPDATE_ALBUM', payload: { podcastGuid: e.target.value } })}
-                />
-              </div>
-              <div className="form-group">
-                <Toggle
-                  checked={album.explicit}
-                  onChange={val => dispatch({ type: 'UPDATE_ALBUM', payload: { explicit: val } })}
-                  label="Explicit Content"
-                  labelSuffix={<InfoIcon text={FIELD_INFO.explicit} />}
                 />
               </div>
               <div className="form-group">
@@ -320,7 +320,7 @@ export function Editor() {
                 />
               </div>
               <div className="form-group">
-                <label className="form-label">Artist Npub<InfoIcon text={FIELD_INFO.artistNpub} /></label>
+                <label className="form-label">Artist npub<InfoIcon text={FIELD_INFO.artistNpub} position="left" /></label>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <input
                     type="text"
@@ -336,8 +336,9 @@ export function Editor() {
                       className="btn btn-secondary"
                       onClick={() => dispatch({ type: 'UPDATE_ALBUM', payload: { artistNpub: nostrState.user!.npub } })}
                       title="Use your logged-in Nostr npub"
+                      style={{ padding: '0 12px', fontSize: '0.8rem' }}
                     >
-                      Use Mine
+                      use mine
                     </button>
                   )}
                 </div>

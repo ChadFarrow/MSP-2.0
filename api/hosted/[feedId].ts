@@ -38,7 +38,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, DELETE, PATCH, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Edit-Token, Authorization, X-Admin-Key');
     return res.status(204).end();
   }
@@ -70,6 +70,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     switch (req.method) {
       case 'GET': {
+        // List backups for this feed (admin only)
+        if ('backups' in req.query) {
+          if (!isAdmin) {
+            return res.status(403).json({ error: 'Admin access required' });
+          }
+
+          const backupPrefix = `feeds/${feedId}.backup.`;
+          const { blobs: backupBlobs } = await list({ prefix: backupPrefix });
+          const backups = backupBlobs
+            .filter(b => b.pathname.startsWith(backupPrefix) && b.pathname.endsWith('.xml'))
+            .map(b => {
+              const timestampPart = b.pathname
+                .replace(backupPrefix, '')
+                .replace('.xml', '');
+              return {
+                timestamp: timestampPart,
+                size: b.size,
+                uploadedAt: b.uploadedAt
+              };
+            })
+            .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          return res.status(200).json({ feedId, backups, count: backups.length });
+        }
+
         // List blobs to find the one with matching pathname
         const { blobs } = await list({ prefix: blobPath });
         const blob = blobs.find(b => b.pathname === blobPath);
@@ -90,6 +116,62 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
 
         return res.status(200).send(content);
+      }
+
+      case 'POST': {
+        // Restore feed from a backup (admin only)
+        if (!isAdmin) {
+          return res.status(403).json({ error: 'Admin access required' });
+        }
+
+        const { backup } = req.query;
+        if (!backup || typeof backup !== 'string') {
+          return res.status(400).json({ error: 'Missing backup timestamp query parameter' });
+        }
+
+        // Find the backup blob
+        const backupPath = `feeds/${feedId}.backup.${backup}.xml`;
+        const { blobs: backupBlobs } = await list({ prefix: backupPath });
+        const backupBlob = backupBlobs.find(b => b.pathname === backupPath);
+
+        if (!backupBlob) {
+          return res.status(404).json({ error: 'Backup not found' });
+        }
+
+        // Fetch backup content
+        const backupResponse = await fetch(backupBlob.url);
+        const backupXml = await backupResponse.text();
+
+        if (!backupXml) {
+          return res.status(500).json({ error: 'Backup file is empty' });
+        }
+
+        // Save current feed as a backup before restoring (if it exists)
+        const { blobs: currentBlobs } = await list({ prefix: blobPath });
+        const currentBlob = currentBlobs.find(b => b.pathname === blobPath);
+        if (currentBlob) {
+          const currentResponse = await fetch(currentBlob.url);
+          const currentXml = await currentResponse.text();
+          if (currentXml) {
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            await put(`feeds/${feedId}.backup.${timestamp}.xml`, currentXml, {
+              access: 'public',
+              contentType: 'application/rss+xml',
+              addRandomSuffix: false
+            });
+          }
+          await del(currentBlob.url);
+        }
+
+        // Write the backup content as the current feed
+        await put(blobPath, backupXml, {
+          access: 'public',
+          contentType: 'application/rss+xml',
+          addRandomSuffix: false
+        });
+
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        return res.status(200).json({ success: true, restored: backup });
       }
 
       case 'PUT': {
@@ -168,6 +250,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Size limit
         if (xml.length > 1024 * 1024) {
           return res.status(400).json({ error: 'XML content too large (max 1MB)' });
+        }
+
+        // Save a backup copy of the current feed before overwriting
+        const currentResponse = await fetch(existingBlob.url);
+        const currentXml = await currentResponse.text();
+        if (currentXml) {
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+          await put(`feeds/${feedId}.backup.${timestamp}.xml`, currentXml, {
+            access: 'public',
+            contentType: 'application/rss+xml',
+            addRandomSuffix: false
+          });
         }
 
         // Delete old feed blob
@@ -290,6 +384,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         if (!existingBlob) {
           return res.status(404).json({ error: 'Feed not found' });
+        }
+
+        // Save a backup copy before deleting
+        const currentResponse = await fetch(existingBlob.url);
+        const currentXml = await currentResponse.text();
+        if (currentXml) {
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+          await put(`feeds/${feedId}.backup.${timestamp}.xml`, currentXml, {
+            access: 'public',
+            contentType: 'application/rss+xml',
+            addRandomSuffix: false
+          });
         }
 
         // Delete feed blob

@@ -1,18 +1,9 @@
 import type { ValueRecipient } from '../types/feed';
-import { createSupportRecipients } from '../types/feed';
+import { createSupportRecipients, isCommunitySupport } from '../types/feed';
 import { FIELD_INFO } from '../data/fieldInfo';
 import { detectAddressType } from '../utils/addressUtils';
 import { InfoIcon } from './InfoIcon';
 import { AddRecipientSelect } from './AddRecipientSelect';
-
-// Community support recipients - identified by both name AND address
-const COMMUNITY_SUPPORT_RECIPIENTS = [
-  { name: 'MSP 2.0', address: 'chadf@getalby.com' },
-  { name: 'Podcastindex.org', address: 'podcastindex@getalby.com' },
-];
-
-const isCommunitySupport = (recipient: ValueRecipient): boolean =>
-  COMMUNITY_SUPPORT_RECIPIENTS.some(cs => cs.name === recipient.name && cs.address === recipient.address);
 
 interface RecipientsListProps {
   recipients: ValueRecipient[];

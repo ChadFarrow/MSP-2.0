@@ -126,6 +126,7 @@ Uses React Context + useReducer pattern (not Redux). Three separate stores:
 Actions are dispatched via reducer pattern. The `FeedAction` union type in `feedStore.tsx` defines all available actions.
 
 ### Core Data Types (src/types/feed.ts)
+- `FeedType` - `'album' | 'video' | 'publisher'` (canonical definition, re-exported from `feedStore.tsx`)
 - `Album` - Feed metadata + array of `Track`s
 - `Track` - Individual items with optional per-track value recipients
 - `Person` - Contributors with roles (uses Podcasting 2.0 taxonomy)
@@ -137,10 +138,14 @@ Actions are dispatched via reducer pattern. The `FeedAction` union type in `feed
 Vercel serverless functions:
 - `pisearch.ts` - Podcast Index search
 - `pisubmit.ts` - Submit feed to Podcast Index
+- `pubnotify.ts` - Podcast Index pub notification + feed lookup
 - `proxy-feed.ts` - CORS proxy for fetching external feeds
 - `hosted/` - MSP feed hosting endpoints (create, update, delete, backup/restore)
 - `feed/[npub]/[guid].ts` - Nostr-stored feed retrieval
 - `admin/` - Admin authentication (challenge/verify)
+- `_utils/podcastIndex.ts` - Shared Podcast Index auth headers
+- `_utils/feedUtils.ts` - Shared feed utilities (PI notification, UUID validation, token hashing)
+- `_utils/adminAuth.ts` - Nostr NIP-98 auth verification, `NostrEvent` type
 
 ### Feed Hosting & Podcast Index
 - Hosted feeds are stored as Vercel Blobs at `feeds/{feedId}.xml` with metadata in `feeds/{feedId}.meta.json`
@@ -181,7 +186,7 @@ MSP 2.0 and Podcastindex.org are auto-added as value recipients with small split
 - **New feeds** (manual entry): `ADD_RECIPIENT`/`UPDATE_RECIPIENT` actions in `feedStore.tsx` auto-append support splits when the first user address is added
 - **Imported feeds**: Support splits are NOT auto-added. Instead, `RecipientsList.tsx` shows an "Add Community Support" button in the Value section when user recipients exist but support splits are missing
 
-Key helpers in `feedStore.tsx`: `isCommunitySupport()`, `hasUserRecipients()`. Support recipient definitions: `createSupportRecipients()` in `types/feed.ts`.
+Key helpers in `types/feed.ts`: `isCommunitySupport()`, `hasUserRecipients()`, `createSupportRecipients()`, `COMMUNITY_SUPPORT_RECIPIENTS`. These are the canonical definitions — imported by both `feedStore.tsx` and `RecipientsList.tsx`.
 
 ### Adding New Fields
 1. Add to type definition in `types/feed.ts`

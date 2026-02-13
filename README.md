@@ -1,6 +1,6 @@
 # MSP 2.0 - Music Side Project Studio
 
-A web-based RSS feed editor for creating Podcasting 2.0 compatible music album feeds and publisher catalogs with Value 4 Value support.
+A web-based RSS feed editor for creating Podcasting 2.0 compatible music album feeds, video feeds, and publisher catalogs with Value 4 Value support.
 
 ## Features
 
@@ -14,6 +14,11 @@ A web-based RSS feed editor for creating Podcasting 2.0 compatible music album f
 - Import/export feeds as XML
 - Local storage persistence
 
+### Video Mode
+- Create RSS feeds for video content (podcast:medium = video)
+- Same feature set as Album mode with video-specific defaults
+- Video enclosure type support (video/mp4, etc.)
+
 ### Publisher Mode
 - Create publisher/label catalog feeds
 - Manage multiple album feeds under one publisher identity
@@ -23,16 +28,19 @@ A web-based RSS feed editor for creating Podcasting 2.0 compatible music album f
 - Nostr identity linking for token-free editing
 
 ### Integrations
-- Nostr cloud sync (NIP-07 browser extension)
-- Podcast Index search and feed submission
-- MSP feed hosting with edit tokens
-- Blossom server uploads
+- Nostr cloud sync (NIP-07 browser extension + NIP-46 remote signer)
+- Nostr Music publishing (kind 36787 events)
+- Podcast Index search, feed submission, and pubnotify
+- MSP feed hosting with edit tokens and Nostr-linked ownership
+- Blossom server uploads for file hosting
+- Dark/light theme support
 
 ## Tech Stack
 
-- React 18 + TypeScript
-- Vite
-- Nostr (NIP-07 browser extension support)
+- React 19 + TypeScript 5.9
+- Vite 7
+- Vercel (hosting + serverless API + Blob storage)
+- Nostr (NIP-07, NIP-46, NIP-98)
 
 ## Project Structure
 
@@ -40,33 +48,60 @@ A web-based RSS feed editor for creating Podcasting 2.0 compatible music album f
 src/
 ├── components/
 │   ├── Editor/
-│   │   ├── Editor.tsx              # Album editor
+│   │   ├── Editor.tsx              # Album/video editor
 │   │   └── PublisherEditor/        # Publisher mode components
-│   │       ├── index.tsx           # Publisher editor layout
+│   │       ├── index.tsx
 │   │       ├── PublisherInfoSection.tsx
 │   │       ├── PublisherArtworkSection.tsx
 │   │       ├── CatalogFeedsSection.tsx
 │   │       ├── PublisherValueSection.tsx
 │   │       ├── PublisherFundingSection.tsx
 │   │       ├── DownloadCatalogSection.tsx
-│   │       └── PublishSection.tsx
+│   │       ├── PublishSection.tsx
+│   │       └── PublisherFeedReminderSection.tsx
 │   ├── modals/
 │   │   ├── ImportModal.tsx         # Import feed modal
-│   │   └── SaveModal.tsx           # Save options modal
+│   │   ├── SaveModal.tsx           # Save options modal
+│   │   ├── PreviewModal.tsx        # Feed preview modal
+│   │   ├── InfoModal.tsx           # Info/about modal
+│   │   ├── NostrConnectModal.tsx   # NIP-46 remote signer
+│   │   ├── ConfirmModal.tsx        # Confirmation dialog
+│   │   └── ModalWrapper.tsx        # Shared modal layout
+│   ├── admin/
+│   │   ├── AdminPage.tsx           # Admin panel
+│   │   ├── FeedList.tsx            # Feed management list
+│   │   └── DeleteConfirmModal.tsx  # Feed deletion confirm
+│   ├── AddRecipientSelect.tsx      # Recipient auto-complete
+│   ├── ArtworkFields.tsx           # Artwork fields
+│   ├── FundingFields.tsx           # Funding link fields
 │   ├── InfoIcon.tsx                # Tooltip component
 │   ├── NostrLoginButton.tsx        # Nostr auth button
+│   ├── RecipientsList.tsx          # Value recipients with community support
 │   ├── Section.tsx                 # Collapsible section
 │   └── Toggle.tsx                  # Toggle switch
 ├── store/
-│   ├── feedStore.tsx               # Album & publisher state
-│   └── nostrStore.tsx              # Nostr auth state
+│   ├── feedStore.tsx               # Album, video & publisher state
+│   ├── nostrStore.tsx              # Nostr auth state
+│   └── themeStore.tsx              # Dark/light theme state
 ├── types/
 │   ├── feed.ts                     # Album/track/publisher types
 │   └── nostr.ts                    # Nostr types
 ├── utils/
-│   ├── nostr.ts                    # Nostr utilities
+│   ├── addressUtils.ts             # Lightning address detection
+│   ├── adminAuth.ts                # Admin auth (client-side)
+│   ├── audioUtils.ts               # Audio duration/metadata
+│   ├── blossom.ts                  # Blossom server uploads
+│   ├── comparison.ts               # Value block comparison
+│   ├── dateUtils.ts                # RFC-822 date formatting
+│   ├── hostedFeed.ts               # MSP hosted feed management
+│   ├── nostr.ts                    # Nostr key utilities
+│   ├── nostrMusicConverter.ts      # Album ↔ Nostr Music conversion
+│   ├── nostrRelay.ts               # Relay connection management
+│   ├── nostrSigner.ts              # NIP-46 remote signer
 │   ├── nostrSync.ts                # Relay sync (kind 30054)
 │   ├── publisherPublish.ts         # Publisher feed hosting
+│   ├── storage.ts                  # localStorage utilities
+│   ├── videoUtils.ts               # Video feed utilities
 │   ├── xmlGenerator.ts             # RSS XML generation
 │   └── xmlParser.ts                # RSS XML parsing
 ├── data/
@@ -75,10 +110,22 @@ src/
 └── App.css                         # Styles
 
 api/
-├── pisearch.ts                     # Podcast Index search API
+├── _utils/
+│   ├── adminAuth.ts                # Nostr NIP-98 auth verification
+│   ├── feedUtils.ts                # Shared feed utilities
+│   └── podcastIndex.ts             # Podcast Index auth headers
+├── admin/
+│   ├── challenge.ts                # Auth challenge generation
+│   └── verify.ts                   # Auth verification
+├── feed/
+│   └── [npub]/[guid].ts            # Nostr-stored feed retrieval
+├── hosted/
+│   ├── index.ts                    # Create/list hosted feeds
+│   └── [feedId].ts                 # Get/update/delete hosted feeds
+├── pisearch.ts                     # Podcast Index search
 ├── pisubmit.ts                     # Podcast Index feed submission
 ├── proxy-feed.ts                   # Feed proxy for CORS
-└── hosted/                         # MSP feed hosting endpoints
+└── pubnotify.ts                    # Podcast Index pub notification
 ```
 
 ## Development
@@ -104,7 +151,7 @@ Once all your catalog feeds are hosted on MSP, the "Publish on MSP" section appe
 2. Automatically notify Podcast Index of your publisher feed
 3. Add `<podcast:publisher>` references to all catalog feeds
 
-## Import Options (Album Mode)
+## Import Options (Album/Video Mode)
 
 - **Upload File** - Upload an RSS/XML feed file from your device
 - **Paste XML** - Paste RSS/XML content directly
@@ -114,7 +161,7 @@ Once all your catalog feeds are hosted on MSP, the "Publish on MSP" section appe
 - **From Nostr** - Load your previously saved albums from Nostr (requires login)
 - **From Nostr Music** - Import tracks from Nostr Music library (requires login)
 
-## Save Options (Album Mode)
+## Save Options (Album/Video Mode)
 
 - **Local Storage** - Save to your browser's local storage. Data persists until you clear browser data.
 - **Download XML** - Download the RSS feed as an XML file to your computer.
@@ -132,9 +179,11 @@ Once all your catalog feeds are hosted on MSP, the "Publish on MSP" section appe
 
 ## Nostr Integration
 
-Sign in with a NIP-07 compatible browser extension (Alby, nos2x, etc.) to:
+Sign in with a NIP-07 compatible browser extension (Alby, nos2x, etc.) or connect a NIP-46 remote signer (Amber, nsecBunker) to:
 - Save feeds to Nostr relays (kind 30054)
 - Load feeds from any device with your Nostr key
+- Publish Nostr Music events (kind 36787)
+- Link your identity to MSP-hosted feeds for token-free editing
 
 Default relays:
 - wss://relay.damus.io

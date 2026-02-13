@@ -2,9 +2,6 @@
 import type { Album, Track, Person, ValueBlock, ValueRecipient, Funding, PublisherFeed, RemoteItem, PublisherReference, BaseChannelData } from '../types/feed';
 import { formatRFC822Date } from './dateUtils';
 
-// Re-export for backward compatibility
-export { formatRFC822Date };
-
 // Escape XML special characters
 const escapeXml = (str: string): string => {
   if (!str) return '';

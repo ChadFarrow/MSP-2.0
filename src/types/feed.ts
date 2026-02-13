@@ -1,5 +1,8 @@
 // MSP 2.0 - Feed Type Definitions (Demu Template Compatible)
 
+// Feed type enum
+export type FeedType = 'album' | 'video' | 'publisher';
+
 // All person groups from Podcasting 2.0 taxonomy + custom 'music' group
 export type PersonGroup =
   | 'music'
@@ -230,12 +233,6 @@ export interface PublisherFeed {
   sourceUrl?: string;
 }
 
-export interface FeedState {
-  album: Album;
-  isDirty: boolean;
-  lastSaved: string | null;
-}
-
 // Default empty track (defined first so createEmptyAlbum can use it)
 export const createEmptyTrack = (trackNumber: number, enclosureType: string = 'audio/mpeg'): Track => ({
   id: crypto.randomUUID(),
@@ -273,10 +270,21 @@ export const createEmptyRecipient = (): ValueRecipient => ({
 });
 
 // Support recipients (MSP 2.0 and Podcast Index)
+export const COMMUNITY_SUPPORT_RECIPIENTS = [
+  { name: 'MSP 2.0', address: 'chadf@getalby.com' },
+  { name: 'Podcastindex.org', address: 'podcastindex@getalby.com' },
+];
+
 export const createSupportRecipients = (): ValueRecipient[] => [
   { name: 'MSP 2.0', address: 'chadf@getalby.com', split: 1, type: 'lnaddress' },
   { name: 'Podcastindex.org', address: 'podcastindex@getalby.com', split: 1, type: 'lnaddress' },
 ];
+
+export const isCommunitySupport = (r: ValueRecipient): boolean =>
+  COMMUNITY_SUPPORT_RECIPIENTS.some(cs => cs.name === r.name && cs.address === r.address);
+
+export const hasUserRecipients = (recipients: ValueRecipient[]): boolean =>
+  recipients.some(r => r.address && !isCommunitySupport(r));
 
 // Default empty album
 export const createEmptyAlbum = (): Album => ({

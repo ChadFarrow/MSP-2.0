@@ -18,13 +18,6 @@ const isCommunitySupport = (r: ValueRecipient): boolean =>
 const hasUserRecipients = (recipients: ValueRecipient[]): boolean =>
   recipients.some(r => r.address && !isCommunitySupport(r));
 
-// Ensure support recipients are present when importing a feed with user recipients
-const ensureSupportRecipients = (recipients: ValueRecipient[]): ValueRecipient[] => {
-  if (!hasUserRecipients(recipients)) return recipients;
-  if (recipients.some(isCommunitySupport)) return recipients;
-  return [...recipients, ...createSupportRecipients()];
-};
-
 // Feed type enum
 export type FeedType = 'album' | 'video' | 'publisher';
 
@@ -113,22 +106,9 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
   const activeAlbum = getActiveAlbum(state);
 
   switch (action.type) {
-    case 'SET_ALBUM': {
+    case 'SET_ALBUM':
       feedTypeStorage.save('album');
-      const album = {
-        ...action.payload,
-        value: {
-          ...action.payload.value,
-          recipients: ensureSupportRecipients(action.payload.value.recipients)
-        },
-        tracks: action.payload.tracks.map(t =>
-          t.value && t.value.recipients.length > 0
-            ? { ...t, value: { ...t.value, recipients: ensureSupportRecipients(t.value.recipients) } }
-            : t
-        )
-      };
-      return { ...state, album, feedType: 'album', isDirty: false };
-    }
+      return { ...state, album: action.payload, feedType: 'album', isDirty: false };
 
     case 'UPDATE_ALBUM':
       return updateActiveFeed(state, { ...activeAlbum, ...action.payload });
@@ -416,17 +396,9 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
       feedTypeStorage.save(action.payload);
       return { ...state, feedType: action.payload };
 
-    case 'SET_PUBLISHER_FEED': {
+    case 'SET_PUBLISHER_FEED':
       feedTypeStorage.save('publisher');
-      const publisherFeed = {
-        ...action.payload,
-        value: {
-          ...action.payload.value,
-          recipients: ensureSupportRecipients(action.payload.value.recipients)
-        }
-      };
-      return { ...state, publisherFeed, feedType: 'publisher', isDirty: false };
-    }
+      return { ...state, publisherFeed: action.payload, feedType: 'publisher', isDirty: false };
 
     case 'UPDATE_PUBLISHER_FEED':
       if (!state.publisherFeed) return state;
@@ -566,22 +538,9 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
       };
 
     // Video feed actions
-    case 'SET_VIDEO_FEED': {
+    case 'SET_VIDEO_FEED':
       feedTypeStorage.save('video');
-      const videoFeed = {
-        ...action.payload,
-        value: {
-          ...action.payload.value,
-          recipients: ensureSupportRecipients(action.payload.value.recipients)
-        },
-        tracks: action.payload.tracks.map(t =>
-          t.value && t.value.recipients.length > 0
-            ? { ...t, value: { ...t.value, recipients: ensureSupportRecipients(t.value.recipients) } }
-            : t
-        )
-      };
-      return { ...state, videoFeed, feedType: 'video', isDirty: false };
-    }
+      return { ...state, videoFeed: action.payload, feedType: 'video', isDirty: false };
 
     case 'UPDATE_VIDEO_FEED':
       if (!state.videoFeed) return state;

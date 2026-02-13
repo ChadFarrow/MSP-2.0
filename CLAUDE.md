@@ -176,6 +176,13 @@ if (nostrState.isLoggedIn && nostrState.user?.npub) {
 }
 ```
 
+### Community Support Recipients
+MSP 2.0 and Podcastindex.org are auto-added as value recipients with small splits. Two different behaviors by context:
+- **New feeds** (manual entry): `ADD_RECIPIENT`/`UPDATE_RECIPIENT` actions in `feedStore.tsx` auto-append support splits when the first user address is added
+- **Imported feeds**: Support splits are NOT auto-added. Instead, `RecipientsList.tsx` shows an "Add Community Support" button in the Value section when user recipients exist but support splits are missing
+
+Key helpers in `feedStore.tsx`: `isCommunitySupport()`, `hasUserRecipients()`. Support recipient definitions: `createSupportRecipients()` in `types/feed.ts`.
+
 ### Adding New Fields
 1. Add to type definition in `types/feed.ts`
 2. Add to `createEmpty*` factory function

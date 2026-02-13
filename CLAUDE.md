@@ -149,8 +149,17 @@ Vercel serverless functions:
 - **Backup retention**: `backupFeed()` helper in `api/hosted/[feedId].ts` creates timestamped backups before PUT, DELETE, and restore operations; keeps only the 10 most recent backups per feed
 
 ### XML Handling
-- `xmlParser.ts` - Uses fast-xml-parser to parse RSS feeds, preserves unknown elements
-- `xmlGenerator.ts` - Generates Podcasting 2.0 compliant RSS XML
+- `xmlParser.ts` - Uses fast-xml-parser to parse RSS feeds, preserves unknown elements, detects and strips OP3 prefixes on import
+- `xmlGenerator.ts` - Generates Podcasting 2.0 compliant RSS XML, applies OP3 prefix to enclosure URLs when enabled
+
+### OP3 Analytics
+- [OP3](https://op3.dev/) (Open Podcast Prefix Project) provides open, privacy-respecting download stats
+- Toggle in Album Info enables/disables OP3 prefix on enclosure URLs
+- `Album.op3` boolean field controls prefix generation
+- Generator (`xmlGenerator.ts`): `applyOp3Prefix()` prepends `https://op3.dev/e,pg={podcastGuid}/` to enclosure URLs (strips `https://` from target, keeps `http://`)
+- Parser (`xmlParser.ts`): `stripOp3Prefix()` detects and removes OP3 prefix on import, sets `album.op3 = true`
+- Stats link shown in Save modal (hosted section) — OP3 needs a few days of downloads before stats page is available
+- Tests in `xmlGenerator.test.ts` and `xmlParser.test.ts` cover prefix generation, stripping, and round-trip
 
 ### Nostr Integration
 - NIP-07 browser extension support for signing

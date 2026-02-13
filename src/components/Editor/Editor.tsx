@@ -273,7 +273,18 @@ export function Editor() {
                   checked={album.op3}
                   onChange={val => dispatch({ type: 'UPDATE_ALBUM', payload: { op3: val } })}
                   label="OP3 Analytics"
-                  labelSuffix={<InfoIcon text={FIELD_INFO.op3} />}
+                  labelSuffix={<>
+                    <InfoIcon text={FIELD_INFO.op3} />
+                    {album.op3 && album.podcastGuid && (
+                      <a
+                        href={`https://op3.dev/show/${album.podcastGuid}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ marginLeft: '4px', fontSize: '0.85em', color: 'var(--accent-color)' }}
+                        title="View OP3 stats"
+                      >stats</a>
+                    )}
+                  </>}
                 />
               </div>
               <div className="form-group full-width">

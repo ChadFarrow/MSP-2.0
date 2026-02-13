@@ -277,22 +277,11 @@ export function Editor() {
                       href="https://op3.dev/"
                       target="_blank"
                       rel="noopener noreferrer"
-                      style={{ color: 'inherit', textDecoration: 'none' }}
+                      style={{ color: 'var(--accent-color)', textDecoration: 'underline' }}
                       title="Learn more at op3.dev"
                     >OP3</a> Analytics
                   </>}
-                  labelSuffix={<>
-                    <InfoIcon text={FIELD_INFO.op3} />
-                    {album.op3 && album.podcastGuid && (
-                      <a
-                        href={`https://op3.dev/show/${album.podcastGuid}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ marginLeft: '4px', fontSize: '0.85em', color: 'var(--accent-color)' }}
-                        title="View OP3 stats"
-                      >stats</a>
-                    )}
-                  </>}
+                  labelSuffix={<InfoIcon text={FIELD_INFO.op3} />}
                 />
               </div>
               <div className="form-group full-width">

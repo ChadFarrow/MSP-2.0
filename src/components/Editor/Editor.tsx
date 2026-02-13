@@ -262,12 +262,18 @@ export function Editor() {
                   ))}
                 </select>
               </div>
-              <div className="form-group" style={{ display: 'flex', alignItems: 'center', paddingTop: '28px', marginLeft: '-20px' }}>
+              <div className="form-group" style={{ display: 'flex', alignItems: 'center', paddingTop: '28px', marginLeft: '-20px', gap: '16px' }}>
                 <Toggle
                   checked={album.explicit}
                   onChange={val => dispatch({ type: 'UPDATE_ALBUM', payload: { explicit: val } })}
                   label="Explicit Content"
                   labelSuffix={<InfoIcon text={FIELD_INFO.explicit} />}
+                />
+                <Toggle
+                  checked={album.op3}
+                  onChange={val => dispatch({ type: 'UPDATE_ALBUM', payload: { op3: val } })}
+                  label="OP3 Analytics"
+                  labelSuffix={<InfoIcon text={FIELD_INFO.op3} />}
                 />
               </div>
               <div className="form-group full-width">

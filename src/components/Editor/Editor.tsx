@@ -262,7 +262,7 @@ export function Editor() {
                   ))}
                 </select>
               </div>
-              <div className="form-group" style={{ display: 'flex', alignItems: 'center', paddingTop: '28px', marginLeft: '-20px', gap: '16px' }}>
+              <div className="form-group" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', paddingTop: '28px', gap: '10px' }}>
                 <Toggle
                   checked={album.explicit}
                   onChange={val => dispatch({ type: 'UPDATE_ALBUM', payload: { explicit: val } })}

@@ -272,7 +272,15 @@ export function Editor() {
                 <Toggle
                   checked={album.op3}
                   onChange={val => dispatch({ type: 'UPDATE_ALBUM', payload: { op3: val } })}
-                  label="OP3 Analytics"
+                  label={<>
+                    <a
+                      href="https://op3.dev/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: 'inherit', textDecoration: 'none' }}
+                      title="Learn more at op3.dev"
+                    >OP3</a> Analytics
+                  </>}
                   labelSuffix={<>
                     <InfoIcon text={FIELD_INFO.op3} />
                     {album.op3 && album.podcastGuid && (

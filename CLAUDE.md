@@ -151,6 +151,7 @@ Vercel serverless functions:
 - Hosted feeds are stored as Vercel Blobs at `feeds/{feedId}.xml` with metadata in `feeds/{feedId}.meta.json`
 - Feeds are **automatically submitted to Podcast Index** on creation (POST) and update (PUT) via `notifyPodcastIndex()` in `api/_utils/feedUtils.ts` — no manual step needed
 - The function sends a pubnotify ping (triggers re-crawl) and calls `add/byfeedurl` (registers new feeds, returns PI ID)
+- **Manual PI submission**: SaveModal has a "Submit to Podcast Index" mode, and `PublisherFeedReminderSection` has a self-hosted URL submission field — both call `/api/pubnotify` for feeds not hosted on MSP
 - **Backup retention**: `backupFeed()` helper in `api/hosted/[feedId].ts` creates timestamped backups before PUT, DELETE, and restore operations; keeps only the 10 most recent backups per feed
 
 ### XML Handling

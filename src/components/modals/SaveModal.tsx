@@ -1042,7 +1042,9 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
           {mode === 'podcastIndex' && (
             <div style={{ marginTop: '16px' }}>
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '12px' }}>
-                Notify Podcast Index about your feed so apps like Fountain, Castamatic, and others can find it.
+                <strong>New feed?</strong> Submit its URL to get indexed and discoverable in apps like Fountain, Castamatic, and others.
+                <br />
+                <strong>Existing feed?</strong> Re-submit the same URL to notify Podcast Index to re-crawl and pick up your latest changes.
               </p>
               <div style={{ marginBottom: '12px' }}>
                 <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
@@ -1065,9 +1067,6 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                   }}
                 />
               </div>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginBottom: '12px' }}>
-                Use this to submit a new feed or notify Podcast Index that an existing feed has been updated.
-              </p>
               {podcastIndexPageUrl && (
                 <div style={{
                   marginBottom: '12px',

@@ -161,30 +161,6 @@ function AppContent() {
                 <div className="dropdown-menu">
                   <button
                     className="dropdown-item"
-                    onClick={() => { handleNew(state.feedType); setShowDropdown(false); }}
-                  >
-                    📂 New {state.feedType === 'publisher' ? 'Publisher' : state.feedType === 'video' ? 'Video Feed' : 'Album'}
-                  </button>
-                  <button
-                    className="dropdown-item"
-                    onClick={() => { setShowImportModal(true); setShowDropdown(false); }}
-                  >
-                    📥 Import
-                  </button>
-                  <button
-                    className="dropdown-item"
-                    onClick={() => { setShowSaveModal(true); setShowDropdown(false); }}
-                  >
-                    💾 Save
-                  </button>
-                  <button
-                    className="dropdown-item"
-                    onClick={() => { setShowPreviewModal(true); setShowDropdown(false); }}
-                  >
-                    👁️ View Feed
-                  </button>
-                  <button
-                    className="dropdown-item"
                     onClick={() => { setShowInfoModal(true); setShowDropdown(false); }}
                   >
                     ℹ️ Info
@@ -261,6 +237,40 @@ function AppContent() {
           </div>
         </header>
         {state.feedType === 'publisher' ? <PublisherEditor /> : <Editor key={`${state.feedType}-${state.album?.podcastGuid}-${state.videoFeed?.podcastGuid}`} />}
+        <div className="bottom-toolbar">
+          <button
+            className="bottom-toolbar-btn"
+            onClick={() => handleNew(state.feedType)}
+            title={`New ${state.feedType === 'publisher' ? 'Publisher' : state.feedType === 'video' ? 'Video Feed' : 'Album'}`}
+          >
+            <span className="bottom-toolbar-icon">📂</span>
+            <span className="bottom-toolbar-label">New</span>
+          </button>
+          <button
+            className="bottom-toolbar-btn"
+            onClick={() => setShowImportModal(true)}
+            title="Import"
+          >
+            <span className="bottom-toolbar-icon">📥</span>
+            <span className="bottom-toolbar-label">Import</span>
+          </button>
+          <button
+            className="bottom-toolbar-btn"
+            onClick={() => setShowSaveModal(true)}
+            title="Save"
+          >
+            <span className="bottom-toolbar-icon">💾</span>
+            <span className="bottom-toolbar-label">Save</span>
+          </button>
+          <button
+            className="bottom-toolbar-btn"
+            onClick={() => setShowPreviewModal(true)}
+            title="View Feed"
+          >
+            <span className="bottom-toolbar-icon">👁️</span>
+            <span className="bottom-toolbar-label">View Feed</span>
+          </button>
+        </div>
       </div>
 
       {showImportModal && (

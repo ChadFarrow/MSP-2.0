@@ -37,7 +37,7 @@ interface SaveModalProps {
 
 export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', isDirty, isLoggedIn, onImport }: SaveModalProps) {
   const { state: nostrState } = useNostr();
-  const [mode, setMode] = useState<'local' | 'download' | 'clipboard' | 'nostr' | 'nostrMusic' | 'blossom' | 'hosted' | 'podcastIndex'>('local');
+  const [mode, setMode] = useState<'local' | 'download' | 'clipboard' | 'nostr' | 'nostrMusic' | 'blossom' | 'hosted'>('local');
   const isPublisherMode = feedType === 'publisher';
   const isVideoMode = feedType === 'video';
 
@@ -70,9 +70,6 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
   const [pendingToken, setPendingToken] = useState<string | null>(null);
   const [tokenAcknowledged, setTokenAcknowledged] = useState(false);
   const [linkingNostr, setLinkingNostr] = useState(false);
-  const [podcastIndexUrl, setPodcastIndexUrl] = useState('');
-  const [submittingToIndex, setSubmittingToIndex] = useState(false);
-  const [podcastIndexPageUrl, setPodcastIndexPageUrl] = useState<string | null>(null);
   const [podcastIndexPending, setPodcastIndexPending] = useState(false); // True when PI notified but not yet indexed
 
   // Check if feed is linked to current user's Nostr identity
@@ -80,7 +77,6 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
 
   // Helper to get button text based on mode and loading state
   const getButtonText = () => {
-    if (mode === 'podcastIndex') return submittingToIndex ? 'Submitting...' : 'Submit';
     if (loading) {
       if (mode === 'nostrMusic' || mode === 'blossom' || mode === 'hosted') return 'Uploading...';
       if (mode === 'download') return 'Downloading...';
@@ -96,20 +92,10 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
 
   // Helper to determine if button should be disabled
   const isButtonDisabled = () => {
-    if (mode === 'podcastIndex') return submittingToIndex || !podcastIndexUrl.trim();
     if (loading) return true;
     if (mode === 'hosted' && !hostedInfo && !legacyHostedInfo && !tokenAcknowledged) return true;
     return false;
   };
-
-  // Auto-populate Podcast Index URL when a hosted URL becomes available
-  useEffect(() => {
-    if (mode === 'blossom' && stableUrl) {
-      setPodcastIndexUrl(stableUrl);
-    } else if ((mode === 'hosted' || mode === 'podcastIndex') && hostedUrl) {
-      setPodcastIndexUrl(hostedUrl);
-    }
-  }, [mode, hostedUrl, stableUrl]);
 
   // Generate token when selecting hosted mode for a new feed
   useEffect(() => {
@@ -476,35 +462,6 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
     }
   };
 
-  // Submit feed URL to Podcast Index
-  const handleSubmitToPodcastIndex = async () => {
-    if (!podcastIndexUrl.trim()) {
-      setMessage({ type: 'error', text: 'Please enter a feed URL' });
-      return;
-    }
-
-    setSubmittingToIndex(true);
-    setMessage(null);
-
-    try {
-      const response = await fetch(`/api/pubnotify?url=${encodeURIComponent(podcastIndexUrl.trim())}`);
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to submit to Podcast Index');
-      }
-
-      // Generate search URL so user can view their feed on Podcast Index
-      const searchUrl = `https://podcastindex.org/search?q=${encodeURIComponent(podcastIndexUrl.trim())}`;
-      setPodcastIndexPageUrl(data.podcastIndexUrl || searchUrl);
-      setMessage({ type: 'success', text: 'Feed submitted! It may take a moment to appear in the index.' });
-    } catch (err) {
-      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to submit to Podcast Index' });
-    } finally {
-      setSubmittingToIndex(false);
-    }
-  };
-
   return (
     <>
       <ModalWrapper
@@ -527,7 +484,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
             <button className="btn btn-secondary" onClick={handleClose}>Cancel</button>
             <button
               className="btn btn-primary"
-              onClick={mode === 'podcastIndex' ? handleSubmitToPodcastIndex : handleSave}
+              onClick={handleSave}
               disabled={isButtonDisabled()}
             >
               {getButtonText()}
@@ -546,7 +503,6 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
               <option value="download">Download XML</option>
               <option value="clipboard">Copy to Clipboard</option>
               <option value="hosted">Host on MSP</option>
-              <option value="podcastIndex">Submit to Podcast Index</option>
               {isLoggedIn && <option value="nostr">Save to Nostr</option>}
               {!isPublisherMode && isLoggedIn && <option value="nostrMusic">Publish Nostr Music</option>}
               {isLoggedIn && <option value="blossom">Publish to Blossom</option>}
@@ -850,34 +806,23 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                       </p>
                     </div>
                   )}
-                  {(podcastIndexPageUrl || podcastIndexPending) && (
+                  {podcastIndexPending && (
                     <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>
                       <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                         Podcast Index
                       </label>
-                      {podcastIndexPageUrl ? (
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0 }}>
+                        Feed submitted to Podcast Index. It may take a few minutes to appear.
+                        <br />
                         <a
-                          href={podcastIndexPageUrl}
+                          href={`https://podcastindex.org/search?q=${encodeURIComponent(hostedUrl || '')}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          style={{ fontSize: '0.875rem', color: '#3b82f6', wordBreak: 'break-all' }}
+                          style={{ color: '#3b82f6' }}
                         >
-                          {podcastIndexPageUrl}
+                          Check status or add manually →
                         </a>
-                      ) : (
-                        <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0 }}>
-                          Feed submitted to Podcast Index. It may take a few minutes to appear.
-                          <br />
-                          <a
-                            href={`https://podcastindex.org/search?q=${encodeURIComponent(hostedUrl || '')}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{ color: '#3b82f6' }}
-                          >
-                            Check status or add manually →
-                          </a>
-                        </p>
-                      )}
+                      </p>
                     </div>
                   )}
                   {/* Link Nostr button for existing feeds without Nostr link */}
@@ -1055,66 +1000,6 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
             </div>
           )}
 
-          {mode === 'podcastIndex' && (
-            <div style={{ marginTop: '16px' }}>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '12px' }}>
-                <strong>New feed?</strong> Submit its URL to get indexed and discoverable in apps like Fountain, Castamatic, and others.
-                <br />
-                <strong>Existing feed?</strong> Re-submit the same URL to notify Podcast Index to re-crawl and pick up your latest changes.
-              </p>
-              <div style={{ marginBottom: '12px' }}>
-                <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                  Feed URL
-                </label>
-                <input
-                  type="text"
-                  value={podcastIndexUrl}
-                  onChange={(e) => setPodcastIndexUrl(e.target.value)}
-                  placeholder="https://example.com/feed.xml"
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: '4px',
-                    border: '1px solid var(--border-color)',
-                    backgroundColor: 'var(--bg-secondary)',
-                    color: 'var(--text-primary)',
-                    fontSize: '0.875rem',
-                    fontFamily: 'monospace'
-                  }}
-                />
-              </div>
-              {podcastIndexPageUrl && (
-                <div style={{
-                  marginBottom: '12px',
-                  padding: '12px',
-                  backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                  borderRadius: '8px',
-                  border: '1px solid var(--success)'
-                }}>
-                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.75rem', fontWeight: 600, color: 'var(--success)' }}>
-                    View on Podcast Index
-                  </label>
-                  <a
-                    href={podcastIndexPageUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ fontSize: '0.875rem', color: '#3b82f6', wordBreak: 'break-all' }}
-                  >
-                    {podcastIndexPageUrl}
-                  </a>
-                </div>
-              )}
-              <a
-                href="https://podcastindex.org/add"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ fontSize: '0.75rem', color: '#3b82f6' }}
-              >
-                Add feed manually on podcastindex.org →
-              </a>
-            </div>
-          )}
-
           {progress && (
             <div style={{ marginTop: '12px', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
               {progress.phase === 'tracks'
@@ -1151,7 +1036,6 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                 <li><strong>Download XML</strong> - Download the RSS feed as an XML file to your computer.</li>
                 <li><strong>Copy to Clipboard</strong> - Copy the RSS XML to your clipboard for pasting elsewhere.</li>
                 <li><strong>Host on MSP</strong> - Host your feed on MSP servers. Get a permanent URL for your RSS feed to use in any app.{isLoggedIn && ' You can link your Nostr identity to edit from any device without needing the token.'}</li>
-                <li><strong>Submit to Podcast Index</strong> - Notify Podcast Index about your feed URL so podcast apps can discover it. Use this for new feeds or to notify them of updates.</li>
                 <li><strong>Save to Nostr</strong> - Publish to Nostr relays. Load it later on any device with your Nostr key (requires login).</li>
                 <li><strong>Publish Nostr Music</strong> - Publish tracks and playlist (kinds 36787 + 34139) for Nostr music clients (requires login).</li>
                 <li><strong>Publish to Blossom</strong> - Upload your feed to a Blossom server. Get a stable MSP URL that always points to your latest upload (requires login).</li>

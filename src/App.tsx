@@ -12,6 +12,7 @@ import { NostrLoginButton } from './components/NostrLoginButton';
 import { ImportModal } from './components/modals/ImportModal';
 import { SaveModal } from './components/modals/SaveModal';
 import { PreviewModal } from './components/modals/PreviewModal';
+import { PodcastIndexModal } from './components/modals/PodcastIndexModal';
 import { InfoModal } from './components/modals/InfoModal';
 import { NostrConnectModal } from './components/modals/NostrConnectModal';
 import { ConfirmModal } from './components/modals/ConfirmModal';
@@ -20,6 +21,7 @@ import { PublisherEditor } from './components/Editor/PublisherEditor';
 import { AdminPage } from './components/admin/AdminPage';
 import type { Album } from './types/feed';
 import mspLogo from './assets/msp-logo.png';
+import piLogo from './assets/podcast-index-logo.svg';
 import './App.css';
 
 // Main App Content (needs access to context)
@@ -29,6 +31,7 @@ function AppContent() {
   const [showImportModal, setShowImportModal] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [showPodcastIndexModal, setShowPodcastIndexModal] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [showNostrConnectModal, setShowNostrConnectModal] = useState(false);
   const [showConfirmNewModal, setShowConfirmNewModal] = useState(false);
@@ -264,6 +267,14 @@ function AppContent() {
           </button>
           <button
             className="bottom-toolbar-btn"
+            onClick={() => setShowPodcastIndexModal(true)}
+            title="Submit to Podcast Index"
+          >
+            <img src={piLogo} alt="Podcast Index" className="bottom-toolbar-icon-img" />
+            <span className="bottom-toolbar-label">Podcast Index</span>
+          </button>
+          <button
+            className="bottom-toolbar-btn"
             onClick={() => setShowPreviewModal(true)}
             title="View Feed"
           >
@@ -300,6 +311,19 @@ function AppContent() {
           album={state.feedType === 'video' && state.videoFeed ? state.videoFeed : state.album}
           publisherFeed={state.publisherFeed}
           feedType={state.feedType}
+        />
+      )}
+
+      {showPodcastIndexModal && (
+        <PodcastIndexModal
+          onClose={() => setShowPodcastIndexModal(false)}
+          feedGuid={
+            state.feedType === 'publisher' && state.publisherFeed
+              ? state.publisherFeed.podcastGuid
+              : state.feedType === 'video' && state.videoFeed
+                ? state.videoFeed.podcastGuid
+                : state.album.podcastGuid
+          }
         />
       )}
 

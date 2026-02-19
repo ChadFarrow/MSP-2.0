@@ -88,6 +88,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           console.warn('Failed to lookup feed by URL:', lookupErr);
         }
       }
+
+      // If still not found, register the feed via add/byfeedurl (for new feeds)
+      if (!podcastIndexId) {
+        try {
+          const addResponse = await fetch(
+            `https://api.podcastindex.org/api/1.0/add/byfeedurl?url=${encodeURIComponent(url)}`,
+            { method: 'POST', headers: authHeaders }
+          );
+          const addText = await addResponse.text();
+          if (addText) {
+            try {
+              const addData = JSON.parse(addText);
+              if (addData.feed?.id) {
+                podcastIndexId = addData.feed.id;
+                podcastIndexPageUrl = `https://podcastindex.org/podcast/${podcastIndexId}`;
+              }
+            } catch {
+              // JSON parse failed
+            }
+          }
+        } catch (addErr) {
+          console.warn('Failed to add feed to Podcast Index:', addErr);
+        }
+      }
     }
 
     return res.status(200).json({

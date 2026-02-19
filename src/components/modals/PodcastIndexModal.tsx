@@ -32,16 +32,23 @@ export function PodcastIndexModal({ onClose, feedGuid }: PodcastIndexModalProps)
     setMessage(null);
 
     try {
-      const response = await fetch(`/api/pubnotify?url=${encodeURIComponent(podcastIndexUrl.trim())}`);
+      const params = new URLSearchParams({ url: podcastIndexUrl.trim() });
+      if (feedGuid) params.set('guid', feedGuid);
+      const response = await fetch(`/api/pubnotify?${params}`);
       const data = await response.json();
 
       if (!response.ok) {
         throw new Error(data.error || 'Failed to submit to Podcast Index');
       }
 
-      const searchUrl = `https://podcastindex.org/search?q=${encodeURIComponent(podcastIndexUrl.trim())}`;
-      setPodcastIndexPageUrl(data.podcastIndexUrl || searchUrl);
-      setMessage({ type: 'success', text: 'Feed submitted! It may take a moment to appear in the index.' });
+      if (data.podcastIndexUrl) {
+        setPodcastIndexPageUrl(data.podcastIndexUrl);
+        setMessage({ type: 'success', text: 'Feed added to Podcast Index!' });
+      } else {
+        const searchUrl = `https://podcastindex.org/search?q=${encodeURIComponent(podcastIndexUrl.trim())}`;
+        setPodcastIndexPageUrl(searchUrl);
+        setMessage({ type: 'success', text: 'Feed submitted! It may take a moment to appear in the index.' });
+      }
     } catch (err) {
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to submit to Podcast Index' });
     } finally {

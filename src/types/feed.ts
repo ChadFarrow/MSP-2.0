@@ -175,6 +175,9 @@ export interface Album {
   // Unknown/unsupported XML elements (preserved for round-trip)
   unknownChannelElements?: Record<string, unknown>;
 
+  // Analytics
+  op3: boolean;
+
   // Tracks
   tracks: Track[];
 }
@@ -321,6 +324,7 @@ export const createEmptyAlbum = (): Album => ({
     recipients: [createEmptyRecipient()]
   },
   funding: [],
+  op3: false,
   tracks: [createEmptyTrack(1)]
 });
 
@@ -359,6 +363,7 @@ export const createEmptyVideoAlbum = (): Album => ({
     recipients: [createEmptyRecipient()]
   },
   funding: [],
+  op3: false,
   tracks: [createEmptyTrack(1, 'video/mp4')]
 });
 

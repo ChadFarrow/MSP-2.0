@@ -295,13 +295,28 @@ export function Editor() {
               </div>
               <div className="form-group">
                 <label className="form-label">Podcast GUID <span className="required">*</span><InfoIcon text={FIELD_INFO.podcastGuid} /></label>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="Auto-generated UUID"
-                  value={album.podcastGuid || ''}
-                  onChange={e => dispatch({ type: 'UPDATE_ALBUM', payload: { podcastGuid: e.target.value } })}
-                />
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Auto-generated UUID"
+                    value={album.podcastGuid || ''}
+                    onChange={e => dispatch({ type: 'UPDATE_ALBUM', payload: { podcastGuid: e.target.value } })}
+                    style={{ flex: 1 }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-small"
+                    title="Generate new GUID"
+                    onClick={() => {
+                      if (confirm('Generate a new GUID? This will create a new feed identity. Only do this if you are using this feed as a template for a new album.')) {
+                        dispatch({ type: 'UPDATE_ALBUM', payload: { podcastGuid: crypto.randomUUID() } });
+                      }
+                    }}
+                  >
+                    New
+                  </button>
+                </div>
               </div>
               <div className="form-group">
                 <label className="form-label">Keywords<InfoIcon text={FIELD_INFO.keywords} /></label>

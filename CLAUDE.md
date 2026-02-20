@@ -90,6 +90,14 @@ api/                # Vercel serverless endpoints
 - Include Co-Authored-By for Claude-assisted commits
 - No pre-commit hooks configured
 
+### Desktop App Auto-Sync
+Every push to `master` automatically triggers a sync to the [MSP-2.0-Desktop-App](https://github.com/ChadFarrow/MSP-2.0-Desktop-App) repo:
+- `.github/workflows/notify-desktop.yml` sends a `repository_dispatch` event to the Desktop App repo on each push
+- The Desktop App's `sync-upstream.yml` workflow receives the event, merges upstream changes, and creates a PR
+- Daily schedule (6 AM UTC) and manual triggers also remain as fallbacks
+- The Desktop App's sync workflow includes a "Remove web-only workflows" step that strips `notify-desktop.yml` (and any future web-only files) after merging upstream, preventing them from running in the Desktop App repo
+- **Secrets**: `DESKTOP_SYNC_TOKEN` (this repo) — PAT with `repo` scope for dispatching; `SYNC_PAT` (Desktop App repo) — PAT with `repo` + `workflow` scope for pushing workflow file changes in PRs
+
 ## GitHub Issues
 
 Check GitHub issues for feature requests and bug reports:

@@ -15,7 +15,7 @@ import { PreviewModal } from './components/modals/PreviewModal';
 import { PodcastIndexModal } from './components/modals/PodcastIndexModal';
 import { InfoModal } from './components/modals/InfoModal';
 import { NostrConnectModal } from './components/modals/NostrConnectModal';
-import { ConfirmModal } from './components/modals/ConfirmModal';
+import { NewFeedChoiceModal } from './components/modals/NewFeedChoiceModal';
 import { Editor } from './components/Editor/Editor';
 import { PublisherEditor } from './components/Editor/PublisherEditor';
 import { AdminPage } from './components/admin/AdminPage';
@@ -34,8 +34,9 @@ function AppContent() {
   const [showPodcastIndexModal, setShowPodcastIndexModal] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [showNostrConnectModal, setShowNostrConnectModal] = useState(false);
-  const [showConfirmNewModal, setShowConfirmNewModal] = useState(false);
+  const [showNewFeedChoiceModal, setShowNewFeedChoiceModal] = useState(false);
   const [pendingNewFeedType, setPendingNewFeedType] = useState<FeedType>('album');
+  const [isTemplateMode, setIsTemplateMode] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { state: nostrState, logout: nostrLogout } = useNostr();
@@ -100,10 +101,10 @@ function AppContent() {
 
   const handleNew = (feedType: FeedType = 'album') => {
     setPendingNewFeedType(feedType);
-    setShowConfirmNewModal(true);
+    setShowNewFeedChoiceModal(true);
   };
 
-  const handleConfirmNew = () => {
+  const handleStartBlank = () => {
     // Clear any stale hosted import credentials so they don't
     // accidentally overwrite a previously imported feed's content
     pendingHostedStorage.clear();
@@ -114,7 +115,33 @@ function AppContent() {
     } else {
       dispatch({ type: 'SET_ALBUM', payload: createEmptyAlbum() });
     }
-    setShowConfirmNewModal(false);
+    setShowNewFeedChoiceModal(false);
+  };
+
+  const handleUseTemplate = () => {
+    setShowNewFeedChoiceModal(false);
+    setIsTemplateMode(true);
+    setShowImportModal(true);
+  };
+
+  const handleTemplateImport = (xml: string) => {
+    // Import without sourceUrl so hosted link isn't set
+    handleImport(xml);
+    // After import, regenerate the GUID and clear hosted credentials
+    const newGuid = crypto.randomUUID();
+    if (isPublisherFeed(xml)) {
+      dispatch({ type: 'UPDATE_PUBLISHER_FEED', payload: { podcastGuid: newGuid } });
+    } else if (isVideoFeed(xml)) {
+      dispatch({ type: 'UPDATE_VIDEO_FEED', payload: { podcastGuid: newGuid } });
+    } else {
+      dispatch({ type: 'UPDATE_ALBUM', payload: { podcastGuid: newGuid } });
+    }
+    pendingHostedStorage.clear();
+  };
+
+  const handleTemplateLoadAlbum = (album: Album) => {
+    pendingHostedStorage.clear();
+    dispatch({ type: 'SET_ALBUM', payload: { ...album, podcastGuid: crypto.randomUUID() } });
   };
 
   const handleSwitchFeedType = (feedType: FeedType) => {
@@ -286,10 +313,11 @@ function AppContent() {
 
       {showImportModal && (
         <ImportModal
-          onClose={() => setShowImportModal(false)}
-          onImport={handleImport}
-          onLoadAlbum={handleLoadAlbum}
+          onClose={() => { setShowImportModal(false); setIsTemplateMode(false); }}
+          onImport={isTemplateMode ? handleTemplateImport : handleImport}
+          onLoadAlbum={isTemplateMode ? handleTemplateLoadAlbum : handleLoadAlbum}
           isLoggedIn={nostrState.isLoggedIn}
+          templateMode={isTemplateMode}
         />
       )}
 
@@ -335,15 +363,12 @@ function AppContent() {
         <NostrConnectModal onClose={() => setShowNostrConnectModal(false)} />
       )}
 
-      <ConfirmModal
-        isOpen={showConfirmNewModal}
-        title={pendingNewFeedType === 'publisher' ? 'Create New Publisher Feed' : pendingNewFeedType === 'video' ? 'Create New Video Feed' : 'Create New Album'}
-        message={`Create a new ${pendingNewFeedType === 'publisher' ? 'Publisher Feed' : pendingNewFeedType === 'video' ? 'Video Feed' : 'Album'}? This will clear all current data for this feed type.`}
-        confirmText="Create"
-        cancelText="Cancel"
-        variant="warning"
-        onConfirm={handleConfirmNew}
-        onCancel={() => setShowConfirmNewModal(false)}
+      <NewFeedChoiceModal
+        isOpen={showNewFeedChoiceModal}
+        feedType={pendingNewFeedType}
+        onStartBlank={handleStartBlank}
+        onUseTemplate={handleUseTemplate}
+        onCancel={() => setShowNewFeedChoiceModal(false)}
       />
     </>
   );

@@ -480,8 +480,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
           </div>
         }
         footer={
-          <>
-            <button className="btn btn-secondary" onClick={handleClose}>Cancel</button>
+          <div style={{ display: 'flex', gap: '12px', width: '100%' }}>
             <button
               className="btn btn-primary"
               onClick={handleSave}
@@ -489,7 +488,9 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
             >
               {getButtonText()}
             </button>
-          </>
+            <div style={{ flex: 1 }} />
+            <button className="btn btn-secondary" onClick={handleClose}>Cancel</button>
+          </div>
         }
       >
           <div className="form-group" style={{ marginBottom: '16px' }}>

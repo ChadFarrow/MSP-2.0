@@ -790,22 +790,6 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                       Unlink
                     </button>
                   </div>
-                  {album.op3 && album.podcastGuid && (
-                    <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>
-                      <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                        OP3 Analytics
-                      </label>
-                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0 }}>
-                        Once OP3 has observed a few days of downloads, stats will be available{' '}
-                        <a
-                          href={`https://op3.dev/show/${album.podcastGuid}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{ color: 'var(--accent-color)', textDecoration: 'underline' }}
-                        >here</a>.
-                      </p>
-                    </div>
-                  )}
                   {podcastIndexPending && (
                     <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>
                       <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>

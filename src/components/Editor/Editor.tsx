@@ -73,6 +73,40 @@ function RolesModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   );
 }
 
+function Op3StatsLink({ podcastGuid }: { podcastGuid: string }) {
+  const [hasStats, setHasStats] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setHasStats(null);
+    fetch(`/api/op3check?guid=${encodeURIComponent(podcastGuid)}`)
+      .then(res => res.json())
+      .then(data => { if (!cancelled) setHasStats(data.hasStats === true); })
+      .catch(() => { if (!cancelled) setHasStats(false); });
+    return () => { cancelled = true; };
+  }, [podcastGuid]);
+
+  const link = (
+    <a
+      href={`https://op3.dev/show/${podcastGuid}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{ color: 'var(--accent-color)', textDecoration: 'underline' }}
+    >here</a>
+  );
+
+  return (
+    <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
+      {hasStats === null
+        ? 'Checking OP3 stats...'
+        : hasStats
+          ? <>View your OP3 stats {link}.</>
+          : <>Once OP3 has observed a few days of downloads, stats will be available {link}.</>
+      }
+    </p>
+  );
+}
+
 export function Editor() {
   const { state, dispatch } = useFeed();
   const { state: nostrState } = useNostr();
@@ -283,6 +317,9 @@ export function Editor() {
                   </>}
                   labelSuffix={<InfoIcon text={FIELD_INFO.op3} />}
                 />
+                {album.op3 && album.podcastGuid && (
+                  <Op3StatsLink podcastGuid={album.podcastGuid} />
+                )}
               </div>
               <div className="form-group full-width">
                 <label className="form-label">Description <span className="required">*</span><InfoIcon text={FIELD_INFO.description} /></label>

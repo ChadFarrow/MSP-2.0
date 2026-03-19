@@ -17,22 +17,26 @@ export interface VideoTrackData {
 }
 
 /**
- * Detect if a string is an naddr (with or without nostr: prefix)
+ * Extract the bare naddr string from various input formats:
+ * - bare: naddr1...
+ * - nostr: prefix: nostr:naddr1...
+ * - URL containing naddr: https://nostu.be/v/naddr1...
+ * Returns null if no naddr is found.
  */
-export function isNaddrString(input: string): boolean {
+function extractNaddr(input: string): string | null {
   const trimmed = input.trim();
-  return trimmed.startsWith('naddr1') || trimmed.startsWith('nostr:naddr1');
+  if (trimmed.startsWith('naddr1')) return trimmed;
+  if (trimmed.startsWith('nostr:naddr1')) return trimmed.slice(6);
+  // Extract naddr from URLs (e.g. https://nostu.be/v/naddr1...)
+  const match = trimmed.match(/naddr1[a-z0-9]+/i);
+  return match ? match[0] : null;
 }
 
 /**
- * Strip nostr: prefix if present and return the bare naddr
+ * Detect if a string contains an naddr
  */
-function stripNostrPrefix(input: string): string {
-  const trimmed = input.trim();
-  if (trimmed.startsWith('nostr:')) {
-    return trimmed.slice(6);
-  }
-  return trimmed;
+export function isNaddrString(input: string): boolean {
+  return extractNaddr(input) !== null;
 }
 
 /**
@@ -40,7 +44,10 @@ function stripNostrPrefix(input: string): string {
  * Returns the most recent matching event.
  */
 export async function resolveNaddr(input: string): Promise<NostrEvent> {
-  const bare = stripNostrPrefix(input);
+  const bare = extractNaddr(input);
+  if (!bare) {
+    throw new Error('No naddr found in input');
+  }
 
   const decoded = decode(bare);
   if (decoded.type !== 'naddr') {
@@ -119,7 +126,7 @@ export function parseVideoEvent(event: NostrEvent): VideoTrackData {
 
   // Extract duration from imeta (seconds) and convert to HH:MM:SS
   let duration: string | undefined;
-  const durationStr = imeta?.duration;
+  const durationStr = imeta?.duration || getTag('duration');
   if (durationStr) {
     const totalSeconds = parseFloat(durationStr);
     if (!isNaN(totalSeconds)) {

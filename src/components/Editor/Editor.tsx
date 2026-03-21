@@ -1030,6 +1030,17 @@ export function Editor() {
                     </div>
                     <div className="form-group">
                       <Toggle
+                        checked={track.overridePersons}
+                        onChange={val => dispatch({
+                          type: 'UPDATE_TRACK',
+                          payload: { index, track: { overridePersons: val } }
+                        })}
+                        label="Override Persons"
+                        labelSuffix={<InfoIcon text={FIELD_INFO.overridePersons} />}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <Toggle
                         checked={track.overrideValue}
                         onChange={val => dispatch({
                           type: 'UPDATE_TRACK',
@@ -1040,6 +1051,147 @@ export function Editor() {
                       />
                     </div>
                   </div>
+                  )}
+
+                  {/* Track-specific Persons */}
+                  {track.overridePersons && !collapsedTracks[track.id] && (
+                    <div style={{ marginTop: '12px', padding: '12px', background: 'var(--bg-primary)', borderRadius: '8px' }}>
+                      <h5 style={{ marginBottom: '12px', color: 'var(--text-secondary)' }}>Track Credits / Persons</h5>
+                      <div className="repeatable-list">
+                        {track.persons.map((person, personIndex) => (
+                          <div key={personIndex} className="repeatable-item">
+                            <div className="repeatable-item-content">
+                              <div className="form-grid">
+                                <div className="form-group">
+                                  <label className="form-label">Name<InfoIcon text={FIELD_INFO.personName} /></label>
+                                  <input
+                                    type="text"
+                                    className="form-input"
+                                    placeholder="Person name"
+                                    value={person.name || ''}
+                                    onChange={e => dispatch({
+                                      type: 'UPDATE_TRACK_PERSON',
+                                      payload: { trackIndex: index, personIndex, person: { ...person, name: e.target.value } }
+                                    })}
+                                  />
+                                </div>
+                                <div className="form-group">
+                                  <label className="form-label">Website<InfoIcon text={FIELD_INFO.personHref} /></label>
+                                  <input
+                                    type="url"
+                                    className="form-input"
+                                    placeholder="https://..."
+                                    value={person.href || ''}
+                                    onChange={e => dispatch({
+                                      type: 'UPDATE_TRACK_PERSON',
+                                      payload: { trackIndex: index, personIndex, person: { ...person, href: e.target.value } }
+                                    })}
+                                  />
+                                </div>
+                                <div className="form-group">
+                                  <label className="form-label">Photo URL<InfoIcon text={FIELD_INFO.personImg} /></label>
+                                  <input
+                                    type="url"
+                                    className="form-input"
+                                    placeholder="https://..."
+                                    value={person.img || ''}
+                                    onChange={e => dispatch({
+                                      type: 'UPDATE_TRACK_PERSON',
+                                      payload: { trackIndex: index, personIndex, person: { ...person, img: e.target.value } }
+                                    })}
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Roles */}
+                              <div style={{ marginTop: '12px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                                  <label className="form-label" style={{ margin: 0 }}>Roles<InfoIcon text={FIELD_INFO.personRole} /></label>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '8px' }}>
+                                  {person.roles.map((role, roleIndex) => (
+                                    <div key={roleIndex} style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '8px',
+                                      background: 'var(--bg-tertiary)',
+                                      padding: '8px 12px',
+                                      borderRadius: '6px',
+                                      fontSize: '14px'
+                                    }}>
+                                      <select
+                                        className="form-select"
+                                        style={{ minWidth: '180px', padding: '8px 12px', fontSize: '14px' }}
+                                        value={role.group}
+                                        onChange={e => {
+                                          const newGroup = e.target.value as PersonGroup;
+                                          const newRole = PERSON_ROLES[newGroup]?.[0]?.value || 'band';
+                                          dispatch({
+                                            type: 'UPDATE_TRACK_PERSON_ROLE',
+                                            payload: { trackIndex: index, personIndex, roleIndex, role: { group: newGroup, role: newRole } }
+                                          });
+                                        }}
+                                      >
+                                        {PERSON_GROUPS.map(g => (
+                                          <option key={g.value} value={g.value}>{g.label}</option>
+                                        ))}
+                                      </select>
+                                      <select
+                                        className="form-select"
+                                        style={{ minWidth: '200px', padding: '8px 12px', fontSize: '14px' }}
+                                        value={role.role}
+                                        onChange={e => dispatch({
+                                          type: 'UPDATE_TRACK_PERSON_ROLE',
+                                          payload: { trackIndex: index, personIndex, roleIndex, role: { ...role, role: e.target.value } }
+                                        })}
+                                      >
+                                        {(PERSON_ROLES[role.group] || PERSON_ROLES.music).map(r => (
+                                          <option key={r.value} value={r.value}>{r.label}</option>
+                                        ))}
+                                      </select>
+                                      {person.roles.length > 1 && (
+                                        <button
+                                          className="btn btn-icon btn-danger"
+                                          style={{ padding: '6px 10px', fontSize: '14px', minWidth: 'auto' }}
+                                          onClick={() => dispatch({
+                                            type: 'REMOVE_TRACK_PERSON_ROLE',
+                                            payload: { trackIndex: index, personIndex, roleIndex }
+                                          })}
+                                          title="Remove role"
+                                        >
+                                          &#10005;
+                                        </button>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                                <button
+                                  className="btn btn-secondary"
+                                  style={{ fontSize: '12px', padding: '4px 12px' }}
+                                  onClick={() => dispatch({
+                                    type: 'ADD_TRACK_PERSON_ROLE',
+                                    payload: { trackIndex: index, personIndex, role: createEmptyPersonRole() }
+                                  })}
+                                >
+                                  + Add Role
+                                </button>
+                              </div>
+                            </div>
+                            <div className="repeatable-item-actions">
+                              <button
+                                className="btn btn-icon btn-danger"
+                                onClick={() => dispatch({ type: 'REMOVE_TRACK_PERSON', payload: { trackIndex: index, personIndex } })}
+                              >
+                                &#10005;
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                        <button className="add-item-btn" onClick={() => dispatch({ type: 'ADD_TRACK_PERSON', payload: { trackIndex: index } })}>
+                          + Add Person
+                        </button>
+                      </div>
+                    </div>
                   )}
 
                   {/* Track-specific Value Block */}

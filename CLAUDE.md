@@ -182,6 +182,7 @@ Vercel serverless functions:
 - Kind 30054 events for feed storage on relays
 - Kind 36787 for Nostr Music track publishing
 - Blossom server uploads for file hosting
+- **NIP-71 naddr video resolution**: Pasting an `naddr` string (bare, `nostr:` prefixed, or in a URL like `nostu.be/v/naddr1...`) into a Video URL field auto-resolves the NIP-71 video event (kind 34235/34236) from relays and fills in URL, MIME type, and duration. Implementation in `utils/nostrVideoConverter.ts` with paste handler in `Editor.tsx`. Supports both modern `imeta` tags and legacy separate tags (`url`, `m`, `duration`).
 
 ## Key Patterns
 

@@ -74,9 +74,10 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
   const [tokenAcknowledged, setTokenAcknowledged] = useState(false);
   const [linkingNostr, setLinkingNostr] = useState(false);
   const [podcastIndexPending, setPodcastIndexPending] = useState(false); // True when PI notified but not yet indexed
-  const [nsiteSiteId] = useState(() => defaultSiteId(currentFeedGuid));
+  const nsiteSiteId = defaultSiteId(currentFeedGuid);
   const [nsiteUrl, setNsiteUrl] = useState<string | null>(null);
   const [nsiteBlossomUrl, setNsiteBlossomUrl] = useState<string | null>(null);
+  const [nsitePiUrl, setNsitePiUrl] = useState<string | null>(null);
   const [nsiteProgress, setNsiteProgress] = useState<string | null>(null);
 
   // Check if feed is linked to current user's Nostr identity
@@ -359,13 +360,28 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
             (status) => setNsiteProgress(status)
           );
           if (nsiteResult.success) {
-            if (nsiteResult.nsiteUrl) setNsiteUrl(nsiteResult.nsiteUrl);
+            if (nsiteResult.nsiteUrl) {
+              setNsiteUrl(nsiteResult.nsiteUrl);
+              // Submit to Podcast Index
+              setNsiteProgress('Submitting to Podcast Index...');
+              try {
+                const piRes = await fetch(`/api/pubnotify?url=${encodeURIComponent(nsiteResult.nsiteUrl)}&guid=${encodeURIComponent(currentFeedGuid)}`);
+                if (piRes.ok) {
+                  const piData = await piRes.json();
+                  if (piData.podcastIndexUrl) setNsitePiUrl(piData.podcastIndexUrl);
+                }
+              } catch {
+                // Non-fatal — feed is already published to nsite
+              }
+            }
             if (nsiteResult.blossomUrl) setNsiteBlossomUrl(nsiteResult.blossomUrl);
           }
           setNsiteProgress(null);
           setMessage({
             type: nsiteResult.success ? 'success' : 'error',
-            text: nsiteResult.message
+            text: nsiteResult.success
+              ? nsiteResult.message + ' Feed submitted to Podcast Index.'
+              : nsiteResult.message
           });
           break;
         }
@@ -755,6 +771,18 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                       fontFamily: 'monospace'
                     }}
                   />
+                </div>
+              )}
+              {nsitePiUrl && (
+                <div style={{ marginTop: '8px' }}>
+                  <a
+                    href={nsitePiUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ fontSize: '0.875rem', color: 'var(--accent-color)' }}
+                  >
+                    View on Podcast Index →
+                  </a>
                 </div>
               )}
             </div>

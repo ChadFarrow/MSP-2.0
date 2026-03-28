@@ -42,7 +42,7 @@ function hexToBase36(hex: string): string {
  * Build the nsite URL for a named site
  * Format: https://<50-char-base36-pubkey><identifier>.gateway/path
  */
-export function buildNsiteUrl(pubkey: string, siteId: string, path: string, gateway = DEFAULT_GATEWAY): string {
+function buildNsiteUrl(pubkey: string, siteId: string, path: string, gateway = DEFAULT_GATEWAY): string {
   const base36Key = hexToBase36(pubkey);
   return `https://${base36Key}${siteId}.${gateway}${path}`;
 }
@@ -51,7 +51,7 @@ export function buildNsiteUrl(pubkey: string, siteId: string, path: string, gate
  * Validate a site identifier for NIP-5A named sites
  * Must be 1-13 chars, lowercase alphanumeric and hyphens
  */
-export function isValidSiteId(siteId: string): boolean {
+function isValidSiteId(siteId: string): boolean {
   return /^[a-z0-9-]{1,13}$/.test(siteId);
 }
 
@@ -122,7 +122,7 @@ export interface NsitePublishResult {
   siteId?: string;
 }
 
-export type NsiteProgress = (status: string) => void;
+type NsiteProgress = (status: string) => void;
 
 /**
  * Publish a feed to nsite via Blossom + NIP-5A manifest

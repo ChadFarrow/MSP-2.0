@@ -111,6 +111,12 @@ describe('pubnotify API', () => {
       json: vi.fn().mockResolvedValue({ feed: { id: 12345 } })
     });
 
+    // Mock add/byfeedurl (always called to register URL)
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      text: vi.fn().mockResolvedValue(JSON.stringify({ feed: { id: 12345 } }))
+    });
+
     const { req, res } = createMockReqRes({
       url: 'https://example.com/feed.xml',
       guid: 'test-guid-123'
@@ -118,11 +124,12 @@ describe('pubnotify API', () => {
 
     await handler(req, res);
 
-    // Should have called pubnotify first, then byguid lookup
-    expect(mockFetch).toHaveBeenCalledTimes(2);
+    // Should have called pubnotify, byguid lookup, then add/byfeedurl
+    expect(mockFetch).toHaveBeenCalledTimes(3);
     expect(mockFetch.mock.calls[0][0]).toContain('hub/pubnotify');
     expect(mockFetch.mock.calls[1][0]).toContain('podcasts/byguid');
     expect(mockFetch.mock.calls[1][0]).toContain('guid=test-guid-123');
+    expect(mockFetch.mock.calls[2][0]).toContain('add/byfeedurl');
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
@@ -153,6 +160,12 @@ describe('pubnotify API', () => {
       json: vi.fn().mockResolvedValue({ feed: { id: 67890 } })
     });
 
+    // Mock add/byfeedurl (always called to register URL)
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      text: vi.fn().mockResolvedValue(JSON.stringify({ feed: { id: 67890 } }))
+    });
+
     const { req, res } = createMockReqRes({
       url: 'https://example.com/feed.xml',
       guid: 'unknown-guid'
@@ -160,8 +173,8 @@ describe('pubnotify API', () => {
 
     await handler(req, res);
 
-    // Should have called pubnotify, then byguid, then byfeedurl
-    expect(mockFetch).toHaveBeenCalledTimes(3);
+    // Should have called pubnotify, byguid, byfeedurl lookup, then add/byfeedurl
+    expect(mockFetch).toHaveBeenCalledTimes(4);
     expect(mockFetch.mock.calls[0][0]).toContain('hub/pubnotify');
     expect(mockFetch.mock.calls[1][0]).toContain('podcasts/byguid');
     expect(mockFetch.mock.calls[2][0]).toContain('podcasts/byfeedurl');
@@ -188,6 +201,12 @@ describe('pubnotify API', () => {
       json: vi.fn().mockResolvedValue({ feed: { id: 11111 } })
     });
 
+    // Mock add/byfeedurl (always called to register URL)
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      text: vi.fn().mockResolvedValue(JSON.stringify({ feed: { id: 11111 } }))
+    });
+
     const { req, res } = createMockReqRes({
       url: 'https://example.com/feed.xml'
       // No guid parameter
@@ -195,8 +214,8 @@ describe('pubnotify API', () => {
 
     await handler(req, res);
 
-    // Should have called pubnotify, then byfeedurl (skipping byguid)
-    expect(mockFetch).toHaveBeenCalledTimes(2);
+    // Should have called pubnotify, byfeedurl lookup, then add/byfeedurl
+    expect(mockFetch).toHaveBeenCalledTimes(3);
     expect(mockFetch.mock.calls[0][0]).toContain('hub/pubnotify');
     expect(mockFetch.mock.calls[1][0]).toContain('podcasts/byfeedurl');
     // Should NOT have called byguid
@@ -222,6 +241,12 @@ describe('pubnotify API', () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: vi.fn().mockResolvedValue({ feed: null })
+    });
+
+    // Mock add/byfeedurl (no result either)
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      text: vi.fn().mockResolvedValue(JSON.stringify({}))
     });
 
     const { req, res } = createMockReqRes({
@@ -272,6 +297,12 @@ describe('pubnotify API', () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: vi.fn().mockResolvedValue({ feed: { id: 7642183 } })
+    });
+
+    // Mock add/byfeedurl (always called to register URL)
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      text: vi.fn().mockResolvedValue(JSON.stringify({ feed: { id: 7642183 } }))
     });
 
     const { req, res } = createMockReqRes({

@@ -105,19 +105,6 @@ export function truncateNpub(npub: string): string {
   return `${npub.slice(0, 13)}...${npub.slice(-4)}`;
 }
 
-// Check if NIP-07 extension is available
-export function hasNostrExtension(): boolean {
-  return typeof window !== 'undefined' && typeof window.nostr !== 'undefined';
-}
-
-// Get public key from extension
-export async function getPublicKey(): Promise<string> {
-  if (!window.nostr) {
-    throw new Error('Nostr extension not found');
-  }
-  return window.nostr.getPublicKey();
-}
-
 // Load user from localStorage
 export function loadStoredUser(): NostrUser | null {
   return nostrUserStorage.load();

@@ -106,6 +106,22 @@ const NostrContext = createContext<NostrContextType | undefined>(undefined);
 export function NostrProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(nostrReducer, initialState);
 
+  // Fetch Nostr profile and dispatch UPDATE_PROFILE
+  const refreshProfile = useCallback((pubkey: string) => {
+    fetchNostrProfile(pubkey).then((profile) => {
+      if (profile) {
+        dispatch({
+          type: 'UPDATE_PROFILE',
+          payload: {
+            displayName: profile.display_name || profile.name,
+            picture: profile.picture,
+            nip05: profile.nip05
+          }
+        });
+      }
+    });
+  }, []);
+
   // Check for extension and restore session on mount
   useEffect(() => {
     async function init() {
@@ -134,19 +150,7 @@ export function NostrProvider({ children }: { children: ReactNode }) {
               if (pubkey && pubkey === storedUser.pubkey) {
                 dispatch({ type: 'RESTORE_SESSION', payload: { user: storedUser, method: 'nip46' } });
 
-                // Refresh profile in background
-                fetchNostrProfile(pubkey).then((profile) => {
-                  if (profile) {
-                    dispatch({
-                      type: 'UPDATE_PROFILE',
-                      payload: {
-                        displayName: profile.display_name || profile.name,
-                        picture: profile.picture,
-                        nip05: profile.nip05
-                      }
-                    });
-                  }
-                });
+                refreshProfile(pubkey);
                 return;
               }
             } catch (e) {
@@ -200,7 +204,7 @@ export function NostrProvider({ children }: { children: ReactNode }) {
       }
     }
     init();
-  }, []);
+  }, [refreshProfile]);
 
   // Login with NIP-07 (browser extension)
   const login = useCallback(async () => {
@@ -224,24 +228,12 @@ export function NostrProvider({ children }: { children: ReactNode }) {
 
       dispatch({ type: 'LOGIN_SUCCESS', payload: { user, method: 'nip07' } });
 
-      // Fetch profile in background
-      fetchNostrProfile(pubkey).then((profile) => {
-        if (profile) {
-          dispatch({
-            type: 'UPDATE_PROFILE',
-            payload: {
-              displayName: profile.display_name || profile.name,
-              picture: profile.picture,
-              nip05: profile.nip05
-            }
-          });
-        }
-      });
+      refreshProfile(pubkey);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Login failed';
       dispatch({ type: 'SET_ERROR', payload: message });
     }
-  }, []);
+  }, [refreshProfile]);
 
   // Login with NIP-46 (remote signer)
   const loginWithNip46 = useCallback(async (
@@ -281,24 +273,12 @@ export function NostrProvider({ children }: { children: ReactNode }) {
 
       dispatch({ type: 'LOGIN_SUCCESS', payload: { user, method: 'nip46' } });
 
-      // Fetch profile in background
-      fetchNostrProfile(pubkey).then((profile) => {
-        if (profile) {
-          dispatch({
-            type: 'UPDATE_PROFILE',
-            payload: {
-              displayName: profile.display_name || profile.name,
-              picture: profile.picture,
-              nip05: profile.nip05
-            }
-          });
-        }
-      });
+      refreshProfile(pubkey);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Login failed';
       dispatch({ type: 'SET_ERROR', payload: message });
     }
-  }, []);
+  }, [refreshProfile]);
 
   // Logout function
   const logout = useCallback(() => {

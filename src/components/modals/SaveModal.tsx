@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { generateRssFeed, generatePublisherRssFeed, downloadXml, copyToClipboard } from '../../utils/xmlGenerator';
-import { saveFeedToNostr, publishNostrMusicTracks } from '../../utils/nostrSync';
+import { saveFeedToNostr, publishNostrMusicTracks, deleteNostrMusicTracks } from '../../utils/nostrSync';
 import { uploadFeedToBlossom } from '../../utils/blossom';
 import { publishToNsite, defaultSiteId } from '../../utils/nsite';
 import type { PublishProgress } from '../../utils/nostrSync';
@@ -532,6 +532,23 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
             >
               {getButtonText()}
             </button>
+            {mode === 'nostrMusic' && (
+              <button
+                className="btn btn-secondary"
+                onClick={async () => {
+                  if (!confirm('Request deletion of all published tracks and playlist for this album from Nostr relays?')) return;
+                  setLoading(true);
+                  setMessage(null);
+                  const result = await deleteNostrMusicTracks(album);
+                  setLoading(false);
+                  setMessage({ type: result.success ? 'success' : 'error', text: result.message });
+                }}
+                disabled={loading}
+                style={{ color: 'var(--error)' }}
+              >
+                Unpublish
+              </button>
+            )}
             <div style={{ flex: 1 }} />
             <button className="btn btn-secondary" onClick={handleClose}>Cancel</button>
           </div>
@@ -549,7 +566,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
               <option value="clipboard">Copy to Clipboard</option>
               <option value="hosted">Host on MSP</option>
               {isLoggedIn && <option value="nostr">Save to Nostr</option>}
-              {!isPublisherMode && isLoggedIn && <option value="nostrMusic">Publish Nostr Music</option>}
+              {!isPublisherMode && isLoggedIn && <option value="nostrMusic">Publish to Nostr Music</option>}
               {isLoggedIn && <option value="blossom">Publish to Blossom</option>}
               {isLoggedIn && <option value="nsite">Publish to nsite</option>}
             </select>
@@ -1171,7 +1188,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                 <li><strong>Copy to Clipboard</strong> - Copy the RSS XML to your clipboard for pasting elsewhere.</li>
                 <li><strong>Host on MSP</strong> - Host your feed on MSP servers. Get a permanent URL for your RSS feed to use in any app.{isLoggedIn && ' You can link your Nostr identity to edit from any device without needing the token.'}</li>
                 <li><strong>Save to Nostr</strong> - Publish to Nostr relays. Load it later on any device with your Nostr key (requires login).</li>
-                <li><strong>Publish Nostr Music</strong> - Publish tracks and playlist (kinds 36787 + 34139) for Nostr music clients (requires login).</li>
+                <li><strong>Publish to Nostr Music</strong> - Publish tracks and playlist (kinds 36787 + 34139) for Nostr music clients (requires login).</li>
                 <li><strong>Publish to Blossom</strong> - Upload your feed to a Blossom server. Get a stable MSP URL that always points to your latest upload (requires login).</li>
               </ul>
             </ModalWrapper>

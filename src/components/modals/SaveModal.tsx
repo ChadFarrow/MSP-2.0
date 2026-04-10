@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { generateRssFeed, generatePublisherRssFeed, downloadXml, copyToClipboard } from '../../utils/xmlGenerator';
-import { saveFeedToNostr, publishNostrMusicTracks } from '../../utils/nostrSync';
+import { saveFeedToNostr, publishNostrMusicTracks, deleteNostrMusicTracks } from '../../utils/nostrSync';
 import { uploadFeedToBlossom } from '../../utils/blossom';
 import { publishToNsite, defaultSiteId } from '../../utils/nsite';
 import type { PublishProgress } from '../../utils/nostrSync';
@@ -532,6 +532,23 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
             >
               {getButtonText()}
             </button>
+            {mode === 'nostrMusic' && (
+              <button
+                className="btn btn-secondary"
+                onClick={async () => {
+                  if (!confirm('Request deletion of all published tracks and playlist for this album from Nostr relays?')) return;
+                  setLoading(true);
+                  setMessage(null);
+                  const result = await deleteNostrMusicTracks(album);
+                  setLoading(false);
+                  setMessage({ type: result.success ? 'success' : 'error', text: result.message });
+                }}
+                disabled={loading}
+                style={{ color: 'var(--error)' }}
+              >
+                Unpublish
+              </button>
+            )}
             <div style={{ flex: 1 }} />
             <button className="btn btn-secondary" onClick={handleClose}>Cancel</button>
           </div>

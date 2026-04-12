@@ -518,8 +518,10 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
               className="import-help-icon"
               onClick={() => setShowHelp(true)}
               title="Show save type descriptions"
+              role="button"
+              aria-label="Show save type descriptions"
             >
-              ℹ️
+              i
             </span>
           </div>
         }

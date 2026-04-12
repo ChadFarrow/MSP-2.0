@@ -522,9 +522,20 @@ function createMusicTrackEvent(
     ['artist', album.author || 'Unknown Artist'],
     ['album', album.title || 'Untitled'],
     ['track_number', String(track.trackNumber)],
+    ['t', 'music'],
     ['client', CLIENT_TAG],
     ['alt', `Music track: ${track.title} by ${album.author || 'Unknown Artist'}`]
   ];
+
+  // Add duration
+  if (track.duration) {
+    tags.push(['duration', String(track.duration)]);
+  }
+
+  // Add explicit flag
+  if (track.explicit) {
+    tags.push(['explicit', 'true']);
+  }
 
   // Add image (track art or album art)
   const imageUrl = track.trackArtUrl || album.imageUrl;

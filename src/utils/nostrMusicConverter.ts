@@ -272,8 +272,9 @@ export function parseNostrMusicEvent(event: NostrEvent): NostrMusicTrackInfo | n
     .map(t => t[1])
     .filter(v => v && v !== 'music');
 
-  // Parse duration and explicit
-  const duration = getTag('duration');
+  // Parse duration (must be numeric) and explicit
+  const rawDuration = getTag('duration');
+  const duration = rawDuration && /^\d+$/.test(rawDuration) ? rawDuration : undefined;
   const explicit = getTag('explicit');
 
   // Parse zap splits from 'zap' tags

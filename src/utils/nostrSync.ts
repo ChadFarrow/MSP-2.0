@@ -522,7 +522,6 @@ function createMusicTrackEvent(
     ['artist', album.author || 'Unknown Artist'],
     ['album', album.title || 'Untitled'],
     ['track_number', String(track.trackNumber)],
-    ['t', 'music'],
     ['client', CLIENT_TAG],
     ['alt', `Music track: ${track.title} by ${album.author || 'Unknown Artist'}`]
   ];
@@ -554,7 +553,8 @@ function createMusicTrackEvent(
     tags.push(['language', album.language]);
   }
 
-  // Add genre tags from categories
+  // Add genre tags from categories (music discriminator first, then user genres)
+  tags.push(['t', 'music']);
   for (const category of album.categories) {
     tags.push(['t', category.toLowerCase()]);
   }

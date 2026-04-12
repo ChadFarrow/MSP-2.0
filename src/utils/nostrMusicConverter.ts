@@ -138,6 +138,14 @@ async function convertNostrTrackToTrack(
   // Build description from content
   track.description = buildTrackDescription(nostrTrack);
 
+  // Set duration and explicit
+  if (nostrTrack.duration) {
+    track.duration = nostrTrack.duration;
+  }
+  if (nostrTrack.explicit) {
+    track.explicit = true;
+  }
+
   // Set track art
   if (nostrTrack.imageUrl) {
     track.trackArtUrl = nostrTrack.imageUrl;
@@ -258,11 +266,16 @@ export function parseNostrMusicEvent(event: NostrEvent): NostrMusicTrackInfo | n
   // Required fields
   if (!dTag || !title || !url) return null;
 
-  // Parse genres from 't' tags
+  // Parse genres from 't' tags (exclude the "music" discriminator tag)
   const genres = event.tags
     .filter(t => t[0] === 't')
     .map(t => t[1])
-    .filter(Boolean);
+    .filter(v => v && v !== 'music');
+
+  // Parse duration (must be numeric) and explicit
+  const rawDuration = getTag('duration');
+  const duration = rawDuration && /^\d+$/.test(rawDuration) ? rawDuration : undefined;
+  const explicit = getTag('explicit');
 
   // Parse zap splits from 'zap' tags
   const zapSplits: NostrZapSplit[] = event.tags
@@ -288,6 +301,8 @@ export function parseNostrMusicEvent(event: NostrEvent): NostrMusicTrackInfo | n
     imageUrl: getTag('image'),
     released: getTag('released'),
     language: getTag('language'),
+    duration: duration || undefined,
+    explicit: explicit === 'true' || undefined,
     genres,
     zapSplits,
     content: parsedContent,

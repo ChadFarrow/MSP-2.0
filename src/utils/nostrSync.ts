@@ -526,6 +526,16 @@ function createMusicTrackEvent(
     ['alt', `Music track: ${track.title} by ${album.author || 'Unknown Artist'}`]
   ];
 
+  // Add duration
+  if (track.duration) {
+    tags.push(['duration', String(track.duration)]);
+  }
+
+  // Add explicit flag
+  if (track.explicit) {
+    tags.push(['explicit', 'true']);
+  }
+
   // Add image (track art or album art)
   const imageUrl = track.trackArtUrl || album.imageUrl;
   if (imageUrl) {
@@ -543,7 +553,8 @@ function createMusicTrackEvent(
     tags.push(['language', album.language]);
   }
 
-  // Add genre tags from categories
+  // Add genre tags from categories (music discriminator first, then user genres)
+  tags.push(['t', 'music']);
   for (const category of album.categories) {
     tags.push(['t', category.toLowerCase()]);
   }

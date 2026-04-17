@@ -1,5 +1,19 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { notifyPodping } from './_utils/feedUtils.js';
+import { checkRateLimit } from './_utils/rateLimiter.js';
+
+const RATE_LIMIT = { limit: 10, windowMs: 3600_000 };
+
+function getClientIp(req: VercelRequest): string {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string') {
+    return forwarded.split(',')[0].trim();
+  }
+  if (Array.isArray(forwarded) && forwarded.length > 0) {
+    return forwarded[0].split(',')[0].trim();
+  }
+  return 'unknown';
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET' && req.method !== 'POST') {
@@ -23,8 +37,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: 'Invalid URL format' });
   }
 
-  if (!process.env.PODPING_TOKEN) {
-    return res.status(501).json({ error: 'PODPING_TOKEN not configured' });
+  const ip = getClientIp(req);
+  const rate = checkRateLimit(ip, RATE_LIMIT);
+  if (!rate.allowed) {
+    res.setHeader('Retry-After', Math.ceil(rate.retryAfterMs / 1000));
+    return res.status(429).json({ error: 'Too many podping requests. Try again later.' });
+  }
+
+  if (!process.env.PODPING_ENDPOINT_URL || !process.env.PODPING_BEARER_TOKEN) {
+    return res.status(501).json({ error: 'Podping not configured on this deployment' });
   }
 
   const result = await notifyPodping(url, { reason, medium });

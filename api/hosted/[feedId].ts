@@ -7,6 +7,7 @@ import {
   hashToken,
   isValidFeedId
 } from '../_utils/feedUtils.js';
+import { extractPodcastMedium } from '../_utils/xmlUtils.js';
 
 // Metadata stored in separate .meta.json blob
 interface FeedMetadata {
@@ -292,8 +293,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         // Notify Podcast Index and get PI ID (may update existing ID)
         const stableUrl = `${getBaseUrl(req)}/api/hosted/${feedId}.xml`;
-        const mediumMatch = xml.match(/<podcast:medium>([^<]+)<\/podcast:medium>/);
-        const medium = mediumMatch?.[1];
+        const medium = extractPodcastMedium(xml);
         const newPodcastIndexId = await notifyPodcastIndex(stableUrl, { medium });
         const podcastIndexId = newPodcastIndexId || existingPodcastIndexId;
 

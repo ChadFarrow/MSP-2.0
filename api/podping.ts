@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { notifyPodping } from './_utils/feedUtils.js';
+import { notifyPodping, isPodpingConfigured } from './_utils/feedUtils.js';
 import { checkRateLimit } from './_utils/rateLimiter.js';
 
 const RATE_LIMIT = { limit: 10, windowMs: 3600_000 };
@@ -44,7 +44,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(429).json({ error: 'Too many podping requests. Try again later.' });
   }
 
-  if (!process.env.PODPING_ENDPOINT_URL || !process.env.PODPING_BEARER_TOKEN) {
+  if (!isPodpingConfigured()) {
     return res.status(501).json({ error: 'Podping not configured on this deployment' });
   }
 

@@ -19,6 +19,14 @@ export interface PodpingResult {
 }
 
 /**
+ * True when both PODPING_ENDPOINT_URL and PODPING_BEARER_TOKEN are set.
+ * Callers use this to short-circuit before attempting a broadcast.
+ */
+export function isPodpingConfigured(): boolean {
+  return Boolean(process.env.PODPING_ENDPOINT_URL && process.env.PODPING_BEARER_TOKEN);
+}
+
+/**
  * Submit a feed-update notification to the MSP podping-hivepinger deployment.
  * No-ops (returns ok: false) when PODPING_ENDPOINT_URL or PODPING_BEARER_TOKEN is unset
  * so callers can fire-and-forget.
@@ -95,8 +103,13 @@ export async function notifyPodcastIndex(
     console.warn('Failed to send pubnotify:', err instanceof Error ? err.message : err);
   }
 
-  // Broadcast feed update via self-hosted hivepinger (no-ops without PODPING_ENDPOINT_URL + PODPING_BEARER_TOKEN)
-  void notifyPodping(feedUrl, { medium: options.medium });
+  // Broadcast feed update via self-hosted hivepinger (no-ops without PODPING_ENDPOINT_URL + PODPING_BEARER_TOKEN).
+  // Intentionally not awaited so PI submission isn't blocked; surface failures to function logs.
+  notifyPodping(feedUrl, { medium: options.medium }).then((result) => {
+    if (!result.ok) {
+      console.warn(`Podping broadcast failed for ${feedUrl}: ${result.error ?? 'unknown'}`);
+    }
+  });
 
   // Then try to get PI ID via add/byfeedurl (for new feeds) or lookup
   if (!PI_API_KEY || !PI_API_SECRET) return null;

@@ -5,7 +5,6 @@ import { getAuthHeaders } from './podcastIndex.js';
 
 const PI_API_KEY = process.env.PODCASTINDEX_API_KEY;
 const PI_API_SECRET = process.env.PODCASTINDEX_API_SECRET;
-const PODPING_ENDPOINT = 'https://podping.cloud/';
 const PODPING_USER_AGENT = 'MSP2.0/1.0 (Music Side Project Studio)';
 
 export interface PodpingOptions {
@@ -20,16 +19,22 @@ export interface PodpingResult {
 }
 
 /**
- * Submit a feed-update notification to podping.cloud.
- * No-ops (returns ok: false) when PODPING_TOKEN is unset so callers can fire-and-forget.
+ * Submit a feed-update notification to the MSP podping-hivepinger deployment.
+ * No-ops (returns ok: false) when PODPING_ENDPOINT_URL or PODPING_BEARER_TOKEN is unset
+ * so callers can fire-and-forget.
  */
 export async function notifyPodping(
   feedUrl: string,
   options: PodpingOptions = {}
 ): Promise<PodpingResult> {
-  const token = process.env.PODPING_TOKEN;
+  const endpoint = process.env.PODPING_ENDPOINT_URL;
+  if (!endpoint) {
+    return { ok: false, error: 'PODPING_ENDPOINT_URL not configured' };
+  }
+
+  const token = process.env.PODPING_BEARER_TOKEN;
   if (!token) {
-    return { ok: false, error: 'PODPING_TOKEN not configured' };
+    return { ok: false, error: 'PODPING_BEARER_TOKEN not configured' };
   }
 
   const params = new URLSearchParams({ url: feedUrl });
@@ -37,10 +42,10 @@ export async function notifyPodping(
   if (options.medium) params.set('medium', options.medium);
 
   try {
-    const response = await fetch(`${PODPING_ENDPOINT}?${params.toString()}`, {
+    const response = await fetch(`${endpoint}?${params.toString()}`, {
       method: 'GET',
       headers: {
-        Authorization: token,
+        Authorization: `Bearer ${token}`,
         'User-Agent': PODPING_USER_AGENT
       }
     });

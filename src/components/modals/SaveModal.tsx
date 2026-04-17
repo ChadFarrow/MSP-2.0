@@ -1207,37 +1207,35 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '12px' }}>
                 Notify podcast apps that this feed was updated, via Podping/Hive. Indexers re-crawl the feed when they see the ping.
               </p>
-              <div style={{ padding: '12px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.875rem' }}>
-                  Feed URL
-                </label>
-                <input
-                  type="text"
-                  value={podpingUrl}
-                  onChange={(e) => setPodpingUrl(e.target.value)}
-                  placeholder="https://msp.podtards.com/api/hosted/<id>.xml"
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: '4px',
-                    border: '1px solid var(--border-color)',
-                    backgroundColor: 'var(--bg-secondary)',
-                    color: 'var(--text-primary)',
-                    fontSize: '0.875rem',
-                    marginBottom: '12px'
-                  }}
-                />
-                {podpingStatus.kind === 'success' && (
-                  <p style={{ color: 'var(--success-color, #22c55e)', fontSize: '0.875rem' }}>
-                    Podping sent.
-                  </p>
-                )}
-                {podpingStatus.kind === 'error' && (
-                  <p style={{ color: 'var(--error-color, #ef4444)', fontSize: '0.875rem' }}>
-                    {podpingStatus.message}
-                  </p>
-                )}
-              </div>
+              <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.875rem' }}>
+                Feed URL
+              </label>
+              <input
+                type="text"
+                value={podpingUrl}
+                onChange={(e) => setPodpingUrl(e.target.value)}
+                placeholder="https://msp.podtards.com/api/hosted/<id>.xml"
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  borderRadius: '4px',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--bg-secondary)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.875rem',
+                  marginBottom: '8px'
+                }}
+              />
+              {podpingStatus.kind === 'success' && (
+                <p style={{ color: 'var(--success-color, #22c55e)', fontSize: '0.875rem', margin: 0 }}>
+                  Podping sent.
+                </p>
+              )}
+              {podpingStatus.kind === 'error' && (
+                <p style={{ color: 'var(--error-color, #ef4444)', fontSize: '0.875rem', margin: 0 }}>
+                  {podpingStatus.message}
+                </p>
+              )}
             </div>
           )}
 

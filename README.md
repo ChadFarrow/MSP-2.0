@@ -36,6 +36,7 @@ A web-based RSS feed editor for creating Podcasting 2.0 compatible music album f
 - Blossom server uploads (BUD-01) for file hosting
 - nsite (NIP-5A) publishing — decentralized feed hosting via Blossom + site manifest
 - OP3 analytics prefix support for privacy-respecting download stats
+- Podping broadcasts via self-hosted [podping-hivepinger](https://github.com/brianoflondon/podping-hivepinger) — auto-fires on Host on MSP updates; standalone toolbar button and Send Podping save destination for manual pings
 - Dark/light theme support
 
 ## Tech Stack
@@ -70,6 +71,7 @@ src/
 │   │   ├── NostrConnectModal.tsx   # NIP-46 remote signer
 │   │   ├── NewFeedChoiceModal.tsx  # Start blank vs. use template
 │   │   ├── PodcastIndexModal.tsx   # Manual Podcast Index submission
+│   │   ├── PodpingModal.tsx        # Manual Podping broadcast (toolbar button)
 │   │   ├── ConfirmModal.tsx        # Confirmation dialog
 │   │   └── ModalWrapper.tsx        # Shared modal layout
 │   ├── admin/
@@ -117,8 +119,10 @@ src/
 api/
 ├── _utils/
 │   ├── adminAuth.ts                # Nostr NIP-98 auth verification
-│   ├── feedUtils.ts                # Shared feed utilities
-│   └── podcastIndex.ts             # Podcast Index auth headers
+│   ├── feedUtils.ts                # Shared feed utilities (PI + Podping)
+│   ├── podcastIndex.ts             # Podcast Index auth headers
+│   ├── rateLimiter.ts              # In-memory IP rate limiter
+│   └── xmlUtils.ts                 # RSS XML helpers (podcast:medium)
 ├── admin/
 │   ├── challenge.ts                # Auth challenge generation
 │   └── verify.ts                   # Auth verification
@@ -129,6 +133,7 @@ api/
 │   └── [feedId].ts                 # Get/update/delete hosted feeds
 ├── pisearch.ts                     # Podcast Index search
 ├── pisubmit.ts                     # Podcast Index feed submission
+├── podping.ts                      # Manual podping broadcast (rate-limited)
 ├── proxy-feed.ts                   # Feed proxy for CORS
 └── pubnotify.ts                    # Podcast Index pub notification
 ```
@@ -177,6 +182,7 @@ Once all your catalog feeds are hosted on MSP, the "Publish on MSP" section appe
 - **Publish to Nostr Music** - Publish each track as a kind 36787 event plus a kind 34139 playlist event for Nostr-native music clients (Wavlake, Fountain, etc.). Includes an Unpublish button that sends a NIP-09 deletion request (requires login).
 - **Publish RSS feed to a Blossom server** - Upload your feed to a Blossom server with a kind 1063 (NIP-94) pointer event so `${origin}/api/feed/{npub}/{podcastGuid}.xml` always resolves to the latest upload. Subscribable in podcast apps (requires login).
 - **Publish RSS feed to nsite (experimental)** - Publish via Blossom + a NIP-5A site manifest (kind 35128). Subscribable via any nsite gateway URL, and auto-submitted to Podcast Index (requires login).
+- **Send Podping** - Broadcast a feed-update notification via Podping/Hive so indexers (Podcast Index, Fountain, etc.) re-crawl the feed. URL auto-fills from the current feed's hosted URL when available; editable for external feeds.
 
 ## Save Options (Publisher Mode)
 
@@ -199,6 +205,21 @@ Default relays:
 - wss://relay.primal.net
 - wss://nos.lol
 - wss://relay.nostr.band
+
+## Podping
+
+MSP broadcasts feed-update [Podpings](https://podping.org/) via a companion service:
+[ChadFarrow/msp-podping-service](https://github.com/ChadFarrow/msp-podping-service) (a Dockerized
+[podping-hivepinger](https://github.com/brianoflondon/podping-hivepinger) behind a Caddy
+bearer-auth sidecar, deployed on Railway).
+
+- **Automatic**: every `Host on MSP` create/update fires a podping in the background
+- **Manual**: standalone **Podping** button on the bottom toolbar, or the **Send Podping** option in the Save modal
+- **Direct API**: `GET /api/podping?url=<feedUrl>&reason=update` (rate-limited to 10/hour per IP)
+
+Requires two Vercel env vars to activate: `PODPING_ENDPOINT_URL` (Railway URL, trailing slash)
+and `PODPING_BEARER_TOKEN` (matches the service's `PODPING_SHARED_SECRET`). Both unset →
+MSP silently skips the broadcast and falls back to Podcast Index pubnotify only.
 
 ## License
 

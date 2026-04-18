@@ -382,6 +382,13 @@ function AppContent() {
                 ? state.videoFeed.podcastGuid
                 : state.album.podcastGuid
           }
+          medium={
+            state.feedType === 'publisher'
+              ? undefined
+              : state.feedType === 'video'
+                ? 'video'
+                : 'music'
+          }
         />
       )}
 

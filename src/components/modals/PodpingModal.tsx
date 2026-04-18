@@ -5,9 +5,10 @@ import { getHostedFeedInfo, buildHostedUrl } from '../../utils/hostedFeed';
 interface PodpingModalProps {
   onClose: () => void;
   feedGuid: string;
+  medium?: string;
 }
 
-export function PodpingModal({ onClose, feedGuid }: PodpingModalProps) {
+export function PodpingModal({ onClose, feedGuid, medium }: PodpingModalProps) {
   const [podpingUrl, setPodpingUrl] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -31,10 +32,12 @@ export function PodpingModal({ onClose, feedGuid }: PodpingModalProps) {
     setMessage(null);
 
     try {
+      const body: { url: string; reason: string; medium?: string } = { url, reason: 'update' };
+      if (medium) body.medium = medium;
       const response = await fetch('/api/podping', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, reason: 'update' })
+        body: JSON.stringify(body)
       });
       if (!response.ok) {
         const data = await response.json().catch(() => ({ error: response.statusText }));

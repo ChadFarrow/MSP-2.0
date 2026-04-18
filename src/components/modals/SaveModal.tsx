@@ -383,7 +383,10 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
               // Submit to Podcast Index
               setNsiteProgress('Submitting to Podcast Index...');
               try {
-                const piRes = await fetch(`/api/pubnotify?url=${encodeURIComponent(nsiteResult.nsiteUrl)}&guid=${encodeURIComponent(currentFeedGuid)}`);
+                const piMedium = isPublisherMode ? publisherFeed?.medium : album.medium;
+                const piParams = new URLSearchParams({ url: nsiteResult.nsiteUrl, guid: currentFeedGuid });
+                if (piMedium) piParams.set('medium', piMedium);
+                const piRes = await fetch(`/api/pubnotify?${piParams.toString()}`);
                 if (piRes.ok) {
                   const piData = await piRes.json();
                   if (piData.podcastIndexUrl) setNsitePiUrl(piData.podcastIndexUrl);

@@ -382,7 +382,7 @@ export function groupTracksByAlbum(tracks: NostrMusicTrackInfo[]): NostrMusicAlb
 
 // Fetch music track events (kind 36787) for logged-in user
 export async function fetchNostrMusicTracks(
-  relays = DEFAULT_RELAYS
+  relays = MUSIC_RELAYS
 ): Promise<{ success: boolean; tracks: NostrMusicTrackInfo[]; message: string }> {
   if (!hasSigner()) {
     return { success: false, tracks: [], message: 'Not logged in' };

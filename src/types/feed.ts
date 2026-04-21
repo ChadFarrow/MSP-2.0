@@ -123,6 +123,11 @@ export interface Track {
   persons: Person[];
   overrideValue: boolean;
   value?: ValueBlock;
+  // Nostr Music (NIP kind 36787) optional tags
+  videoUrl?: string;
+  format?: string;
+  bitrate?: string;
+  sampleRate?: string;
   unknownItemElements?: Record<string, unknown>;
 }
 

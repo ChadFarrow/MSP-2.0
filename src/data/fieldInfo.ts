@@ -62,4 +62,30 @@ export const FIELD_INFO = {
   trackExplicit: "Mark if this specific track contains explicit content.",
   overridePersons: "Enable to set different credits for this track than the album level. Track-level persons replace album-level.",
   overrideValue: "Enable to set different payment splits for this track. Used for featuring guest artists or different producers per track.",
+
+  // Nostr Music (kind 36787) optional tags
+  genreTags: "Comma-separated genres. Each becomes a Nostr 't' tag on the playlist and every track event, alongside the mandatory 'music' tag.",
+  trackVideoUrl: "Optional music video URL. Published as the 'video' tag on kind 36787 — Nostr clients can play the video instead of the audio file.",
+  trackFormat: "Audio format (mp3, flac, m4a, ogg). Published as the 'format' tag.",
+  trackBitrate: "Audio bitrate, e.g. '320kbps'. Published as the 'bitrate' tag.",
+  trackSampleRate: "Sample rate in Hz, e.g. '44100'. Published as the 'sample_rate' tag.",
 };
+
+// Nostr Music mode tooltips — override copy for fields where the default text
+// references RSS tags, MP3/enclosure hosting, or "podcast apps" (kind 36787 + 34139
+// events live on Nostr relays, not in an RSS feed).
+export const FIELD_INFO_NOSTR_MUSIC: Partial<Record<keyof typeof FIELD_INFO, string>> = {
+  author: "The artist or band name.",
+  imageUrl: "Direct link to your album art image.",
+  enclosureUrl: "Direct link to the audio file. The file must already be hosted externally — Nostr Music references the URL only.",
+  trackDuration: "Total duration in HH:MM:SS format. Shown by Nostr music clients.",
+  trackPubDate: "Publication date/time for this track. Used for sort order in Nostr music clients.",
+};
+
+export function fieldInfoFor(key: keyof typeof FIELD_INFO, feedType?: string): string {
+  if (feedType === 'nostrMusic') {
+    const override = FIELD_INFO_NOSTR_MUSIC[key];
+    if (override) return override;
+  }
+  return FIELD_INFO[key];
+}

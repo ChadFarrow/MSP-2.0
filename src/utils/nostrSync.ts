@@ -457,12 +457,13 @@ export async function fetchNostrMusicTracks(
   }
 }
 
-// Convert persons array to Credits section string
+// Convert persons array to Credits section string — names only (roles aren't
+// part of kind 36787, so emitting "Name: role" would be misleading).
 function formatCreditsFromPersons(persons: Person[]): string {
   if (!persons || persons.length === 0) return '';
-  // For each person, list all their roles
   return persons
-    .map(p => `${p.name}: ${p.roles.map(r => r.role).join(', ')}`)
+    .map(p => p.name?.trim())
+    .filter((name): name is string => !!name)
     .join('\n');
 }
 
@@ -560,6 +561,20 @@ function createMusicTrackEvent(
     tags.push(['t', category.toLowerCase()]);
   }
 
+  // NIP kind 36787 optional technical tags
+  if (track.videoUrl?.trim()) {
+    tags.push(['video', track.videoUrl.trim()]);
+  }
+  if (track.format?.trim()) {
+    tags.push(['format', track.format.trim()]);
+  }
+  if (track.bitrate?.trim()) {
+    tags.push(['bitrate', track.bitrate.trim()]);
+  }
+  if (track.sampleRate?.trim()) {
+    tags.push(['sample_rate', track.sampleRate.trim()]);
+  }
+
   // Add zap tags from value recipients (track-level if overridden, else album-level)
   const valueBlock = track.overrideValue && track.value ? track.value : album.value;
   if (valueBlock && valueBlock.recipients) {
@@ -648,7 +663,8 @@ export interface PublishProgress {
 export async function publishNostrMusicTracks(
   album: Album,
   relays = MUSIC_RELAYS,
-  onProgress?: (progress: PublishProgress) => void
+  onProgress?: (progress: PublishProgress) => void,
+  includePlaylist = false
 ): Promise<{ success: boolean; message: string; publishedCount: number; playlistPublished: boolean }> {
   if (!hasSigner()) {
     return { success: false, message: 'Not logged in', publishedCount: 0, playlistPublished: false };
@@ -698,10 +714,11 @@ export async function publishNostrMusicTracks(
       return { success: false, message: 'Failed to publish any tracks', publishedCount: 0, playlistPublished: false };
     }
 
-    // Phase 2: Publish playlist (only if 2+ tracks - single track isn't a playlist)
+    // Phase 2: Publish kind 34139 playlist — opt-in only (not defined in the
+    // kind 36787 NIP, so default is tracks-only for spec compliance).
     let playlistPublished = false;
 
-    if (publishedTracks.length >= 2) {
+    if (includePlaylist && publishedTracks.length >= 2) {
       if (onProgress) {
         onProgress({ current: 1, total: 1, trackTitle: album.title || 'Playlist', phase: 'playlist' });
       }
@@ -717,7 +734,7 @@ export async function publishNostrMusicTracks(
 
     // Build appropriate message
     let message: string;
-    if (publishedTracks.length < 2) {
+    if (!includePlaylist || publishedTracks.length < 2) {
       message = `Published ${publishedCount} track(s) to Nostr`;
     } else if (playlistPublished) {
       message = `Published ${publishedCount} track(s) and playlist to Nostr`;

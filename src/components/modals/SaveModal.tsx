@@ -60,6 +60,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [progress, setProgress] = useState<PublishProgress | null>(null);
   const [blossomServer, setBlossomServer] = useState(DEFAULT_BLOSSOM_SERVER);
+  const [nostrMusicIncludePlaylist, setNostrMusicIncludePlaylist] = useState(false);
   const [feedUrl, setFeedUrl] = useState<string | null>(null);
   const [stableUrl, setStableUrl] = useState<string | null>(null);
   const [hostedInfo, setHostedInfo] = useState<HostedFeedInfo | null>(null);
@@ -343,7 +344,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
           }
           break;
         case 'nostrMusic':
-          const musicResult = await publishNostrMusicTracks(album, undefined, setProgress);
+          const musicResult = await publishNostrMusicTracks(album, undefined, setProgress, nostrMusicIncludePlaylist);
           setProgress(null);
           // Show error/warning if not all tracks published or playlist failed
           const allTracksPublished = musicResult.publishedCount === album.tracks.length;
@@ -671,9 +672,25 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
             </p>
           )}
           {mode === 'nostrMusic' && (
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '16px' }}>
-              Publish tracks and playlist to Nostr (kinds 36787 + 34139). Compatible with Nostr music clients.
-            </p>
+            <div style={{ marginTop: '16px' }}>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '8px' }}>
+                Publish each track to Nostr as kind 36787. Compatible with Nostr music clients.
+              </p>
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '0.875rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={nostrMusicIncludePlaylist}
+                  onChange={e => setNostrMusicIncludePlaylist(e.target.checked)}
+                  style={{ marginTop: '3px' }}
+                />
+                <span>
+                  Also publish a kind 34139 playlist event for album grouping
+                  <span style={{ display: 'block', fontSize: '0.75rem', opacity: 0.8, marginTop: '2px' }}>
+                    Non-standard (not in the kind 36787 NIP). Some clients use it to display tracks as a single album.
+                  </span>
+                </span>
+              </label>
+            </div>
           )}
           {mode === 'blossom' && (
             <div style={{ marginTop: '16px' }}>
@@ -1285,7 +1302,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                 <li><strong>Host on MSP</strong> - Host your feed on MSP servers. Get a permanent URL for your RSS feed to use in any app.{isLoggedIn && ' You can link your Nostr identity to edit from any device without needing the token.'}</li>
                 <li><strong>Send Podping</strong> - Broadcast a feed-update notification via Podping/Hive. Indexers like Podcast Index watch Hive and re-crawl the feed when they see the ping.</li>
                 <li><strong>Save RSS feed to Nostr</strong> - Stores the entire RSS XML inside a Nostr event (kind 30054) on your relays. Personal cross-device backup tied to your Nostr key. Not readable by podcast apps.</li>
-                <li><strong>Publish to Nostr Music</strong> - Publishes each track (kind 36787) and the playlist (kind 34139) as Nostr events for Nostr-native music clients like Wavlake and Fountain. Audio files must already be hosted somewhere - these events just point to them. Not a podcast RSS feed.</li>
+                <li><strong>Publish to Nostr Music</strong> - Publishes each track as a Nostr kind 36787 event for Nostr-native music clients like Wavlake and Fountain. Optionally also publishes a kind 34139 playlist event (non-standard) for clients that use it to group tracks as an album. Audio files must already be hosted somewhere - these events just point to them. Not a podcast RSS feed.</li>
                 <li><strong>Publish RSS feed to a Blossom server</strong> - Uploads the RSS file to a Blossom server and registers a Nostr pointer (kind 1063) so MSP can serve a permanent URL. Subscribable in any podcast app.</li>
                 <li><strong>Publish RSS feed to nsite (experimental)</strong> - Uploads the RSS file to a Blossom server and publishes an nsite site manifest (NIP-5A). Reachable as a permanent web URL through any nsite gateway. Subscribable in podcast apps.</li>
               </ul>

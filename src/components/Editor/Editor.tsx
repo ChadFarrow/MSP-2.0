@@ -3,7 +3,7 @@ import { useFeed } from '../../store/feedStore';
 import { useNostr } from '../../store/nostrStore';
 import { LANGUAGES, PERSON_GROUPS, PERSON_ROLES, createEmptyPersonRole, createEmptyTrack, isVideoMedium, isCommunitySupport, createSupportRecipients, hasUserRecipients } from '../../types/feed';
 import type { PersonGroup } from '../../types/feed';
-import { FIELD_INFO } from '../../data/fieldInfo';
+import { FIELD_INFO, fieldInfoFor } from '../../data/fieldInfo';
 import { detectAddressType } from '../../utils/addressUtils';
 import { getMediaDuration, secondsToHHMMSS, formatDuration } from '../../utils/audioUtils';
 import { getVideoMimeType } from '../../utils/videoUtils';
@@ -262,10 +262,13 @@ export function Editor() {
       <div className="main-content">
         <div className="editor-panel">
           {/* Album/Video/Nostr Music Info Section */}
-          <Section title={isNostrMusic ? "Nostr Music Info" : isVideo ? "Video Info" : "Album Info"} icon={isNostrMusic ? "🎶" : isVideo ? "🎬" : "💿"}>
+          <Section title={isNostrMusic ? "Playlist" : isVideo ? "Video Info" : "Album Info"} icon={isNostrMusic ? "🎵" : isVideo ? "🎬" : "💿"}>
+            {isNostrMusic && (
+              <p className="section-subtitle">Published as a Nostr playlist event (kind 34139).</p>
+            )}
             <div className="form-grid">
               <div className="form-group">
-                <label className="form-label">Artist/Band <span className="required">*</span><InfoIcon text={FIELD_INFO.author} /></label>
+                <label className="form-label">Artist/Band <span className="required">*</span><InfoIcon text={fieldInfoFor('author', state.feedType)} /></label>
                 <input
                   type="text"
                   className="form-input"
@@ -335,6 +338,21 @@ export function Editor() {
                   )}
                 </div>
               )}
+              {isNostrMusic && (
+                <div className="form-group">
+                  <label className="form-label">Genre Tags<InfoIcon text={FIELD_INFO.genreTags} /></label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="rock, electronic, ambient"
+                    value={album.categories.join(', ')}
+                    onChange={e => dispatch({
+                      type: 'UPDATE_ALBUM',
+                      payload: { categories: e.target.value.split(',').map(s => s.trim()).filter(Boolean) }
+                    })}
+                  />
+                </div>
+              )}
               <div className="form-group full-width">
                 <label className="form-label">Description <span className="required">*</span><InfoIcon text={FIELD_INFO.description} /></label>
                 <textarea
@@ -344,31 +362,33 @@ export function Editor() {
                   onChange={e => dispatch({ type: 'UPDATE_ALBUM', payload: { description: e.target.value } })}
                 />
               </div>
-              <div className="form-group">
-                <label className="form-label">Podcast GUID <span className="required">*</span><InfoIcon text={FIELD_INFO.podcastGuid} /></label>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="Auto-generated UUID"
-                    value={album.podcastGuid || ''}
-                    onChange={e => dispatch({ type: 'UPDATE_ALBUM', payload: { podcastGuid: e.target.value } })}
-                    style={{ flex: 1 }}
-                  />
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-small"
-                    title="Generate new GUID"
-                    onClick={() => {
-                      if (confirm('Generate a new GUID? This will create a new feed identity. Only do this if you are using this feed as a template for a new album.')) {
-                        dispatch({ type: 'UPDATE_ALBUM', payload: { podcastGuid: crypto.randomUUID() } });
-                      }
-                    }}
-                  >
-                    New
-                  </button>
+              {!isNostrMusic && (
+                <div className="form-group">
+                  <label className="form-label">Podcast GUID <span className="required">*</span><InfoIcon text={FIELD_INFO.podcastGuid} /></label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="Auto-generated UUID"
+                      value={album.podcastGuid || ''}
+                      onChange={e => dispatch({ type: 'UPDATE_ALBUM', payload: { podcastGuid: e.target.value } })}
+                      style={{ flex: 1 }}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-small"
+                      title="Generate new GUID"
+                      onClick={() => {
+                        if (confirm('Generate a new GUID? This will create a new feed identity. Only do this if you are using this feed as a template for a new album.')) {
+                          dispatch({ type: 'UPDATE_ALBUM', payload: { podcastGuid: crypto.randomUUID() } });
+                        }
+                      }}
+                    >
+                      New
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
               {!isNostrMusic && (
                 <div className="form-group">
                   <label className="form-label">Keywords<InfoIcon text={FIELD_INFO.keywords} /></label>
@@ -432,26 +452,44 @@ export function Editor() {
                 </div>
               )}
             </div>
+            {isNostrMusic && (
+              <ArtworkFields
+                imageUrl={album.imageUrl}
+                imageTitle={album.imageTitle}
+                imageDescription={album.imageDescription}
+                onUpdate={(field, value) => dispatch({ type: 'UPDATE_ALBUM', payload: { [field]: value } })}
+                urlLabel="Cover Image URL"
+                urlPlaceholder="https://example.com/album-art.jpg"
+                previewAlt="Cover preview"
+                hideTitle
+                hideDescription
+                feedType={state.feedType}
+              />
+            )}
           </Section>
 
-          {/* Artwork Section */}
-          <Section title={isVideo ? "Video Artwork" : "Album Artwork"} icon={isVideo ? "🎬" : "🎨"}>
-            <ArtworkFields
-              imageUrl={album.imageUrl}
-              imageTitle={album.imageTitle}
-              imageDescription={album.imageDescription}
-              onUpdate={(field, value) => dispatch({ type: 'UPDATE_ALBUM', payload: { [field]: value } })}
-              urlLabel={isVideo ? "Video Art URL" : "Album Art URL"}
-              urlPlaceholder={isVideo ? "https://example.com/video-art.jpg" : "https://example.com/album-art.jpg"}
-              titlePlaceholder={isVideo ? "Video cover description" : "Album cover description"}
-              previewAlt={isVideo ? "Video preview" : "Album preview"}
-              hideTitle={isNostrMusic}
-              hideDescription={isNostrMusic}
-            />
-          </Section>
+          {/* Artwork Section (hidden in nostrMusic — folded into Playlist above) */}
+          {!isNostrMusic && (
+            <Section title={isVideo ? "Video Artwork" : "Album Artwork"} icon={isVideo ? "🎬" : "🎨"}>
+              <ArtworkFields
+                imageUrl={album.imageUrl}
+                imageTitle={album.imageTitle}
+                imageDescription={album.imageDescription}
+                onUpdate={(field, value) => dispatch({ type: 'UPDATE_ALBUM', payload: { [field]: value } })}
+                urlLabel={isVideo ? "Video Art URL" : "Album Art URL"}
+                urlPlaceholder={isVideo ? "https://example.com/video-art.jpg" : "https://example.com/album-art.jpg"}
+                titlePlaceholder={isVideo ? "Video cover description" : "Album cover description"}
+                previewAlt={isVideo ? "Video preview" : "Album preview"}
+                feedType={state.feedType}
+              />
+            </Section>
+          )}
 
           {/* Credits Section */}
-          <Section title="Credits / Persons" icon="&#128100;">
+          <Section title={isNostrMusic ? "Credits" : "Credits / Persons"} icon="&#128100;">
+            {isNostrMusic && (
+              <p className="section-subtitle">Included in the content of each track event.</p>
+            )}
             <div className="repeatable-list">
               {album.persons.map((person, personIndex) => (
                 <div key={personIndex} className="repeatable-item">
@@ -500,7 +538,8 @@ export function Editor() {
 
                     {/* Two-column layout: Roles (left) + Thumbnail Preview (right) */}
                     <div className="person-preview-container" style={{ marginTop: '16px', display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
-                      {/* Left column: Roles section */}
+                      {/* Left column: Roles section (hidden in Nostr Music — roles aren't part of the kind 36787 event) */}
+                    {!isNostrMusic && (
                     <div className="person-roles-section" style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
                         <label className="form-label" style={{ margin: 0 }}>Roles<InfoIcon text={FIELD_INFO.personRole} /></label>
@@ -580,6 +619,7 @@ export function Editor() {
                         + Add Role
                       </button>
                     </div>
+                    )}
                       {/* Right column: Thumbnail preview */}
                       <div className="person-thumbnail-preview" style={{
                         width: '140px',
@@ -653,7 +693,10 @@ export function Editor() {
           </Section>
 
           {/* Value Block Section */}
-          <Section title="Value Block (Lightning)" icon="&#9889;">
+          <Section title={isNostrMusic ? "Zap Splits" : "Value Block (Lightning)"} icon="&#9889;">
+            {isNostrMusic && (
+              <p className="section-subtitle">Applied to every track unless a track overrides them.</p>
+            )}
             <RecipientsList
               recipients={album.value.recipients}
               onUpdate={(index, recipient) => dispatch({
@@ -750,6 +793,9 @@ export function Editor() {
 
           {/* Tracks/Videos Section */}
           <Section title={isNostrMusic ? "Tracks" : isVideo ? "Videos" : "Tracks"} icon={isNostrMusic ? "🎶" : isVideo ? "🎬" : "🎵"}>
+            {isNostrMusic && (
+              <p className="section-subtitle">Each track is published as a separate Nostr track event (kind 36787).</p>
+            )}
             {album.tracks.length > 0 && (
               <div style={{ marginBottom: '12px', textAlign: 'right' }}>
                 <button
@@ -801,11 +847,11 @@ export function Editor() {
                       />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">{isVideo ? 'Video URL' : 'MP3 URL'} <span className="required">*</span><InfoIcon text={FIELD_INFO.enclosureUrl} /></label>
+                      <label className="form-label">{isVideo ? 'Video URL' : isNostrMusic ? 'Audio URL' : 'MP3 URL'} <span className="required">*</span><InfoIcon text={fieldInfoFor('enclosureUrl', state.feedType)} /></label>
                       <input
                         type="url"
                         className="form-input"
-                        placeholder={isVideo ? "https://example.com/video.mp4" : "https://example.com/track.mp3"}
+                        placeholder={isVideo ? "https://example.com/video.mp4" : isNostrMusic ? "https://example.com/audio-file" : "https://example.com/track.mp3"}
                         value={track.enclosureUrl || ''}
                         onChange={e => {
                           const url = e.target.value;
@@ -944,7 +990,7 @@ export function Editor() {
                       )}
                     </div>
                     <div className="form-group">
-                      <label className="form-label">Duration (HH:MM:SS) <span className="required">*</span><InfoIcon text={FIELD_INFO.trackDuration} /></label>
+                      <label className="form-label">Duration (HH:MM:SS) <span className="required">*</span><InfoIcon text={fieldInfoFor('trackDuration', state.feedType)} /></label>
                       <input
                         type="text"
                         className="form-input"
@@ -969,7 +1015,7 @@ export function Editor() {
                       />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">Pub Date<InfoIcon text={FIELD_INFO.trackPubDate} /></label>
+                      <label className="form-label">{isNostrMusic ? 'Released' : 'Pub Date'}<InfoIcon text={fieldInfoFor('trackPubDate', state.feedType)} /></label>
                       <input
                         type="datetime-local"
                         className="form-input"
@@ -1079,6 +1125,66 @@ export function Editor() {
                         })}
                       />
                     </div>
+                    {isNostrMusic && (
+                      <>
+                        <div className="form-group">
+                          <label className="form-label">Music Video URL<InfoIcon text={FIELD_INFO.trackVideoUrl} /></label>
+                          <input
+                            type="url"
+                            className="form-input"
+                            placeholder="https://example.com/video.mp4"
+                            value={track.videoUrl || ''}
+                            onChange={e => dispatch({
+                              type: 'UPDATE_TRACK',
+                              payload: { index, track: { videoUrl: e.target.value } }
+                            })}
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label className="form-label">Format<InfoIcon text={FIELD_INFO.trackFormat} /></label>
+                          <select
+                            className="form-select"
+                            value={track.format || ''}
+                            onChange={e => dispatch({
+                              type: 'UPDATE_TRACK',
+                              payload: { index, track: { format: e.target.value } }
+                            })}
+                          >
+                            <option value="">— not set —</option>
+                            <option value="mp3">mp3</option>
+                            <option value="flac">flac</option>
+                            <option value="m4a">m4a</option>
+                            <option value="ogg">ogg</option>
+                          </select>
+                        </div>
+                        <div className="form-group">
+                          <label className="form-label">Bitrate<InfoIcon text={FIELD_INFO.trackBitrate} /></label>
+                          <input
+                            type="text"
+                            className="form-input"
+                            placeholder="320kbps"
+                            value={track.bitrate || ''}
+                            onChange={e => dispatch({
+                              type: 'UPDATE_TRACK',
+                              payload: { index, track: { bitrate: e.target.value } }
+                            })}
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label className="form-label">Sample Rate (Hz)<InfoIcon text={FIELD_INFO.trackSampleRate} /></label>
+                          <input
+                            type="text"
+                            className="form-input"
+                            placeholder="44100"
+                            value={track.sampleRate || ''}
+                            onChange={e => dispatch({
+                              type: 'UPDATE_TRACK',
+                              payload: { index, track: { sampleRate: e.target.value } }
+                            })}
+                          />
+                        </div>
+                      </>
+                    )}
                     {!isNostrMusic && (
                     <div className="form-group">
                       <label className="form-label">Lyrics URL<InfoIcon text={FIELD_INFO.transcriptUrl} /></label>
@@ -1185,7 +1291,8 @@ export function Editor() {
                                 </div>
                               </div>
 
-                              {/* Roles */}
+                              {/* Roles (hidden in Nostr Music — roles aren't part of kind 36787) */}
+                              {!isNostrMusic && (
                               <div style={{ marginTop: '12px' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
                                   <label className="form-label" style={{ margin: 0 }}>Roles<InfoIcon text={FIELD_INFO.personRole} /></label>
@@ -1258,6 +1365,7 @@ export function Editor() {
                                   + Add Role
                                 </button>
                               </div>
+                              )}
                             </div>
                             <div className="repeatable-item-actions">
                               <button

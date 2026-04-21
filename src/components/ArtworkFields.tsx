@@ -1,4 +1,4 @@
-import { FIELD_INFO } from '../data/fieldInfo';
+import { FIELD_INFO, fieldInfoFor } from '../data/fieldInfo';
 import { InfoIcon } from './InfoIcon';
 
 interface ArtworkFieldsProps {
@@ -12,6 +12,7 @@ interface ArtworkFieldsProps {
   previewAlt?: string;
   hideTitle?: boolean;
   hideDescription?: boolean;
+  feedType?: string;
 }
 
 export function ArtworkFields({
@@ -24,12 +25,13 @@ export function ArtworkFields({
   titlePlaceholder = 'Image description',
   previewAlt = 'Image preview',
   hideTitle = false,
-  hideDescription = false
+  hideDescription = false,
+  feedType
 }: ArtworkFieldsProps) {
   return (
     <div className="form-grid">
       <div className="form-group">
-        <label className="form-label">{urlLabel} <span className="required">*</span><InfoIcon text={FIELD_INFO.imageUrl} /></label>
+        <label className="form-label">{urlLabel} <span className="required">*</span><InfoIcon text={fieldInfoFor('imageUrl', feedType)} /></label>
         <input
           type="url"
           className="form-input"

@@ -181,7 +181,7 @@ The Save modal (`src/components/modals/SaveModal.tsx`) offers nine destinations.
 | Host on MSP | Generated RSS XML | Vercel Blob (`feeds/{feedId}.xml`) | Yes — `https://msp.podtards.com/api/hosted/{feedId}` |
 | Send Podping | Feed-update notification | Hive blockchain (via MSP hivepinger) | Indirectly — Podcast Index re-crawls the feed URL |
 | Save RSS feed to Nostr | Full RSS XML embedded in a kind 30054 event | Nostr relays only | No — only MSP reads kind 30054 (cross-device sync) |
-| Publish to Nostr Music | Per-track events (kind 36787) + playlist event (kind 34139) | Nostr relays | No — Nostr-native music clients only (Wavlake, Fountain, etc.). Audio files must already be hosted elsewhere; the events just reference enclosure URLs |
+| Publish to Nostr Music | Per-track events (kind 36787). Playlist event (kind 34139) is off by default — toggle the "Also publish a kind 34139 playlist" checkbox in SaveModal to include it. Kind 34139 is non-standard (not in the kind 36787 NIP) but some clients use it to display tracks as an album. | Nostr relays | No — Nostr-native music clients only (Wavlake, Fountain, etc.). Audio files must already be hosted elsewhere; the events just reference enclosure URLs |
 | Publish RSS feed to a Blossom server | Generated RSS XML | Blossom server (content-addressed) + kind 1063 NIP-94 pointer event on Nostr | Yes — `${origin}/api/feed/{npub}/{podcastGuid}.xml` resolves the pointer and 302s to the latest Blossom URL |
 | Publish RSS feed to nsite (experimental) | Generated RSS XML | Blossom server + NIP-5A site manifest (kind 35128) | Yes — via any nsite gateway URL |
 

@@ -375,6 +375,13 @@ body {
   display: none;
 }
 
+.section-subtitle {
+  margin: 0 0 16px 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 /* Form Fields */
 .form-grid {
   display: grid;

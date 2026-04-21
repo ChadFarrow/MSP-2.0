@@ -111,8 +111,13 @@ function Op3StatsLink({ podcastGuid }: { podcastGuid: string }) {
 export function Editor() {
   const { state, dispatch } = useFeed();
   const { state: nostrState } = useNostr();
-  // Get the active album based on feedType (album or videoFeed)
-  const album = state.feedType === 'video' && state.videoFeed ? state.videoFeed : state.album;
+  // Get the active album based on feedType (album, videoFeed, or nostrMusicFeed)
+  const album = state.feedType === 'video' && state.videoFeed
+    ? state.videoFeed
+    : state.feedType === 'nostrMusic' && state.nostrMusicFeed
+      ? state.nostrMusicFeed
+      : state.album;
+  const isNostrMusic = state.feedType === 'nostrMusic';
 
   // Simple collapse state - all tracks start expanded (empty object = nothing collapsed)
   // Editor remounts on album change (via key prop), so this always starts fresh
@@ -256,8 +261,8 @@ export function Editor() {
     <>
       <div className="main-content">
         <div className="editor-panel">
-          {/* Album/Video Info Section */}
-          <Section title={isVideo ? "Video Info" : "Album Info"} icon={isVideo ? "🎬" : "💿"}>
+          {/* Album/Video/Nostr Music Info Section */}
+          <Section title={isNostrMusic ? "Nostr Music Info" : isVideo ? "Video Info" : "Album Info"} icon={isNostrMusic ? "🎶" : isVideo ? "🎬" : "💿"}>
             <div className="form-grid">
               <div className="form-group">
                 <label className="form-label">Artist/Band <span className="required">*</span><InfoIcon text={FIELD_INFO.author} /></label>
@@ -270,7 +275,7 @@ export function Editor() {
                 />
               </div>
               <div className="form-group">
-                <label className="form-label">{isVideo ? 'Video Title' : 'Album Title'} <span className="required">*</span><InfoIcon text={FIELD_INFO.title} /></label>
+                <label className="form-label">{isNostrMusic ? 'Album Title' : isVideo ? 'Video Title' : 'Album Title'} <span className="required">*</span><InfoIcon text={FIELD_INFO.title} /></label>
                 <input
                   type="text"
                   className="form-input"
@@ -279,16 +284,18 @@ export function Editor() {
                   onChange={e => dispatch({ type: 'UPDATE_ALBUM', payload: { title: e.target.value } })}
                 />
               </div>
-              <div className="form-group">
-                <label className="form-label">Website<InfoIcon text={FIELD_INFO.link} /></label>
-                <input
-                  type="url"
-                  className="form-input"
-                  placeholder="https://yourband.com"
-                  value={album.link || ''}
-                  onChange={e => dispatch({ type: 'UPDATE_ALBUM', payload: { link: e.target.value } })}
-                />
-              </div>
+              {!isNostrMusic && (
+                <div className="form-group">
+                  <label className="form-label">Website<InfoIcon text={FIELD_INFO.link} /></label>
+                  <input
+                    type="url"
+                    className="form-input"
+                    placeholder="https://yourband.com"
+                    value={album.link || ''}
+                    onChange={e => dispatch({ type: 'UPDATE_ALBUM', payload: { link: e.target.value } })}
+                  />
+                </div>
+              )}
               <div className="form-group">
                 <label className="form-label">Language <span className="required">*</span><InfoIcon text={FIELD_INFO.language} /></label>
                 <select
@@ -301,31 +308,33 @@ export function Editor() {
                   ))}
                 </select>
               </div>
-              <div className="form-group" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', paddingTop: '28px', gap: '10px' }}>
-                <Toggle
-                  checked={album.explicit}
-                  onChange={val => dispatch({ type: 'UPDATE_ALBUM', payload: { explicit: val } })}
-                  label="Explicit Content"
-                  labelSuffix={<InfoIcon text={FIELD_INFO.explicit} />}
-                />
-                <Toggle
-                  checked={album.op3}
-                  onChange={val => dispatch({ type: 'UPDATE_ALBUM', payload: { op3: val } })}
-                  label={<>
-                    <a
-                      href="https://op3.dev/"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ color: 'var(--accent-color)', textDecoration: 'underline' }}
-                      title="Learn more at op3.dev"
-                    >OP3</a> Analytics
-                  </>}
-                  labelSuffix={<InfoIcon text={FIELD_INFO.op3} />}
-                />
-                {album.op3 && album.podcastGuid && (
-                  <Op3StatsLink podcastGuid={album.podcastGuid} />
-                )}
-              </div>
+              {!isNostrMusic && (
+                <div className="form-group" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', paddingTop: '28px', gap: '10px' }}>
+                  <Toggle
+                    checked={album.explicit}
+                    onChange={val => dispatch({ type: 'UPDATE_ALBUM', payload: { explicit: val } })}
+                    label="Explicit Content"
+                    labelSuffix={<InfoIcon text={FIELD_INFO.explicit} />}
+                  />
+                  <Toggle
+                    checked={album.op3}
+                    onChange={val => dispatch({ type: 'UPDATE_ALBUM', payload: { op3: val } })}
+                    label={<>
+                      <a
+                        href="https://op3.dev/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: 'var(--accent-color)', textDecoration: 'underline' }}
+                        title="Learn more at op3.dev"
+                      >OP3</a> Analytics
+                    </>}
+                    labelSuffix={<InfoIcon text={FIELD_INFO.op3} />}
+                  />
+                  {album.op3 && album.podcastGuid && (
+                    <Op3StatsLink podcastGuid={album.podcastGuid} />
+                  )}
+                </div>
+              )}
               <div className="form-group full-width">
                 <label className="form-label">Description <span className="required">*</span><InfoIcon text={FIELD_INFO.description} /></label>
                 <textarea
@@ -360,60 +369,68 @@ export function Editor() {
                   </button>
                 </div>
               </div>
-              <div className="form-group">
-                <label className="form-label">Keywords<InfoIcon text={FIELD_INFO.keywords} /></label>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="rock, indie, guitar, electronic"
-                  value={album.keywords || ''}
-                  onChange={e => dispatch({ type: 'UPDATE_ALBUM', payload: { keywords: e.target.value } })}
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Owner Name<InfoIcon text={FIELD_INFO.ownerName} /></label>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="Your name or band name"
-                  value={album.ownerName || ''}
-                  onChange={e => dispatch({ type: 'UPDATE_ALBUM', payload: { ownerName: e.target.value } })}
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Owner Email<InfoIcon text={FIELD_INFO.ownerEmail} /></label>
-                <input
-                  type="email"
-                  className="form-input"
-                  placeholder="contact@yourband.com"
-                  value={album.ownerEmail || ''}
-                  onChange={e => dispatch({ type: 'UPDATE_ALBUM', payload: { ownerEmail: e.target.value } })}
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Artist npub<InfoIcon text={FIELD_INFO.artistNpub} /></label>
-                <div style={{ display: 'flex', gap: '8px' }}>
+              {!isNostrMusic && (
+                <div className="form-group">
+                  <label className="form-label">Keywords<InfoIcon text={FIELD_INFO.keywords} /></label>
                   <input
                     type="text"
                     className="form-input"
-                    placeholder="npub1..."
-                    value={album.artistNpub || ''}
-                    onChange={e => dispatch({ type: 'UPDATE_ALBUM', payload: { artistNpub: e.target.value } })}
-                    style={{ flex: 1 }}
+                    placeholder="rock, indie, guitar, electronic"
+                    value={album.keywords || ''}
+                    onChange={e => dispatch({ type: 'UPDATE_ALBUM', payload: { keywords: e.target.value } })}
                   />
-                  {nostrState.isLoggedIn && nostrState.user?.npub && (
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={() => dispatch({ type: 'UPDATE_ALBUM', payload: { artistNpub: nostrState.user!.npub } })}
-                      title="Use your logged-in Nostr npub"
-                      style={{ padding: '0 12px', fontSize: '0.8rem' }}
-                    >
-                      use mine
-                    </button>
-                  )}
                 </div>
-              </div>
+              )}
+              {!isNostrMusic && (
+                <div className="form-group">
+                  <label className="form-label">Owner Name<InfoIcon text={FIELD_INFO.ownerName} /></label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Your name or band name"
+                    value={album.ownerName || ''}
+                    onChange={e => dispatch({ type: 'UPDATE_ALBUM', payload: { ownerName: e.target.value } })}
+                  />
+                </div>
+              )}
+              {!isNostrMusic && (
+                <div className="form-group">
+                  <label className="form-label">Owner Email<InfoIcon text={FIELD_INFO.ownerEmail} /></label>
+                  <input
+                    type="email"
+                    className="form-input"
+                    placeholder="contact@yourband.com"
+                    value={album.ownerEmail || ''}
+                    onChange={e => dispatch({ type: 'UPDATE_ALBUM', payload: { ownerEmail: e.target.value } })}
+                  />
+                </div>
+              )}
+              {!isNostrMusic && (
+                <div className="form-group">
+                  <label className="form-label">Artist npub<InfoIcon text={FIELD_INFO.artistNpub} /></label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="npub1..."
+                      value={album.artistNpub || ''}
+                      onChange={e => dispatch({ type: 'UPDATE_ALBUM', payload: { artistNpub: e.target.value } })}
+                      style={{ flex: 1 }}
+                    />
+                    {nostrState.isLoggedIn && nostrState.user?.npub && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => dispatch({ type: 'UPDATE_ALBUM', payload: { artistNpub: nostrState.user!.npub } })}
+                        title="Use your logged-in Nostr npub"
+                        style={{ padding: '0 12px', fontSize: '0.8rem' }}
+                      >
+                        use mine
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </Section>
 
@@ -428,6 +445,8 @@ export function Editor() {
               urlPlaceholder={isVideo ? "https://example.com/video-art.jpg" : "https://example.com/album-art.jpg"}
               titlePlaceholder={isVideo ? "Video cover description" : "Album cover description"}
               previewAlt={isVideo ? "Video preview" : "Album preview"}
+              hideTitle={isNostrMusic}
+              hideDescription={isNostrMusic}
             />
           </Section>
 
@@ -647,14 +666,17 @@ export function Editor() {
           </Section>
 
           {/* Funding Section */}
-          <Section title="Funding" icon="&#128176;">
-            <FundingFields
-              funding={album.funding}
-              onUpdate={funding => dispatch({ type: 'UPDATE_ALBUM', payload: { funding } })}
-            />
-          </Section>
+          {!isNostrMusic && (
+            <Section title="Funding" icon="&#128176;">
+              <FundingFields
+                funding={album.funding}
+                onUpdate={funding => dispatch({ type: 'UPDATE_ALBUM', payload: { funding } })}
+              />
+            </Section>
+          )}
 
           {/* Publisher Section */}
+          {!isNostrMusic && (
           <Section title="Publisher Feed (Advanced)" icon="&#127970;">
             <p style={{ color: 'var(--text-secondary)', marginBottom: '16px', fontSize: '14px' }}>
               Add this release to a publisher catalog by entering the publisher's feed URL (must be in Podcast Index).
@@ -724,9 +746,10 @@ export function Editor() {
               )}
             </div>
           </Section>
+          )}
 
           {/* Tracks/Videos Section */}
-          <Section title={isVideo ? "Videos" : "Tracks"} icon={isVideo ? "🎬" : "🎵"}>
+          <Section title={isNostrMusic ? "Tracks" : isVideo ? "Videos" : "Tracks"} icon={isNostrMusic ? "🎶" : isVideo ? "🎬" : "🎵"}>
             {album.tracks.length > 0 && (
               <div style={{ marginBottom: '12px', textAlign: 'right' }}>
                 <button
@@ -957,6 +980,7 @@ export function Editor() {
                         })}
                       />
                     </div>
+                    {!isNostrMusic && (
                     <div className="form-group">
                       <label className="form-label">{isVideo ? 'Video #' : 'Track #'} (Episode)<InfoIcon text={FIELD_INFO.trackEpisode} /></label>
                       <input
@@ -981,6 +1005,7 @@ export function Editor() {
                         }}
                       />
                     </div>
+                    )}
                     <div className="form-group full-width">
                       <div className="track-preview-container" style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
                         {/* Left column: Description */}
@@ -1054,6 +1079,7 @@ export function Editor() {
                         })}
                       />
                     </div>
+                    {!isNostrMusic && (
                     <div className="form-group">
                       <label className="form-label">Lyrics URL<InfoIcon text={FIELD_INFO.transcriptUrl} /></label>
                       <input
@@ -1067,6 +1093,7 @@ export function Editor() {
                         })}
                       />
                     </div>
+                    )}
                     <div className="form-group">
                       <Toggle
                         checked={track.explicit}

@@ -7,6 +7,7 @@ export const STORAGE_KEYS = {
   ALBUM_DATA: 'msp2-album-data',
   VIDEO_DATA: 'msp2-video-data',
   PUBLISHER_DATA: 'msp2-publisher-data',
+  NOSTR_MUSIC_DATA: 'msp2-nostr-music-data',
   FEED_TYPE: 'msp2-feed-type',
   NOSTR_USER: 'msp2-nostr-user',
   HOSTED_PREFIX: 'msp2-hosted-',
@@ -125,6 +126,19 @@ export const videoStorage = {
   clear: (): boolean => removeItem(STORAGE_KEYS.VIDEO_DATA)
 };
 
+// Nostr Music feed storage operations
+export const nostrMusicStorage = {
+  load: (): Album | null => {
+    const album = getItem<Album>(STORAGE_KEYS.NOSTR_MUSIC_DATA);
+    if (album) {
+      return migrateAlbum(album);
+    }
+    return null;
+  },
+  save: (album: Album): boolean => setItem(STORAGE_KEYS.NOSTR_MUSIC_DATA, album),
+  clear: (): boolean => removeItem(STORAGE_KEYS.NOSTR_MUSIC_DATA)
+};
+
 // Publisher feed storage operations
 export const publisherStorage = {
   load: (): PublisherFeed | null => getItem<PublisherFeed>(STORAGE_KEYS.PUBLISHER_DATA),
@@ -136,7 +150,7 @@ export const publisherStorage = {
 export const feedTypeStorage = {
   load: (): FeedType => {
     const stored = getItem<FeedType>(STORAGE_KEYS.FEED_TYPE);
-    return stored && ['album', 'video', 'publisher'].includes(stored) ? stored : 'album';
+    return stored && ['album', 'video', 'publisher', 'nostrMusic'].includes(stored) ? stored : 'album';
   },
   save: (feedType: FeedType): boolean => setItem(STORAGE_KEYS.FEED_TYPE, feedType)
 };

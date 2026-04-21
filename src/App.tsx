@@ -5,7 +5,7 @@ import type { FeedType } from './store/feedStore.tsx';
 import { NostrProvider, useNostr } from './store/nostrStore.tsx';
 import { ThemeProvider, useTheme } from './store/themeStore.tsx';
 import { parseRssFeed, isPublisherFeed, isVideoFeed, parsePublisherRssFeed } from './utils/xmlParser';
-import { createEmptyAlbum, createEmptyPublisherFeed, createEmptyVideoAlbum } from './types/feed';
+import { createEmptyAlbum, createEmptyPublisherFeed, createEmptyVideoAlbum, createEmptyNostrMusicAlbum } from './types/feed';
 import { pendingHostedStorage } from './utils/storage';
 import { generateTestAlbum } from './utils/testData';
 import { NostrLoginButton } from './components/NostrLoginButton';
@@ -114,6 +114,8 @@ function AppContent() {
       dispatch({ type: 'SET_PUBLISHER_FEED', payload: createEmptyPublisherFeed() });
     } else if (pendingNewFeedType === 'video') {
       dispatch({ type: 'SET_VIDEO_FEED', payload: createEmptyVideoAlbum() });
+    } else if (pendingNewFeedType === 'nostrMusic') {
+      dispatch({ type: 'SET_NOSTR_MUSIC_FEED', payload: createEmptyNostrMusicAlbum() });
     } else {
       dispatch({ type: 'SET_ALBUM', payload: createEmptyAlbum() });
     }
@@ -156,6 +158,10 @@ function AppContent() {
     if (feedType === 'publisher' && !state.publisherFeed) {
       dispatch({ type: 'CREATE_NEW_PUBLISHER_FEED' });
     }
+    // If switching to Nostr Music and no Nostr Music feed exists, create one
+    if (feedType === 'nostrMusic' && !state.nostrMusicFeed) {
+      dispatch({ type: 'CREATE_NEW_NOSTR_MUSIC_FEED' });
+    }
   };
 
   return (
@@ -176,6 +182,7 @@ function AppContent() {
               <option value="album">Album</option>
               <option value="video">Video</option>
               <option value="publisher">Publisher</option>
+              <option value="nostrMusic">Nostr Music</option>
             </select>
           </div>
           <div className="header-actions">
@@ -268,12 +275,12 @@ function AppContent() {
             </div>
           </div>
         </header>
-        {state.feedType === 'publisher' ? <PublisherEditor /> : <Editor key={`${state.feedType}-${state.album?.podcastGuid}-${state.videoFeed?.podcastGuid}`} />}
+        {state.feedType === 'publisher' ? <PublisherEditor /> : <Editor key={`${state.feedType}-${state.album?.podcastGuid}-${state.videoFeed?.podcastGuid}-${state.nostrMusicFeed?.podcastGuid}`} />}
         <div className="bottom-toolbar">
           <button
             className="bottom-toolbar-btn"
             onClick={() => handleNew(state.feedType)}
-            title={`New ${state.feedType === 'publisher' ? 'Publisher' : state.feedType === 'video' ? 'Video Feed' : 'Album'}`}
+            title={`New ${state.feedType === 'publisher' ? 'Publisher' : state.feedType === 'video' ? 'Video Feed' : state.feedType === 'nostrMusic' ? 'Nostr Music Feed' : 'Album'}`}
           >
             <span className="bottom-toolbar-icon">📂</span>
             <span className="bottom-toolbar-label">New</span>
@@ -334,7 +341,7 @@ function AppContent() {
       {showSaveModal && (
         <SaveModal
           onClose={() => setShowSaveModal(false)}
-          album={state.feedType === 'video' && state.videoFeed ? state.videoFeed : state.album}
+          album={state.feedType === 'video' && state.videoFeed ? state.videoFeed : state.feedType === 'nostrMusic' && state.nostrMusicFeed ? state.nostrMusicFeed : state.album}
           publisherFeed={state.publisherFeed}
           feedType={state.feedType}
           isDirty={state.isDirty}
@@ -346,7 +353,7 @@ function AppContent() {
       {showPreviewModal && (
         <PreviewModal
           onClose={() => setShowPreviewModal(false)}
-          album={state.feedType === 'video' && state.videoFeed ? state.videoFeed : state.album}
+          album={state.feedType === 'video' && state.videoFeed ? state.videoFeed : state.feedType === 'nostrMusic' && state.nostrMusicFeed ? state.nostrMusicFeed : state.album}
           publisherFeed={state.publisherFeed}
           feedType={state.feedType}
         />
@@ -360,14 +367,18 @@ function AppContent() {
               ? state.publisherFeed.podcastGuid
               : state.feedType === 'video' && state.videoFeed
                 ? state.videoFeed.podcastGuid
-                : state.album.podcastGuid
+                : state.feedType === 'nostrMusic' && state.nostrMusicFeed
+                  ? state.nostrMusicFeed.podcastGuid
+                  : state.album.podcastGuid
           }
           medium={
             state.feedType === 'publisher' && state.publisherFeed
               ? state.publisherFeed.medium
               : state.feedType === 'video' && state.videoFeed
                 ? state.videoFeed.medium
-                : state.album.medium
+                : state.feedType === 'nostrMusic' && state.nostrMusicFeed
+                  ? state.nostrMusicFeed.medium
+                  : state.album.medium
           }
         />
       )}
@@ -380,14 +391,18 @@ function AppContent() {
               ? state.publisherFeed.podcastGuid
               : state.feedType === 'video' && state.videoFeed
                 ? state.videoFeed.podcastGuid
-                : state.album.podcastGuid
+                : state.feedType === 'nostrMusic' && state.nostrMusicFeed
+                  ? state.nostrMusicFeed.podcastGuid
+                  : state.album.podcastGuid
           }
           medium={
             state.feedType === 'publisher' && state.publisherFeed
               ? state.publisherFeed.medium
               : state.feedType === 'video' && state.videoFeed
                 ? state.videoFeed.medium
-                : state.album.medium
+                : state.feedType === 'nostrMusic' && state.nostrMusicFeed
+                  ? state.nostrMusicFeed.medium
+                  : state.album.medium
           }
         />
       )}

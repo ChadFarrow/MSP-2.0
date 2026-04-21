@@ -2,8 +2,8 @@
 import { createContext, useContext, useReducer, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import type { Album, Track, Person, PersonRole, ValueRecipient, Funding, PublisherFeed, RemoteItem, FeedType } from '../types/feed';
-import { createEmptyAlbum, createEmptyTrack, createEmptyPerson, createEmptyPersonRole, createEmptyRecipient, createEmptyFunding, createEmptyPublisherFeed, createEmptyRemoteItem, createEmptyVideoAlbum, createSupportRecipients, isCommunitySupport, hasUserRecipients } from '../types/feed';
-import { albumStorage, videoStorage, publisherStorage, feedTypeStorage } from '../utils/storage';
+import { createEmptyAlbum, createEmptyTrack, createEmptyPerson, createEmptyPersonRole, createEmptyRecipient, createEmptyFunding, createEmptyPublisherFeed, createEmptyRemoteItem, createEmptyVideoAlbum, createEmptyNostrMusicAlbum, createSupportRecipients, isCommunitySupport, hasUserRecipients } from '../types/feed';
+import { albumStorage, videoStorage, publisherStorage, nostrMusicStorage, feedTypeStorage } from '../utils/storage';
 
 export type { FeedType };
 
@@ -52,13 +52,18 @@ export type FeedAction =
   // Video feed actions
   | { type: 'SET_VIDEO_FEED'; payload: Album }
   | { type: 'UPDATE_VIDEO_FEED'; payload: Partial<Album> }
-  | { type: 'CREATE_NEW_VIDEO_FEED' };
+  | { type: 'CREATE_NEW_VIDEO_FEED' }
+  // Nostr Music feed actions
+  | { type: 'SET_NOSTR_MUSIC_FEED'; payload: Album }
+  | { type: 'UPDATE_NOSTR_MUSIC_FEED'; payload: Partial<Album> }
+  | { type: 'CREATE_NEW_NOSTR_MUSIC_FEED' };
 
 // State interface
 interface FeedState {
   feedType: FeedType;
   album: Album;
   videoFeed: Album | null;
+  nostrMusicFeed: Album | null;
   publisherFeed: PublisherFeed | null;
   isDirty: boolean;
 }
@@ -69,14 +74,18 @@ const initialState: FeedState = {
   feedType: feedTypeStorage.load(),
   album: albumStorage.load() || createEmptyAlbum(),
   videoFeed: videoStorage.load() || null,
+  nostrMusicFeed: nostrMusicStorage.load() || null,
   publisherFeed: publisherStorage.load() || null,
   isDirty: false
 };
 
-// Helper to get the current active album (album or videoFeed based on feedType)
+// Helper to get the current active album (album, videoFeed, or nostrMusicFeed based on feedType)
 function getActiveAlbum(state: FeedState): Album {
   if (state.feedType === 'video' && state.videoFeed) {
     return state.videoFeed;
+  }
+  if (state.feedType === 'nostrMusic' && state.nostrMusicFeed) {
+    return state.nostrMusicFeed;
   }
   return state.album;
 }
@@ -85,6 +94,9 @@ function getActiveAlbum(state: FeedState): Album {
 function updateActiveFeed(state: FeedState, albumUpdate: Album): FeedState {
   if (state.feedType === 'video') {
     return { ...state, videoFeed: albumUpdate, isDirty: true };
+  }
+  if (state.feedType === 'nostrMusic') {
+    return { ...state, nostrMusicFeed: albumUpdate, isDirty: true };
   }
   return { ...state, album: albumUpdate, isDirty: true };
 }
@@ -601,6 +613,28 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
         isDirty: true
       };
 
+    // Nostr Music feed actions
+    case 'SET_NOSTR_MUSIC_FEED':
+      feedTypeStorage.save('nostrMusic');
+      return { ...state, nostrMusicFeed: action.payload, feedType: 'nostrMusic', isDirty: false };
+
+    case 'UPDATE_NOSTR_MUSIC_FEED':
+      if (!state.nostrMusicFeed) return state;
+      return {
+        ...state,
+        nostrMusicFeed: { ...state.nostrMusicFeed, ...action.payload },
+        isDirty: true
+      };
+
+    case 'CREATE_NEW_NOSTR_MUSIC_FEED':
+      feedTypeStorage.save('nostrMusic');
+      return {
+        ...state,
+        nostrMusicFeed: createEmptyNostrMusicAlbum(),
+        feedType: 'nostrMusic',
+        isDirty: true
+      };
+
     default:
       return state;
   }
@@ -636,6 +670,13 @@ export function FeedProvider({ children }: { children: ReactNode }) {
       publisherStorage.save(state.publisherFeed);
     }
   }, [state.publisherFeed]);
+
+  // Auto-save Nostr Music feed to localStorage
+  useEffect(() => {
+    if (state.nostrMusicFeed) {
+      nostrMusicStorage.save(state.nostrMusicFeed);
+    }
+  }, [state.nostrMusicFeed]);
 
   return (
     <FeedContext.Provider value={{ state, dispatch }}>

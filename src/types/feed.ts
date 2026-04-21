@@ -1,7 +1,7 @@
 // MSP 2.0 - Feed Type Definitions (Demu Template Compatible)
 
 // Feed type enum
-export type FeedType = 'album' | 'video' | 'publisher';
+export type FeedType = 'album' | 'video' | 'publisher' | 'nostrMusic';
 
 // All person groups from Podcasting 2.0 taxonomy + custom 'music' group
 export type PersonGroup =
@@ -291,6 +291,47 @@ export const hasUserRecipients = (recipients: ValueRecipient[]): boolean =>
 
 // Default empty album
 export const createEmptyAlbum = (): Album => ({
+  title: '',
+  author: '',
+  artistNpub: '',
+  description: '',
+  link: '',
+  language: 'en',
+  generator: 'MSP 2.0 - Music Side Project Studio',
+  pubDate: new Date().toUTCString(),
+  lastBuildDate: new Date().toUTCString(),
+  podcastGuid: crypto.randomUUID(),
+  medium: 'music',
+  locked: false,
+  lockedOwner: '',
+  categories: [],
+  keywords: '',
+  explicit: false,
+  ownerName: '',
+  ownerEmail: '',
+  imageUrl: '',
+  imageTitle: '',
+  imageLink: '',
+  imageDescription: '',
+  bannerArtUrl: '',
+  managingEditor: '',
+  webMaster: '',
+  persons: [],
+  value: {
+    type: 'lightning',
+    method: 'keysend',
+    suggested: '0.000033333',
+    recipients: [createEmptyRecipient()]
+  },
+  funding: [],
+  op3: false,
+  tracks: [createEmptyTrack(1)]
+});
+
+// Default empty Nostr Music album
+// Reuses the Album shape but only fields relevant to the Nostr Music spec
+// (kind 36787 track events + kind 34139 playlist) will be surfaced in the Editor.
+export const createEmptyNostrMusicAlbum = (): Album => ({
   title: '',
   author: '',
   artistNpub: '',

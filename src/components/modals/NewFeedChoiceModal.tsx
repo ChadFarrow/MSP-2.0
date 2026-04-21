@@ -10,7 +10,10 @@ interface NewFeedChoiceModalProps {
 }
 
 const feedTypeLabel = (feedType: FeedType) =>
-  feedType === 'publisher' ? 'Publisher Feed' : feedType === 'video' ? 'Video Feed' : 'Album';
+  feedType === 'publisher' ? 'Publisher Feed'
+    : feedType === 'video' ? 'Video Feed'
+    : feedType === 'nostrMusic' ? 'Nostr Music Feed'
+    : 'Album';
 
 export function NewFeedChoiceModal({
   isOpen,

@@ -10,6 +10,8 @@ interface ArtworkFieldsProps {
   urlPlaceholder?: string;
   titlePlaceholder?: string;
   previewAlt?: string;
+  hideTitle?: boolean;
+  hideDescription?: boolean;
 }
 
 export function ArtworkFields({
@@ -20,7 +22,9 @@ export function ArtworkFields({
   urlLabel = 'Image URL',
   urlPlaceholder = 'https://example.com/image.jpg',
   titlePlaceholder = 'Image description',
-  previewAlt = 'Image preview'
+  previewAlt = 'Image preview',
+  hideTitle = false,
+  hideDescription = false
 }: ArtworkFieldsProps) {
   return (
     <div className="form-grid">
@@ -34,26 +38,30 @@ export function ArtworkFields({
           onChange={e => onUpdate('imageUrl', e.target.value)}
         />
       </div>
-      <div className="form-group">
-        <label className="form-label">Image Title<InfoIcon text={FIELD_INFO.imageTitle} /></label>
-        <input
-          type="text"
-          className="form-input"
-          placeholder={titlePlaceholder}
-          value={imageTitle || ''}
-          onChange={e => onUpdate('imageTitle', e.target.value)}
-        />
-      </div>
-      <div className="form-group">
-        <label className="form-label">Image Description<InfoIcon text={FIELD_INFO.imageDescription} /></label>
-        <input
-          type="text"
-          className="form-input"
-          placeholder="Optional description"
-          value={imageDescription || ''}
-          onChange={e => onUpdate('imageDescription', e.target.value)}
-        />
-      </div>
+      {!hideTitle && (
+        <div className="form-group">
+          <label className="form-label">Image Title<InfoIcon text={FIELD_INFO.imageTitle} /></label>
+          <input
+            type="text"
+            className="form-input"
+            placeholder={titlePlaceholder}
+            value={imageTitle || ''}
+            onChange={e => onUpdate('imageTitle', e.target.value)}
+          />
+        </div>
+      )}
+      {!hideDescription && (
+        <div className="form-group">
+          <label className="form-label">Image Description<InfoIcon text={FIELD_INFO.imageDescription} /></label>
+          <input
+            type="text"
+            className="form-input"
+            placeholder="Optional description"
+            value={imageDescription || ''}
+            onChange={e => onUpdate('imageDescription', e.target.value)}
+          />
+        </div>
+      )}
       {imageUrl && (
         <div className="form-group full-width">
           <img

@@ -2,6 +2,7 @@ import type { PublisherFeed } from '../../../types/feed';
 import { LANGUAGES } from '../../../types/feed';
 import type { FeedAction } from '../../../store/feedStore';
 import { FIELD_INFO } from '../../../data/fieldInfo';
+import { ID3V1_GENRES } from '../../../data/id3v1Genres';
 import { InfoIcon } from '../../InfoIcon';
 import { Section } from '../../Section';
 import { Toggle } from '../../Toggle';
@@ -105,9 +106,13 @@ export function PublisherInfoSection({ publisherFeed, dispatch }: PublisherInfoS
             type="text"
             className="form-input"
             placeholder="label, publisher, music, indie"
+            list="id3v1-genres"
             value={publisherFeed.keywords || ''}
             onChange={e => dispatch({ type: 'UPDATE_PUBLISHER_FEED', payload: { keywords: e.target.value } })}
           />
+          <datalist id="id3v1-genres">
+            {ID3V1_GENRES.map(genre => <option key={genre} value={genre} />)}
+          </datalist>
         </div>
         <div className="form-group">
           <label className="form-label">Owner Name<InfoIcon text={FIELD_INFO.ownerName} /></label>

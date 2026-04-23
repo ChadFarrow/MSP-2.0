@@ -4,7 +4,7 @@ import { useNostr } from '../../store/nostrStore';
 import { LANGUAGES, PERSON_GROUPS, PERSON_ROLES, createEmptyPersonRole, createEmptyTrack, isVideoMedium, isCommunitySupport, createSupportRecipients, hasUserRecipients } from '../../types/feed';
 import type { PersonGroup } from '../../types/feed';
 import { FIELD_INFO } from '../../data/fieldInfo';
-import { ID3V1_GENRES } from '../../data/id3v1Genres';
+import { KeywordsField } from '../KeywordsField';
 import { detectAddressType } from '../../utils/addressUtils';
 import { getMediaDuration, secondsToHHMMSS, formatDuration, getAudioMimeType, isKnownAudioFormat } from '../../utils/audioUtils';
 import { getVideoMimeType } from '../../utils/videoUtils';
@@ -363,17 +363,11 @@ export function Editor() {
               </div>
               <div className="form-group">
                 <label className="form-label">Keywords<InfoIcon text={FIELD_INFO.keywords} /></label>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="rock, indie, guitar, electronic"
-                  list="id3v1-genres"
+                <KeywordsField
                   value={album.keywords || ''}
-                  onChange={e => dispatch({ type: 'UPDATE_ALBUM', payload: { keywords: e.target.value } })}
+                  onChange={keywords => dispatch({ type: 'UPDATE_ALBUM', payload: { keywords } })}
+                  placeholder="rock, indie, guitar, electronic"
                 />
-                <datalist id="id3v1-genres">
-                  {ID3V1_GENRES.map(genre => <option key={genre} value={genre} />)}
-                </datalist>
               </div>
               <div className="form-group">
                 <label className="form-label">Owner Name<InfoIcon text={FIELD_INFO.ownerName} /></label>

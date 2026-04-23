@@ -2,6 +2,7 @@ import type { PublisherFeed } from '../../../types/feed';
 import { LANGUAGES } from '../../../types/feed';
 import type { FeedAction } from '../../../store/feedStore';
 import { FIELD_INFO } from '../../../data/fieldInfo';
+import { KeywordsField } from '../../KeywordsField';
 import { InfoIcon } from '../../InfoIcon';
 import { Section } from '../../Section';
 import { Toggle } from '../../Toggle';
@@ -101,12 +102,10 @@ export function PublisherInfoSection({ publisherFeed, dispatch }: PublisherInfoS
         </div>
         <div className="form-group">
           <label className="form-label">Keywords<InfoIcon text={FIELD_INFO.keywords} /></label>
-          <input
-            type="text"
-            className="form-input"
-            placeholder="label, publisher, music, indie"
+          <KeywordsField
             value={publisherFeed.keywords || ''}
-            onChange={e => dispatch({ type: 'UPDATE_PUBLISHER_FEED', payload: { keywords: e.target.value } })}
+            onChange={keywords => dispatch({ type: 'UPDATE_PUBLISHER_FEED', payload: { keywords } })}
+            placeholder="label, publisher, music, indie"
           />
         </div>
         <div className="form-group">

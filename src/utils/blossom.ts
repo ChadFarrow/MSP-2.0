@@ -4,7 +4,7 @@ import type { NostrEvent } from '../types/nostr';
 import { generateRssFeed, generatePublisherRssFeed } from './xmlGenerator';
 import { hexToNpub } from './nostr';
 import { DEFAULT_RELAYS, publishEventToRelays } from './nostrRelay';
-import { getSigner, hasSigner } from './nostrSigner';
+import { getSigner, hasSigner, signEventWithTimeout } from './nostrSigner';
 
 // Blossom auth event kind
 const BLOSSOM_AUTH_KIND = 24242;
@@ -94,7 +94,7 @@ async function publishFileMetadata(
     const signer = getSigner();
     const pubkey = await signer.getPublicKey();
     const unsignedEvent = createFileMetadataEvent(blossomUrl, hash, fileSize, album, pubkey);
-    const signedEvent = await signer.signEvent(unsignedEvent);
+    const signedEvent = await signEventWithTimeout(unsignedEvent);
 
     const { successCount } = await publishEventToRelays(signedEvent as NostrEvent, relays);
 
@@ -130,7 +130,7 @@ export async function uploadToBlossom(
 
     // Create and sign auth event
     const authEvent = await createBlossomAuthEvent(hash, pubkey, 'upload');
-    const signedAuthEvent = await signer.signEvent(authEvent);
+    const signedAuthEvent = await signEventWithTimeout(authEvent);
 
     // Base64 encode the signed event for Authorization header
     const authHeader = 'Nostr ' + btoa(JSON.stringify(signedAuthEvent));
@@ -226,7 +226,7 @@ export async function uploadFeedToBlossom(
 
     // Create and sign auth event
     const authEvent = await createBlossomAuthEvent(hash, pubkey, 'upload');
-    const signedAuthEvent = await signer.signEvent(authEvent);
+    const signedAuthEvent = await signEventWithTimeout(authEvent);
 
     // Base64 encode the signed event for Authorization header
     const authHeader = 'Nostr ' + btoa(JSON.stringify(signedAuthEvent));

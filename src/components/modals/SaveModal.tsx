@@ -564,6 +564,13 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
     setLinkingNostr(true);
     setMessage(null);
 
+    const health = await checkSignerConnection();
+    if (!health.connected) {
+      setMessage({ type: 'error', text: health.error ?? 'Nostr signer is not connected.' });
+      setLinkingNostr(false);
+      return;
+    }
+
     try {
       const result = await linkNostrToFeed(hostedInfo.feedId, hostedInfo.editToken);
 

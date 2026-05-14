@@ -6,6 +6,7 @@ import { type HostedFeedInfo, buildHostedUrl } from '../../utils/hostedFeed';
 import { fetchAdminFeeds } from '../../utils/adminAuth';
 import { pendingHostedStorage } from '../../utils/storage';
 import { formatTimestamp } from '../../utils/dateUtils';
+import { checkSignerConnection } from '../../utils/nostrSigner';
 import { useNostr } from '../../store/nostrStore';
 import type { SavedAlbumInfo, NostrMusicAlbumGroup } from '../../types/nostr';
 import type { Album } from '../../types/feed';
@@ -51,6 +52,12 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn, templa
   const fetchSavedAlbums = async () => {
     setLoadingAlbums(true);
     setError('');
+    const health = await checkSignerConnection();
+    if (!health.connected) {
+      setError(health.error ?? 'Nostr signer is not connected.');
+      setLoadingAlbums(false);
+      return;
+    }
     const result = await loadAlbumsFromNostr();
     setLoadingAlbums(false);
 
@@ -69,6 +76,13 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn, templa
 
     setLoadingHostedFeeds(true);
     setError('');
+
+    const health = await checkSignerConnection();
+    if (!health.connected) {
+      setError(health.error ?? 'Nostr signer is not connected.');
+      setLoadingHostedFeeds(false);
+      return;
+    }
 
     try {
       const result = await fetchAdminFeeds();
@@ -91,6 +105,13 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn, templa
     setLoading(true);
     setError('');
 
+    const health = await checkSignerConnection();
+    if (!health.connected) {
+      setError(health.error ?? 'Nostr signer is not connected.');
+      setLoading(false);
+      return;
+    }
+
     const result = await loadAlbumByDTag(dTag);
 
     if (result.success && result.album) {
@@ -106,6 +127,13 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn, templa
   const fetchMusicTracks = async () => {
     setLoadingMusic(true);
     setError('');
+
+    const health = await checkSignerConnection();
+    if (!health.connected) {
+      setError(health.error ?? 'Nostr signer is not connected.');
+      setLoadingMusic(false);
+      return;
+    }
 
     const result = await fetchNostrMusicTracks();
     setLoadingMusic(false);

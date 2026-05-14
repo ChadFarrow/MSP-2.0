@@ -4,7 +4,7 @@ import type { NostrEvent } from '../types/nostr';
 import { generateRssFeed, generatePublisherRssFeed } from './xmlGenerator';
 import { hexToNpub } from './nostr';
 import { DEFAULT_RELAYS, publishEventToRelays } from './nostrRelay';
-import { getSigner, hasSigner, signEventWithTimeout } from './nostrSigner';
+import { hasSigner, signEventWithTimeout, getPublicKeyWithTimeout } from './nostrSigner';
 
 // Blossom auth event kind
 const BLOSSOM_AUTH_KIND = 24242;
@@ -91,8 +91,7 @@ async function publishFileMetadata(
   }
 
   try {
-    const signer = getSigner();
-    const pubkey = await signer.getPublicKey();
+    const pubkey = await getPublicKeyWithTimeout();
     const unsignedEvent = createFileMetadataEvent(blossomUrl, hash, fileSize, album, pubkey);
     const signedEvent = await signEventWithTimeout(unsignedEvent);
 
@@ -119,8 +118,7 @@ export async function uploadToBlossom(
   }
 
   try {
-    const signer = getSigner();
-    const pubkey = await signer.getPublicKey();
+    const pubkey = await getPublicKeyWithTimeout();
 
     // Generate RSS XML with updated lastBuildDate
     const rssXml = generateRssFeed({ ...album, lastBuildDate: new Date().toUTCString() });
@@ -202,8 +200,7 @@ export async function uploadFeedToBlossom(
   }
 
   try {
-    const signer = getSigner();
-    const pubkey = await signer.getPublicKey();
+    const pubkey = await getPublicKeyWithTimeout();
 
     // Generate RSS XML based on feed type
     // Update lastBuildDate to current time per RSS 2.0 spec

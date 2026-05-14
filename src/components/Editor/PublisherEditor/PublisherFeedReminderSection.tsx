@@ -11,7 +11,7 @@ import {
   saveHostedFeedInfo,
   getHostedFeedInfo
 } from '../../../utils/hostedFeed';
-import { hasSigner } from '../../../utils/nostrSigner';
+import { hasSigner, checkSignerConnection } from '../../../utils/nostrSigner';
 import { useNostr } from '../../../store/nostrStore';
 
 interface PublisherFeedReminderSectionProps {
@@ -45,6 +45,15 @@ export function PublisherFeedReminderSection({ publisherFeed }: PublisherFeedRem
       const title = publisherFeed.title || 'Publisher Feed';
       const editToken = generateEditToken();
       const shouldLinkNostr = nostrState.isLoggedIn && nostrState.user?.pubkey && hasSigner();
+
+      if (shouldLinkNostr) {
+        const health = await checkSignerConnection();
+        if (!health.connected) {
+          setResult({ success: false, message: health.error ?? 'Nostr signer is not connected.' });
+          setIsHosting(false);
+          return;
+        }
+      }
 
       let response;
       if (shouldLinkNostr) {

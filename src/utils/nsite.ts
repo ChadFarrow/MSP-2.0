@@ -6,7 +6,7 @@ import type { Album, PublisherFeed } from '../types/feed';
 import type { NostrEvent } from '../types/nostr';
 import { generateRssFeed, generatePublisherRssFeed } from './xmlGenerator';
 import { DEFAULT_RELAYS, publishEventToRelays } from './nostrRelay';
-import { getSigner, hasSigner, signEventWithTimeout } from './nostrSigner';
+import { hasSigner, signEventWithTimeout, getPublicKeyWithTimeout } from './nostrSigner';
 
 // NIP-5A event kinds
 const NSITE_NAMED_KIND = 35128;
@@ -159,8 +159,7 @@ export async function publishToNsite(
   }
 
   try {
-    const signer = getSigner();
-    const pubkey = await signer.getPublicKey();
+    const pubkey = await getPublicKeyWithTimeout();
 
     // 1. Generate RSS XML
     onProgress?.('Generating RSS feed...');

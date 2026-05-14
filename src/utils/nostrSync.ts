@@ -10,7 +10,7 @@ import {
   collectEvents,
   publishEventToRelays
 } from './nostrRelay';
-import { getSigner, hasSigner, signEventWithTimeout } from './nostrSigner';
+import { hasSigner, signEventWithTimeout, getPublicKeyWithTimeout } from './nostrSigner';
 import { parseNostrMusicEvent } from './nostrMusicConverter';
 
 // Re-export for backward compatibility
@@ -116,9 +116,8 @@ export async function saveAlbumToNostr(
   }
 
   try {
-    const signer = getSigner();
     // Get public key
-    const pubkey = await signer.getPublicKey();
+    const pubkey = await getPublicKeyWithTimeout();
 
     // Only update lastBuildDate if there are actual changes
     const updatedAlbum = hasChanges
@@ -161,8 +160,7 @@ export async function saveFeedToNostr(
   }
 
   try {
-    const signer = getSigner();
-    const pubkey = await signer.getPublicKey();
+    const pubkey = await getPublicKeyWithTimeout();
 
     // Generate RSS XML based on feed type
     let rssXml: string;
@@ -217,8 +215,7 @@ export async function loadAlbumsFromNostr(
   }
 
   try {
-    const signer = getSigner();
-    const pubkey = await signer.getPublicKey();
+    const pubkey = await getPublicKeyWithTimeout();
     const allEvents: NostrEvent[] = [];
 
     // Query each relay
@@ -296,8 +293,7 @@ export async function loadAlbumByDTag(
   }
 
   try {
-    const signer = getSigner();
-    const pubkey = await signer.getPublicKey();
+    const pubkey = await getPublicKeyWithTimeout();
     let latestEvent: NostrEvent | null = null;
 
     // Query each relay
@@ -389,8 +385,7 @@ export async function fetchNostrMusicTracks(
   }
 
   try {
-    const signer = getSigner();
-    const pubkey = await signer.getPublicKey();
+    const pubkey = await getPublicKeyWithTimeout();
     const allEvents: NostrEvent[] = [];
 
     // Query each relay
@@ -659,8 +654,7 @@ export async function publishNostrMusicTracks(
   }
 
   try {
-    const signer = getSigner();
-    const pubkey = await signer.getPublicKey();
+    const pubkey = await getPublicKeyWithTimeout();
     let publishedCount = 0;
     const total = album.tracks.length;
     const publishedTracks: PublishedTrackRef[] = [];
@@ -751,8 +745,7 @@ export async function deleteNostrMusicTracks(
   }
 
   try {
-    const signer = getSigner();
-    const pubkey = await signer.getPublicKey();
+    const pubkey = await getPublicKeyWithTimeout();
 
     // Build 'a' tags for all tracks + playlist
     const tags: string[][] = [];

@@ -4,6 +4,7 @@ import { createEmptyRemoteItem } from '../../../types/feed';
 import type { FeedAction } from '../../../store/feedStore';
 import { useNostr } from '../../../store/nostrStore';
 import { createAdminAuthHeader } from '../../../utils/adminAuth';
+import { checkSignerConnection } from '../../../utils/nostrSigner';
 import { getFeedUrlError } from '../../../utils/urlValidation';
 import { InfoIcon } from '../../InfoIcon';
 import { Section } from '../../Section';
@@ -99,6 +100,13 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
     setMyFeedsError('');
     setMyFeeds([]);
     setShowMyFeeds(true);
+
+    const health = await checkSignerConnection();
+    if (!health.connected) {
+      setMyFeedsError(health.error ?? 'Nostr signer is not connected.');
+      setLoadingMyFeeds(false);
+      return;
+    }
 
     try {
       const url = `${window.location.origin}/api/hosted/`;

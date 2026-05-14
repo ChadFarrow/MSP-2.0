@@ -298,6 +298,25 @@ export async function signEventWithTimeout(
   ]);
 }
 
+// Same shape as signEventWithTimeout for the getPublicKey round-trip — NIP-46 sends a
+// request to the remote signer app, which can hang if the phone is asleep.
+export async function getPublicKeyWithTimeout(timeoutMs?: number): Promise<string> {
+  const method = currentMethod;
+  const effectiveTimeout = timeoutMs ?? (method === 'nip46' ? 60_000 : 30_000);
+
+  return Promise.race([
+    getSigner().getPublicKey(),
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error(
+          'Signer request timed out. If you use a remote signer app (like Amber or nsecBunker), please open it and approve the pending request, then try again.'
+        )),
+        effectiveTimeout
+      )
+    ),
+  ]);
+}
+
 // Check whether the signer is reachable before starting a Nostr operation.
 // Returns { connected: true } quickly or { connected: false, error } without throwing.
 export async function checkSignerConnection(timeoutMs?: number): Promise<{ connected: boolean; error?: string }> {

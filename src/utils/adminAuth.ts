@@ -1,5 +1,5 @@
 // Admin authentication utilities for frontend
-import { getSigner, hasSigner } from './nostrSigner';
+import { hasSigner, signEventWithTimeout } from './nostrSigner';
 
 interface NostrEvent {
   id?: string;
@@ -29,7 +29,6 @@ async function signAuthEvent(url: string, method: string): Promise<NostrEvent> {
     throw new Error('Not logged in');
   }
 
-  const signer = getSigner();
   const event = {
     kind: 27235,
     created_at: Math.floor(Date.now() / 1000),
@@ -40,7 +39,7 @@ async function signAuthEvent(url: string, method: string): Promise<NostrEvent> {
     content: ''
   };
 
-  return await signer.signEvent(event) as NostrEvent;
+  return await signEventWithTimeout(event) as NostrEvent;
 }
 
 // Full authentication flow
@@ -74,7 +73,6 @@ export async function createAdminAuthHeader(url: string, method: string): Promis
     throw new Error('Not logged in');
   }
 
-  const signer = getSigner();
   const event = {
     kind: 27235,
     created_at: Math.floor(Date.now() / 1000),
@@ -85,7 +83,7 @@ export async function createAdminAuthHeader(url: string, method: string): Promis
     content: ''
   };
 
-  const signedEvent = await signer.signEvent(event);
+  const signedEvent = await signEventWithTimeout(event);
   const eventJson = JSON.stringify(signedEvent);
   const base64Event = btoa(eventJson);
 

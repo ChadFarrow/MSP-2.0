@@ -22,6 +22,7 @@ import {
 } from '../../utils/hostedFeed';
 import { albumStorage, videoStorage, publisherStorage, pendingHostedStorage } from '../../utils/storage';
 import { useNostr } from '../../store/nostrStore';
+import { checkSignerConnection } from '../../utils/nostrSigner';
 import { ModalWrapper } from './ModalWrapper';
 
 const DEFAULT_BLOSSOM_SERVER = 'https://blossom.primal.net/';
@@ -296,6 +297,17 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
 
       if (errors.length > 0) {
         setMessage({ type: 'error', text: `Missing required fields: ${errors.join(', ')}` });
+        setLoading(false);
+        return;
+      }
+    }
+
+    // Pre-flight: verify signer is reachable before any Nostr operation
+    const nostrSignModes = ['nostr', 'nostrMusic', 'blossom', 'nsite'] as const;
+    if ((nostrSignModes as readonly string[]).includes(mode)) {
+      const health = await checkSignerConnection();
+      if (!health.connected) {
+        setMessage({ type: 'error', text: health.error ?? 'Nostr signer is not connected.' });
         setLoading(false);
         return;
       }

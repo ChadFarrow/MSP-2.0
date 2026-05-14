@@ -10,7 +10,7 @@ import {
   collectEvents,
   publishEventToRelays
 } from './nostrRelay';
-import { getSigner, hasSigner } from './nostrSigner';
+import { getSigner, hasSigner, signEventWithTimeout } from './nostrSigner';
 import { parseNostrMusicEvent } from './nostrMusicConverter';
 
 // Re-export for backward compatibility
@@ -130,7 +130,7 @@ export async function saveAlbumToNostr(
 
     // Create and sign the event
     const unsignedEvent = createFeedEvent(rssXml, album.podcastGuid, album.title, pubkey);
-    const signedEvent = await signer.signEvent(unsignedEvent);
+    const signedEvent = await signEventWithTimeout(unsignedEvent);
 
     // Publish to relays
     const { successCount } = await publishEventToRelays(signedEvent as NostrEvent, relays);
@@ -189,7 +189,7 @@ export async function saveFeedToNostr(
 
     // Create and sign the event
     const unsignedEvent = createFeedEvent(rssXml, feedGuid, feedTitle, pubkey);
-    const signedEvent = await signer.signEvent(unsignedEvent);
+    const signedEvent = await signEventWithTimeout(unsignedEvent);
 
     // Publish to relays
     const { successCount } = await publishEventToRelays(signedEvent as NostrEvent, relays);
@@ -681,7 +681,7 @@ export async function publishNostrMusicTracks(
 
       // Create and sign the event
       const unsignedEvent = createMusicTrackEvent(track, album, pubkey);
-      const signedEvent = await signer.signEvent(unsignedEvent);
+      const signedEvent = await signEventWithTimeout(unsignedEvent);
 
       // Publish to all relays
       const { successCount } = await publishEventToRelays(signedEvent as NostrEvent, relays);
@@ -707,7 +707,7 @@ export async function publishNostrMusicTracks(
       }
 
       const playlistEvent = createMusicPlaylistEvent(album, publishedTracks, pubkey);
-      const signedPlaylist = await signer.signEvent(playlistEvent);
+      const signedPlaylist = await signEventWithTimeout(playlistEvent);
       const { successCount: playlistSuccessCount } = await publishEventToRelays(signedPlaylist as NostrEvent, relays);
 
       if (playlistSuccessCount > 0) {
@@ -780,7 +780,7 @@ export async function deleteNostrMusicTracks(
       content: 'Unpublished from MSP 2.0'
     };
 
-    const signedEvent = await signer.signEvent(deletionEvent);
+    const signedEvent = await signEventWithTimeout(deletionEvent);
     const { successCount } = await publishEventToRelays(signedEvent as NostrEvent, relays);
 
     if (successCount === 0) {

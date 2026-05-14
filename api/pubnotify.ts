@@ -25,6 +25,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: 'Invalid URL format' });
   }
 
+  // Reject URLs with characters that cause Podcast Index indexing issues or duplicates
+  if (/ /.test(url)) {
+    return res.status(400).json({ error: 'URL contains spaces. Please percent-encode spaces as %20 before submitting.' });
+  }
+  if (/'/.test(url)) {
+    return res.status(400).json({ error: "URL contains apostrophes ('). Podcast Index may encode them as %27 and create a duplicate entry. Rename the file to remove apostrophes before submitting." });
+  }
+  if (/[<>"{}|\\^`]/.test(url)) {
+    return res.status(400).json({ error: 'URL contains special characters (<, >, ", {, }, |, \\, ^, `) that require percent-encoding. Please fix the URL before submitting.' });
+  }
+  if (Array.from(url).some(c => c.charCodeAt(0) > 127)) {
+    return res.status(400).json({ error: 'URL contains non-ASCII characters that require percent-encoding. Please fix the URL before submitting.' });
+  }
+
   try {
     // First, notify Podcast Index about the feed (no auth required)
     const pubnotifyUrl = `https://api.podcastindex.org/api/1.0/hub/pubnotify?url=${encodeURIComponent(url)}`;

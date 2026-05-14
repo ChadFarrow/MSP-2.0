@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ModalWrapper } from './ModalWrapper';
 import { getHostedFeedInfo, buildHostedUrl } from '../../utils/hostedFeed';
+import { getFeedUrlError } from '../../utils/urlValidation';
 
 interface PodcastIndexModalProps {
   onClose: () => void;
@@ -58,6 +59,8 @@ export function PodcastIndexModal({ onClose, feedGuid, medium }: PodcastIndexMod
     }
   };
 
+  const urlError = getFeedUrlError(podcastIndexUrl.trim());
+
   return (
     <ModalWrapper
       isOpen={true}
@@ -68,7 +71,7 @@ export function PodcastIndexModal({ onClose, feedGuid, medium }: PodcastIndexMod
           <button
             className="btn btn-primary"
             onClick={handleSubmit}
-            disabled={submitting || !podcastIndexUrl.trim()}
+            disabled={submitting || !podcastIndexUrl.trim() || !!urlError}
           >
             {submitting ? 'Submitting...' : 'Submit'}
           </button>
@@ -94,13 +97,18 @@ export function PodcastIndexModal({ onClose, feedGuid, medium }: PodcastIndexMod
             width: '100%',
             padding: '8px 12px',
             borderRadius: '4px',
-            border: '1px solid var(--border-color)',
+            border: `1px solid ${urlError ? 'var(--error, #ef4444)' : 'var(--border-color)'}`,
             backgroundColor: 'var(--bg-secondary)',
             color: 'var(--text-primary)',
             fontSize: '0.875rem',
             fontFamily: 'monospace'
           }}
         />
+        {urlError && (
+          <div style={{ marginTop: '6px', fontSize: '0.8rem', color: 'var(--error, #ef4444)' }}>
+            {urlError}
+          </div>
+        )}
       </div>
       {podcastIndexPageUrl && (
         <div style={{

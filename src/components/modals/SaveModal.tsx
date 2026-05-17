@@ -22,6 +22,7 @@ import {
 } from '../../utils/hostedFeed';
 import { albumStorage, videoStorage, publisherStorage, pendingHostedStorage } from '../../utils/storage';
 import { useNostr } from '../../store/nostrStore';
+import { useExperimental } from '../../store/experimentalStore';
 import { checkSignerConnection } from '../../utils/nostrSigner';
 import { getFeedUrlError } from '../../utils/urlValidation';
 import { ModalWrapper } from './ModalWrapper';
@@ -40,7 +41,8 @@ interface SaveModalProps {
 
 export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', isDirty, isLoggedIn, onImport }: SaveModalProps) {
   const { state: nostrState } = useNostr();
-  const [mode, setMode] = useState<'local' | 'download' | 'clipboard' | 'nostr' | 'nostrMusic' | 'blossom' | 'nsite' | 'hosted' | 'podping'>('local');
+  const { showExperimental } = useExperimental();
+  const [mode, setMode] = useState<'local' | 'download' | 'clipboard' | 'nostr' | 'nostrMusic' | 'blossom' | 'nsite' | 'hosted' | 'podcastIndex'>('local');
   const isPublisherMode = feedType === 'publisher';
   const isVideoMode = feedType === 'video';
 
@@ -81,13 +83,8 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
   const [nsiteBlossomUrl, setNsiteBlossomUrl] = useState<string | null>(null);
   const [nsitePiUrl, setNsitePiUrl] = useState<string | null>(null);
   const [nsiteProgress, setNsiteProgress] = useState<string | null>(null);
-  const [podpingUrl, setPodpingUrl] = useState('');
-  const [podpingStatus, setPodpingStatus] = useState<
-    | { kind: 'idle' }
-    | { kind: 'loading' }
-    | { kind: 'success' }
-    | { kind: 'error'; message: string }
-  >({ kind: 'idle' });
+  const [podcastIndexSubmitUrl, setPodcastIndexSubmitUrl] = useState('');
+  const [podcastIndexResultUrl, setPodcastIndexResultUrl] = useState<string | null>(null);
 
   // Check if feed is linked to current user's Nostr identity
   const isNostrLinked = hostedInfo?.ownerPubkey && nostrState.user?.pubkey === hostedInfo.ownerPubkey;
@@ -98,25 +95,24 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
       if (mode === 'nostrMusic' || mode === 'blossom' || mode === 'hosted' || mode === 'nsite') return 'Uploading...';
       if (mode === 'download') return 'Downloading...';
       if (mode === 'clipboard') return 'Copying...';
-      if (mode === 'podping') return 'Sending\u2026';
+      if (mode === 'podcastIndex') return 'Submitting...';
       return 'Saving...';
     }
     if (mode === 'nostrMusic') return 'Publish';
     if (mode === 'blossom' || mode === 'hosted' || mode === 'nsite') return 'Upload';
     if (mode === 'download') return 'Download';
     if (mode === 'clipboard') return 'Copy to Clipboard';
-    if (mode === 'podping') return 'Send Podping';
+    if (mode === 'podcastIndex') return 'Submit to PodcastIndex';
     return 'Save';
   };
 
-  const podpingUrlError = getFeedUrlError(podpingUrl.trim());
+  const podcastIndexUrlError = mode === 'podcastIndex' ? getFeedUrlError(podcastIndexSubmitUrl.trim()) : null;
 
   // Helper to determine if button should be disabled
   const isButtonDisabled = () => {
     if (loading) return true;
     if (mode === 'hosted' && !hostedInfo && !legacyHostedInfo && !tokenAcknowledged) return true;
-    if (mode === 'podping' && podpingStatus.kind === 'loading') return true;
-    if (mode === 'podping' && !!podpingUrlError) return true;
+    if (mode === 'podcastIndex' && (!podcastIndexSubmitUrl.trim() || !!podcastIndexUrlError)) return true;
     return false;
   };
 
@@ -127,13 +123,20 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
     }
   }, [mode, hostedInfo, legacyHostedInfo, pendingToken, showRestore]);
 
-  // Pre-fill podping URL from hosted feed URL when podping mode is selected
+  // Reset mode if the current selection is an experimental option that just got hidden
   useEffect(() => {
-    if (mode !== 'podping') return;
-    if (podpingUrl) return; // don't overwrite user edits
+    if (!showExperimental && (mode === 'nostr' || mode === 'blossom' || mode === 'nsite')) {
+      setMode('local');
+    }
+  }, [showExperimental, mode]);
+
+  // Auto-fill the Podcast Index submission URL from whichever hosted URL we have
+  useEffect(() => {
+    if (mode !== 'podcastIndex') return;
+    if (podcastIndexSubmitUrl) return; // don't overwrite user edits
     const url = hostedUrl ?? stableUrl ?? nsiteUrl ?? '';
-    if (url) setPodpingUrl(url);
-  }, [mode, hostedUrl, stableUrl, nsiteUrl, podpingUrl]);
+    if (url) setPodcastIndexSubmitUrl(url);
+  }, [mode, hostedUrl, stableUrl, nsiteUrl, podcastIndexSubmitUrl]);
 
   // Check for existing hosted feed on mount, and apply pending credentials
   useEffect(() => {
@@ -264,8 +267,8 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
     setMessage(null);
     setProgress(null);
 
-    // Validate required fields only for publishing modes (not local/download/clipboard/podping)
-    const requiresValidation = !['local', 'download', 'clipboard', 'podping'].includes(mode);
+    // Validate required fields only for publishing modes (not local/download/clipboard/podcastIndex)
+    const requiresValidation = !['local', 'download', 'clipboard', 'podcastIndex'].includes(mode);
     if (requiresValidation) {
       const errors: string[] = [];
 
@@ -508,42 +511,39 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
             setMessage({ type: 'success', text: successMsg });
           }
           break;
-        case 'podping':
-          if (!podpingUrl) {
-            setPodpingStatus({ kind: 'error', message: 'Feed URL is required' });
+        case 'podcastIndex': {
+          const submitUrl = podcastIndexSubmitUrl.trim();
+          if (!submitUrl) {
+            setMessage({ type: 'error', text: 'Feed URL is required' });
             setLoading(false);
             return;
           }
-          if (podpingUrlError) {
-            setPodpingStatus({ kind: 'error', message: podpingUrlError });
+          if (podcastIndexUrlError) {
+            setMessage({ type: 'error', text: podcastIndexUrlError });
             setLoading(false);
             return;
           }
-          setPodpingStatus({ kind: 'loading' });
-          try {
-            const body: { url: string; reason: string; medium?: string } = {
-              url: podpingUrl,
-              reason: 'update'
-            };
-            const medium = isPublisherMode ? publisherFeed?.medium : album.medium;
-            if (medium) body.medium = medium;
-            const response = await fetch('/api/podping', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(body)
-            });
-            if (!response.ok) {
-              const data = await response.json().catch(() => ({ error: response.statusText }));
-              setPodpingStatus({ kind: 'error', message: (data as { error?: string }).error ?? 'Podping failed' });
-              setLoading(false);
-              return;
-            }
-            setPodpingStatus({ kind: 'success' });
-          } catch (err) {
-            setPodpingStatus({ kind: 'error', message: err instanceof Error ? err.message : 'Network error' });
+          setPodcastIndexResultUrl(null);
+          const params = new URLSearchParams({ url: submitUrl });
+          if (currentFeedGuid) params.set('guid', currentFeedGuid);
+          const piMedium = isPublisherMode ? publisherFeed?.medium : album.medium;
+          if (piMedium) params.set('medium', piMedium);
+          const response = await fetch(`/api/pubnotify?${params}`);
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            setMessage({ type: 'error', text: (data as { error?: string }).error ?? 'Failed to submit to Podcast Index' });
+            setLoading(false);
+            return;
           }
-          setLoading(false);
-          return;
+          if ((data as { podcastIndexUrl?: string }).podcastIndexUrl) {
+            setPodcastIndexResultUrl((data as { podcastIndexUrl: string }).podcastIndexUrl);
+            setMessage({ type: 'success', text: 'Feed added to Podcast Index!' });
+          } else {
+            setPodcastIndexResultUrl(`https://podcastindex.org/search?q=${encodeURIComponent(submitUrl)}`);
+            setMessage({ type: 'success', text: 'Feed submitted! It may take a moment to appear in the index.' });
+          }
+          break;
+        }
       }
     } catch (err) {
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Save failed' });
@@ -652,11 +652,11 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
               <option value="download">Download XML</option>
               <option value="clipboard">Copy to Clipboard</option>
               <option value="hosted">Host on MSP</option>
-              <option value="podping">Send Podping</option>
-              {isLoggedIn && <option value="nostr">Save RSS feed to Nostr</option>}
+              <option value="podcastIndex">Submit to PodcastIndex</option>
               {!isPublisherMode && isLoggedIn && <option value="nostrMusic">Publish to Nostr Music</option>}
-              {isLoggedIn && <option value="blossom">Publish RSS feed to a Blossom server</option>}
-              {isLoggedIn && <option value="nsite">Publish RSS feed to nsite (experimental)</option>}
+              {showExperimental && isLoggedIn && <option value="nostr">Save RSS feed to Nostr 🧪</option>}
+              {showExperimental && isLoggedIn && <option value="blossom">Publish RSS feed to a Blossom server 🧪</option>}
+              {showExperimental && isLoggedIn && <option value="nsite">Publish RSS feed to nsite 🧪</option>}
             </select>
           </div>
 
@@ -1238,48 +1238,68 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
               )}
             </div>
           )}
-          {mode === 'podping' && (
+          {mode === 'podcastIndex' && (
             <div style={{ marginTop: '16px' }}>
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '12px' }}>
-                Notify podcast apps that this feed was updated, via Podping/Hive. Indexers re-crawl the feed when they see the ping.
+                Submit a feed URL to Podcast Index so it gets indexed and becomes discoverable in apps like Fountain, Castamatic, and others.
               </p>
-              <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.875rem' }}>
+              <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                 Feed URL
               </label>
               <input
                 type="text"
-                value={podpingUrl}
-                onChange={(e) => setPodpingUrl(e.target.value)}
-                placeholder="https://msp.podtards.com/api/hosted/<id>.xml"
+                value={podcastIndexSubmitUrl}
+                onChange={(e) => setPodcastIndexSubmitUrl(e.target.value)}
+                placeholder="https://example.com/feed.xml"
                 style={{
                   width: '100%',
                   padding: '8px 12px',
                   borderRadius: '4px',
-                  border: `1px solid ${podpingUrlError ? 'var(--error, #ef4444)' : 'var(--border-color)'}`,
+                  border: `1px solid ${podcastIndexUrlError ? 'var(--error, #ef4444)' : 'var(--border-color)'}`,
                   backgroundColor: 'var(--bg-secondary)',
                   color: 'var(--text-primary)',
                   fontSize: '0.875rem',
-                  marginBottom: '8px'
+                  fontFamily: 'monospace'
                 }}
               />
-              {podpingUrlError && (
-                <p style={{ color: 'var(--error, #ef4444)', fontSize: '0.875rem', margin: '0 0 8px 0' }}>
-                  {podpingUrlError}
-                </p>
+              {podcastIndexUrlError && (
+                <div style={{ marginTop: '6px', fontSize: '0.8rem', color: 'var(--error, #ef4444)' }}>
+                  {podcastIndexUrlError}
+                </div>
               )}
-              {podpingStatus.kind === 'success' && (
-                <p style={{ color: 'var(--success-color, #22c55e)', fontSize: '0.875rem', margin: 0 }}>
-                  Podping sent.
-                </p>
+              {podcastIndexResultUrl && (
+                <div style={{
+                  marginTop: '12px',
+                  padding: '12px',
+                  backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                  borderRadius: '8px',
+                  border: '1px solid var(--success)'
+                }}>
+                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.75rem', fontWeight: 600, color: 'var(--success)' }}>
+                    View on Podcast Index
+                  </label>
+                  <a
+                    href={podcastIndexResultUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ fontSize: '0.875rem', color: '#3b82f6', wordBreak: 'break-all' }}
+                  >
+                    {podcastIndexResultUrl}
+                  </a>
+                </div>
               )}
-              {podpingStatus.kind === 'error' && (
-                <p style={{ color: 'var(--error-color, #ef4444)', fontSize: '0.875rem', margin: 0 }}>
-                  {podpingStatus.message}
-                </p>
-              )}
+              <div style={{ marginTop: '12px' }}>
+                <a
+                  href="https://podcastindex.org/add"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ fontSize: '0.75rem', color: '#3b82f6' }}
+                >
+                  Add feed manually on podcastindex.org →
+                </a>
+              </div>
             </div>
           )}
-
           {progress && (
             <div style={{ marginTop: '12px', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
               {progress.phase === 'tracks'
@@ -1316,11 +1336,11 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                 <li><strong>Download XML</strong> - Download the RSS feed as an XML file to your computer.</li>
                 <li><strong>Copy to Clipboard</strong> - Copy the RSS XML to your clipboard for pasting elsewhere.</li>
                 <li><strong>Host on MSP</strong> - Host your feed on MSP servers. Get a permanent URL for your RSS feed to use in any app.{isLoggedIn && ' You can link your Nostr identity to edit from any device without needing the token.'}</li>
-                <li><strong>Send Podping</strong> - Broadcast a feed-update notification via Podping/Hive. Indexers like Podcast Index watch Hive and re-crawl the feed when they see the ping.</li>
-                <li><strong>Save RSS feed to Nostr</strong> - Stores the entire RSS XML inside a Nostr event (kind 30054) on your relays. Personal cross-device backup tied to your Nostr key. Not readable by podcast apps.</li>
+                <li><strong>Submit to PodcastIndex</strong> - Submit a feed URL to Podcast Index so it gets indexed and becomes discoverable in apps like Fountain, Castamatic, and others.</li>
                 <li><strong>Publish to Nostr Music</strong> - Publishes each track (kind 36787) and the playlist (kind 34139) as Nostr events for Nostr-native music clients like Wavlake and Fountain. Audio files must already be hosted somewhere - these events just point to them. Not a podcast RSS feed.</li>
-                <li><strong>Publish RSS feed to a Blossom server</strong> - Uploads the RSS file to a Blossom server and registers a Nostr pointer (kind 1063) so MSP can serve a permanent URL. Subscribable in any podcast app.</li>
-                <li><strong>Publish RSS feed to nsite (experimental)</strong> - Uploads the RSS file to a Blossom server and publishes an nsite site manifest (NIP-5A). Reachable as a permanent web URL through any nsite gateway. Subscribable in podcast apps.</li>
+                {showExperimental && <li><strong>Save RSS feed to Nostr 🧪</strong> - Stores the entire RSS XML inside a Nostr event (kind 30054) on your relays. Personal cross-device backup tied to your Nostr key. Not readable by podcast apps.</li>}
+                {showExperimental && <li><strong>Publish RSS feed to a Blossom server 🧪</strong> - Uploads the RSS file to a Blossom server and registers a Nostr pointer (kind 1063) so MSP can serve a permanent URL. Subscribable in any podcast app.</li>}
+                {showExperimental && <li><strong>Publish RSS feed to nsite 🧪</strong> - Uploads the RSS file to a Blossom server and publishes an nsite site manifest (NIP-5A). Reachable as a permanent web URL through any nsite gateway. Subscribable in podcast apps.</li>}
               </ul>
             </ModalWrapper>
       )}

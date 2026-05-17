@@ -4,6 +4,7 @@ import { FeedProvider, useFeed } from './store/feedStore.tsx';
 import type { FeedType } from './store/feedStore.tsx';
 import { NostrProvider, useNostr } from './store/nostrStore.tsx';
 import { ThemeProvider, useTheme } from './store/themeStore.tsx';
+import { ExperimentalProvider, useExperimental } from './store/experimentalStore.tsx';
 import { parseRssFeed, isPublisherFeed, isVideoFeed, parsePublisherRssFeed } from './utils/xmlParser';
 import { createEmptyAlbum, createEmptyPublisherFeed, createEmptyVideoAlbum } from './types/feed';
 import { pendingHostedStorage } from './utils/storage';
@@ -12,7 +13,6 @@ import { NostrLoginButton } from './components/NostrLoginButton';
 import { ImportModal } from './components/modals/ImportModal';
 import { SaveModal } from './components/modals/SaveModal';
 import { PreviewModal } from './components/modals/PreviewModal';
-import { PodcastIndexModal } from './components/modals/PodcastIndexModal';
 import { PodpingModal } from './components/modals/PodpingModal';
 import { InfoModal } from './components/modals/InfoModal';
 import { NostrConnectModal } from './components/modals/NostrConnectModal';
@@ -22,17 +22,16 @@ import { PublisherEditor } from './components/Editor/PublisherEditor';
 import { AdminPage } from './components/admin/AdminPage';
 import type { Album } from './types/feed';
 import mspLogo from './assets/msp-logo.png';
-import piLogo from './assets/podcast-index-logo.svg';
 import './App.css';
 
 // Main App Content (needs access to context)
 function AppContent() {
   const { state, dispatch } = useFeed();
   const { theme, toggleTheme } = useTheme();
+  const { showExperimental, toggleExperimental } = useExperimental();
   const [showImportModal, setShowImportModal] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
-  const [showPodcastIndexModal, setShowPodcastIndexModal] = useState(false);
   const [showPodpingModal, setShowPodpingModal] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [showNostrConnectModal, setShowNostrConnectModal] = useState(false);
@@ -221,6 +220,12 @@ function AppContent() {
                   >
                     {theme === 'dark' ? '☀️' : '🌙'} Switch to {theme === 'dark' ? 'Light' : 'Dark'} Mode
                   </button>
+                  <button
+                    className="dropdown-item"
+                    onClick={() => { toggleExperimental(); setShowDropdown(false); }}
+                  >
+                    🧪 {showExperimental ? 'Hide' : 'Show'} Experimental Features
+                  </button>
                   <div className="dropdown-divider" />
                   {nostrState.isLoggedIn ? (
                     <button
@@ -237,7 +242,7 @@ function AppContent() {
                       🔑 Sign In (nostr)
                     </button>
                   )}
-                  {import.meta.env.DEV && (
+                  {showExperimental && (
                     <>
                       <div className="dropdown-divider" />
                       <button
@@ -249,18 +254,18 @@ function AppContent() {
                       >
                         🧪 Load Test Data
                       </button>
+                      <div className="dropdown-divider" />
+                      <a
+                        className="dropdown-item"
+                        href="https://msp-2-0-git-fafo-chadfs-projects.vercel.app/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => setShowDropdown(false)}
+                      >
+                        🧪 Experimental (FAFO)
+                      </a>
                     </>
                   )}
-                  <div className="dropdown-divider" />
-                  <a
-                    className="dropdown-item"
-                    href="https://msp-2-0-git-fafo-chadfs-projects.vercel.app/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={() => setShowDropdown(false)}
-                  >
-                    🧪 Experimental (FAFO)
-                  </a>
                   <div className="dropdown-divider" />
                   <div className="dropdown-version">v{__APP_VERSION__}</div>
                 </div>
@@ -293,14 +298,6 @@ function AppContent() {
           >
             <span className="bottom-toolbar-icon">💾</span>
             <span className="bottom-toolbar-label">Save</span>
-          </button>
-          <button
-            className="bottom-toolbar-btn"
-            onClick={() => setShowPodcastIndexModal(true)}
-            title="Submit to Podcast Index"
-          >
-            <img src={piLogo} alt="Podcast Index" className="bottom-toolbar-icon-img" />
-            <span className="bottom-toolbar-label">Podcast Index</span>
           </button>
           <button
             className="bottom-toolbar-btn"
@@ -352,26 +349,6 @@ function AppContent() {
         />
       )}
 
-      {showPodcastIndexModal && (
-        <PodcastIndexModal
-          onClose={() => setShowPodcastIndexModal(false)}
-          feedGuid={
-            state.feedType === 'publisher' && state.publisherFeed
-              ? state.publisherFeed.podcastGuid
-              : state.feedType === 'video' && state.videoFeed
-                ? state.videoFeed.podcastGuid
-                : state.album.podcastGuid
-          }
-          medium={
-            state.feedType === 'publisher' && state.publisherFeed
-              ? state.publisherFeed.medium
-              : state.feedType === 'video' && state.videoFeed
-                ? state.videoFeed.medium
-                : state.album.medium
-          }
-        />
-      )}
-
       {showPodpingModal && (
         <PodpingModal
           onClose={() => setShowPodpingModal(false)}
@@ -418,20 +395,24 @@ function App() {
   if (isAdminRoute) {
     return (
       <ThemeProvider>
-        <NostrProvider>
-          <AdminPage />
-        </NostrProvider>
+        <ExperimentalProvider>
+          <NostrProvider>
+            <AdminPage />
+          </NostrProvider>
+        </ExperimentalProvider>
       </ThemeProvider>
     );
   }
 
   return (
     <ThemeProvider>
-      <NostrProvider>
-        <FeedProvider>
-          <AppContent />
-        </FeedProvider>
-      </NostrProvider>
+      <ExperimentalProvider>
+        <NostrProvider>
+          <FeedProvider>
+            <AppContent />
+          </FeedProvider>
+        </NostrProvider>
+      </ExperimentalProvider>
     </ThemeProvider>
   );
 }

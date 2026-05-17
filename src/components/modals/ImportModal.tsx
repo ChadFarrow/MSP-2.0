@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { fetchFeedFromUrl } from '../../utils/xmlParser';
 import { loadAlbumsFromNostr, loadAlbumByDTag, fetchNostrMusicTracks, groupTracksByAlbum } from '../../utils/nostrSync';
 import { convertNostrMusicToAlbum, parseNostrEventJson } from '../../utils/nostrMusicConverter';
@@ -8,6 +8,7 @@ import { pendingHostedStorage } from '../../utils/storage';
 import { formatTimestamp } from '../../utils/dateUtils';
 import { checkSignerConnection } from '../../utils/nostrSigner';
 import { useNostr } from '../../store/nostrStore';
+import { useExperimental } from '../../store/experimentalStore';
 import type { SavedAlbumInfo, NostrMusicAlbumGroup } from '../../types/nostr';
 import type { Album } from '../../types/feed';
 import { ModalWrapper } from './ModalWrapper';
@@ -32,6 +33,7 @@ interface ImportModalProps {
 
 export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn, templateMode }: ImportModalProps) {
   const { state: nostrState } = useNostr();
+  const { showExperimental } = useExperimental();
   const [mode, setMode] = useState<'file' | 'paste' | 'url' | 'nostr' | 'nostrMusic' | 'nostrEvent' | 'hosted'>('file');
   const [xmlContent, setXmlContent] = useState('');
   const [jsonContent, setJsonContent] = useState('');
@@ -48,6 +50,13 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn, templa
   const [showHelp, setShowHelp] = useState(false);
   const [hostedFeeds, setHostedFeeds] = useState<HostedFeedListItem[]>([]);
   const [loadingHostedFeeds, setLoadingHostedFeeds] = useState(false);
+
+  // Reset mode if the current selection is an experimental option that just got hidden
+  useEffect(() => {
+    if (!showExperimental && (mode === 'nostr' || mode === 'nostrEvent')) {
+      setMode('file');
+    }
+  }, [showExperimental, mode]);
 
   const fetchSavedAlbums = async () => {
     setLoadingAlbums(true);
@@ -377,10 +386,10 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn, templa
               <option value="file">Upload File</option>
               <option value="paste">Paste XML</option>
               <option value="url">From URL</option>
-              <option value="nostrEvent">Nostr Event</option>
               <option value="hosted">MSP Hosted</option>
-              {isLoggedIn && <option value="nostr">From Nostr</option>}
               {isLoggedIn && <option value="nostrMusic">From Nostr Music</option>}
+              {showExperimental && <option value="nostrEvent">Nostr Event 🧪</option>}
+              {showExperimental && isLoggedIn && <option value="nostr">From Nostr 🧪</option>}
             </select>
           </div>
 
@@ -696,10 +705,10 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn, templa
                 <li><strong>Upload File</strong> - Upload an RSS/XML feed file from your device</li>
                 <li><strong>Paste XML</strong> - Paste RSS/XML content directly</li>
                 <li><strong>From URL</strong> - Fetch a feed from any URL</li>
-                <li><strong>Nostr Event</strong> - Import from a Nostr Event (kind 36787)</li>
                 <li><strong>MSP Hosted</strong> - Load a feed hosted on MSP servers using its Feed ID</li>
-                <li><strong>From Nostr</strong> - Load your previously saved albums from Nostr (requires login)</li>
                 <li><strong>From Nostr Music</strong> - Import tracks from Nostr Music library (requires login)</li>
+                {showExperimental && <li><strong>Nostr Event 🧪</strong> - Import from a Nostr Event (kind 36787)</li>}
+                {showExperimental && <li><strong>From Nostr 🧪</strong> - Load your previously saved albums from Nostr (requires login)</li>}
               </ul>
             </ModalWrapper>
       )}

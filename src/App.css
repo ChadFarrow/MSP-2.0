@@ -892,9 +892,7 @@ body {
 }
 
 .info-content {
-  max-height: 70vh;
   line-height: 1.7;
-  overflow-x: hidden;
   word-wrap: break-word;
   overflow-wrap: break-word;
 }

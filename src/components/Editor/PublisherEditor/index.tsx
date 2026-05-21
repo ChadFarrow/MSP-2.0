@@ -38,16 +38,20 @@ export function PublisherEditor({ chromeless = false }: PublisherEditorProps = {
   const catalogStatus = getCatalogFeedsStatus(publisherFeed.remoteItems);
   const allFeedsHosted = catalogStatus.items.length > 0 && catalogStatus.items.every(item => item.isHosted);
 
+  // Artist mode renders this publisher inline alongside its album; first-time setup
+  // shouldn't surface catalog management, redundant download/host UI, or publish flows.
+  const isArtistMode = state.feedType === 'artist';
+
   return wrap(
     <>
       <PublisherInfoSection publisherFeed={publisherFeed} dispatch={dispatch} />
       <PublisherArtworkSection publisherFeed={publisherFeed} dispatch={dispatch} />
-      <CatalogFeedsSection publisherFeed={publisherFeed} dispatch={dispatch} />
+      {!isArtistMode && <CatalogFeedsSection publisherFeed={publisherFeed} dispatch={dispatch} />}
       <PublisherValueSection publisherFeed={publisherFeed} dispatch={dispatch} />
       <PublisherFundingSection publisherFeed={publisherFeed} dispatch={dispatch} />
-      <PublisherFeedReminderSection publisherFeed={publisherFeed} />
-      <DownloadCatalogSection publisherFeed={publisherFeed} />
-      {allFeedsHosted && <PublishSection publisherFeed={publisherFeed} />}
+      {!isArtistMode && <PublisherFeedReminderSection publisherFeed={publisherFeed} />}
+      {!isArtistMode && <DownloadCatalogSection publisherFeed={publisherFeed} />}
+      {!isArtistMode && allFeedsHosted && <PublishSection publisherFeed={publisherFeed} />}
     </>
   );
 }

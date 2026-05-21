@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useFeed } from '../../store/feedStore';
 import { useNostr } from '../../store/nostrStore';
@@ -6,10 +6,12 @@ import {
   hostBothOnMSP,
   downloadArtistFeedPackage,
   waitForBothFeedsInIndex,
+  type CancellationToken,
   type HostBothResult,
   type PublishStep,
   type PublishStepId,
   type PublishStepStatus,
+  type VerifyProgress,
 } from '../../utils/artistPublish';
 
 const containerStyle: CSSProperties = {
@@ -145,19 +147,23 @@ const STEP_LABELS: Record<PublishStepId, string> = {
 
 const STEP_ORDER: PublishStepId[] = ['album-host', 'publisher-host', 'verify-index'];
 
-interface VerifyResult {
-  album: boolean;
-  publisher: boolean;
-}
-
 export function ArtistPublishSection() {
   const { state } = useFeed();
   const { state: nostrState } = useNostr();
   const [hosting, setHosting] = useState(false);
   const [steps, setSteps] = useState<Map<PublishStepId, PublishStep>>(new Map());
   const [result, setResult] = useState<HostBothResult | null>(null);
-  const [verify, setVerify] = useState<VerifyResult | null>(null);
+  const [verify, setVerify] = useState<VerifyProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const pollCancelRef = useRef<CancellationToken | null>(null);
+
+  // Cancel any in-flight polling when the component unmounts so we don't
+  // setState on an unmounted component or burn API calls in the background.
+  useEffect(() => {
+    return () => {
+      if (pollCancelRef.current) pollCancelRef.current.cancelled = true;
+    };
+  }, []);
 
   if (!state.publisherFeed || !state.album) {
     return null;
@@ -177,6 +183,12 @@ export function ArtistPublishSection() {
 
   const handleHostBoth = async () => {
     if (!canHostBoth || !nostrState.user) return;
+
+    // Cancel any previous polling session before starting a new one.
+    if (pollCancelRef.current) pollCancelRef.current.cancelled = true;
+    const cancelToken: CancellationToken = { cancelled: false };
+    pollCancelRef.current = cancelToken;
+
     setHosting(true);
     setError(null);
     setResult(null);
@@ -193,9 +205,25 @@ export function ArtistPublishSection() {
       setResult(hostResult);
 
       updateStep({ id: 'verify-index', status: 'in-progress' });
-      const verifyResult = await waitForBothFeedsInIndex(album.podcastGuid, publisherFeed.podcastGuid);
-      updateStep({ id: 'verify-index', status: verifyResult.album && verifyResult.publisher ? 'done' : 'pending' });
-      setVerify(verifyResult);
+      const finalVerify = await waitForBothFeedsInIndex(
+        album.podcastGuid,
+        publisherFeed.podcastGuid,
+        (progress) => {
+          if (cancelToken.cancelled) return;
+          setVerify(progress);
+          if (progress.album && progress.publisher) {
+            updateStep({ id: 'verify-index', status: 'done' });
+          }
+        },
+        cancelToken
+      );
+      if (!cancelToken.cancelled) {
+        setVerify(finalVerify);
+        updateStep({
+          id: 'verify-index',
+          status: finalVerify.album && finalVerify.publisher ? 'done' : 'pending',
+        });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to host feeds');
     } finally {
@@ -227,24 +255,35 @@ export function ArtistPublishSection() {
     if (id === 'verify-index' && verify) {
       const albumLookup = `https://podcastindex.org/search?q=${encodeURIComponent(album.podcastGuid)}`;
       const pubLookup = `https://podcastindex.org/search?q=${encodeURIComponent(publisherFeed.podcastGuid)}`;
+      const polling = verify.nextCheckIn !== null;
+
       if (verify.album && verify.publisher) {
         return (
           <div style={detailLineStyle}>
-            Both feeds are searchable in Podcast Index.
-            {' '}
+            Both feeds are searchable in Podcast Index.{' '}
             <a href={albumLookup} target="_blank" rel="noopener noreferrer" style={linkStyle}>Album in PI →</a>
             {' · '}
             <a href={pubLookup} target="_blank" rel="noopener noreferrer" style={linkStyle}>Publisher in PI →</a>
           </div>
         );
       }
+
+      const albumLine = verify.album
+        ? <>✓ Album: found in Podcast Index · <a href={albumLookup} target="_blank" rel="noopener noreferrer" style={linkStyle}>view →</a></>
+        : <>⏳ Album: not yet found · <a href={albumLookup} target="_blank" rel="noopener noreferrer" style={linkStyle}>check manually →</a></>;
+      const publisherLine = verify.publisher
+        ? <>✓ Publisher: found in Podcast Index · <a href={pubLookup} target="_blank" rel="noopener noreferrer" style={linkStyle}>view →</a></>
+        : <>⏳ Publisher: not yet found · <a href={pubLookup} target="_blank" rel="noopener noreferrer" style={linkStyle}>check manually →</a></>;
+
       return (
         <div style={detailLineStyle}>
-          Submitted, but Podcast Index hasn't crawled {verify.album && !verify.publisher ? 'the publisher feed' : !verify.album && verify.publisher ? 'the album feed' : 'either feed'} yet — this can take a few minutes. Check back later, or use the links below to look them up manually.
-          <br />
-          <a href={albumLookup} target="_blank" rel="noopener noreferrer" style={linkStyle}>Check album →</a>
-          {' · '}
-          <a href={pubLookup} target="_blank" rel="noopener noreferrer" style={linkStyle}>Check publisher →</a>
+          <div>{albumLine}</div>
+          <div style={{ marginTop: '4px' }}>{publisherLine}</div>
+          <div style={{ marginTop: '6px', color: 'var(--text-tertiary)' }}>
+            {polling
+              ? `Checking again in ${verify.nextCheckIn}s · attempt ${verify.attempt} of ${verify.totalAttempts}`
+              : 'Stopped checking — Podcast Index may still pick these up over the next several minutes. Refresh this page later or use the links above.'}
+          </div>
         </div>
       );
     }
@@ -265,14 +304,25 @@ export function ArtistPublishSection() {
         <>
           <button
             className="btn btn-primary"
-            style={primaryBtnStyle}
+            style={{
+              ...primaryBtnStyle,
+              ...(hosting || result ? { opacity: 0.6, cursor: 'not-allowed' } : {}),
+            }}
             onClick={handleHostBoth}
-            disabled={hosting}
+            disabled={hosting || !!result}
           >
-            {hosting ? 'Working…' : 'Host on MSP — album + publisher (one click)'}
+            {hosting
+              ? 'Working…'
+              : result
+                ? (verify?.album && verify?.publisher
+                    ? '✓ Hosted on MSP and confirmed in Podcast Index'
+                    : '✓ Hosted on MSP — see status below')
+                : 'Host on MSP — album + publisher (one click)'}
           </button>
           <p style={helperText}>
-            Uploads both feeds to msp.podtards.com, submits them to Podcast Index, and verifies they appear. Linked to your Nostr identity for future edits.
+            {result
+              ? 'Already hosted in this session. Refresh the page to re-host (or edit the feeds and use Save in the bottom toolbar).'
+              : 'Uploads both feeds to msp.podtards.com, submits them to Podcast Index, and verifies they appear. Linked to your Nostr identity for future edits.'}
           </p>
         </>
       ) : (

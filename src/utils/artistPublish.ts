@@ -116,27 +116,86 @@ export async function verifyInPodcastIndex(podcastGuid: string): Promise<boolean
   }
 }
 
+export interface VerifyProgress {
+  album: boolean;
+  publisher: boolean;
+  attempt: number;
+  totalAttempts: number;
+  /** Seconds until the next check. Null when polling has ended. */
+  nextCheckIn: number | null;
+}
+
+export interface CancellationToken {
+  cancelled: boolean;
+}
+
 /**
- * Poll PI until both feeds are found, or the timeout window elapses.
- * Resolves to `{ album, publisher }` booleans indicating which were found
- * within the polling window. Total wall-clock budget is ~22 seconds.
+ * Schedule of delays between PI byguid checks.
+ *
+ * First 5 attempts cluster in ~22 s (PI typically commits new submissions in a few seconds),
+ * then back off to 30 s and 60 s intervals for the long tail. Total wall-clock budget
+ * is ~6.5 minutes — long enough to catch PI's usual crawl latency without spinning forever.
+ */
+const POLL_DELAYS_MS = [
+  3000, 4000, 5000, 5000, 5000, // fast: first 22s
+  15000, 15000, 15000, 15000, // 1 min
+  30000, 30000, 30000, 30000, // 2 more min
+  60000, 60000, 60000, // 3 more min
+];
+
+/**
+ * Poll PI until both feeds are found, or the schedule is exhausted.
+ * Calls onProgress after every check. Each call passes a `nextCheckIn` (seconds)
+ * so the UI can render a countdown to the next attempt — or null when polling stops.
+ * Aborts immediately if `cancelToken.cancelled` flips to true.
  */
 export async function waitForBothFeedsInIndex(
   albumGuid: string,
-  publisherGuid: string
-): Promise<{ album: boolean; publisher: boolean }> {
-  const delays = [3000, 4000, 5000, 5000, 5000]; // ~22 s total
+  publisherGuid: string,
+  onProgress?: (p: VerifyProgress) => void,
+  cancelToken?: CancellationToken
+): Promise<VerifyProgress> {
+  const total = POLL_DELAYS_MS.length;
   let albumFound = false;
   let publisherFound = false;
 
-  for (const delay of delays) {
+  for (let i = 0; i < POLL_DELAYS_MS.length; i++) {
+    const delay = POLL_DELAYS_MS[i];
+
+    // Tell the UI how long until the next check (so it can show a countdown).
+    onProgress?.({
+      album: albumFound,
+      publisher: publisherFound,
+      attempt: i,
+      totalAttempts: total,
+      nextCheckIn: Math.round(delay / 1000),
+    });
+
     await new Promise((r) => setTimeout(r, delay));
+    if (cancelToken?.cancelled) break;
+
     if (!albumFound) albumFound = await verifyInPodcastIndex(albumGuid);
     if (!publisherFound) publisherFound = await verifyInPodcastIndex(publisherGuid);
-    if (albumFound && publisherFound) break;
+
+    const isFinal = albumFound && publisherFound;
+    onProgress?.({
+      album: albumFound,
+      publisher: publisherFound,
+      attempt: i + 1,
+      totalAttempts: total,
+      nextCheckIn: isFinal || i === POLL_DELAYS_MS.length - 1 ? null : Math.round(POLL_DELAYS_MS[i + 1] / 1000),
+    });
+
+    if (isFinal) break;
   }
 
-  return { album: albumFound, publisher: publisherFound };
+  return {
+    album: albumFound,
+    publisher: publisherFound,
+    attempt: POLL_DELAYS_MS.length,
+    totalAttempts: total,
+    nextCheckIn: null,
+  };
 }
 
 export function downloadArtistFeedPackage(album: Album, publisherFeed: PublisherFeed): void {

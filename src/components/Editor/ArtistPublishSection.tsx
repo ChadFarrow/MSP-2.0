@@ -2,7 +2,15 @@ import { useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useFeed } from '../../store/feedStore';
 import { useNostr } from '../../store/nostrStore';
-import { hostBothOnMSP, downloadArtistFeedPackage, type HostBothResult } from '../../utils/artistPublish';
+import {
+  hostBothOnMSP,
+  downloadArtistFeedPackage,
+  waitForBothFeedsInIndex,
+  type HostBothResult,
+  type PublishStep,
+  type PublishStepId,
+  type PublishStepStatus,
+} from '../../utils/artistPublish';
 
 const containerStyle: CSSProperties = {
   marginTop: '32px',
@@ -59,25 +67,96 @@ const helperText: CSSProperties = {
   marginBottom: 0,
 };
 
-const statusBoxStyle: CSSProperties = {
-  marginTop: '16px',
-  padding: '12px 14px',
+const stepListStyle: CSSProperties = {
+  marginTop: '20px',
+  padding: '16px',
   borderRadius: '8px',
+  background: 'rgba(0, 0, 0, 0.15)',
+  border: '1px solid rgba(99, 102, 241, 0.2)',
+};
+
+const stepRowStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  gap: '12px',
+  padding: '8px 0',
   fontSize: '13px',
-  lineHeight: '1.6',
+  lineHeight: '1.5',
+};
+
+const stepIconStyle = (status: PublishStepStatus): CSSProperties => ({
+  width: '20px',
+  height: '20px',
+  flexShrink: 0,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  borderRadius: '50%',
+  fontSize: '12px',
+  fontWeight: 600,
+  background:
+    status === 'done' ? 'rgba(34, 197, 94, 0.2)' :
+    status === 'in-progress' ? 'rgba(99, 102, 241, 0.2)' :
+    status === 'failed' ? 'rgba(239, 68, 68, 0.2)' :
+    'rgba(139, 92, 246, 0.1)',
+  color:
+    status === 'done' ? 'var(--success-color, #22c55e)' :
+    status === 'in-progress' ? '#6366f1' :
+    status === 'failed' ? 'var(--danger-color, #ef4444)' :
+    'var(--text-tertiary)',
+  border: `1px solid ${
+    status === 'done' ? 'rgba(34, 197, 94, 0.4)' :
+    status === 'in-progress' ? 'rgba(99, 102, 241, 0.4)' :
+    status === 'failed' ? 'rgba(239, 68, 68, 0.4)' :
+    'rgba(139, 92, 246, 0.3)'
+  }`,
+});
+
+const stepIconChar = (status: PublishStepStatus): string => {
+  if (status === 'done') return '✓';
+  if (status === 'failed') return '✕';
+  if (status === 'in-progress') return '◐';
+  return '○';
+};
+
+const stepLabelStyle = (status: PublishStepStatus): CSSProperties => ({
+  flex: 1,
+  color: status === 'pending' ? 'var(--text-tertiary)' : 'var(--text-primary)',
+  fontWeight: status === 'in-progress' ? 600 : 400,
+});
+
+const detailLineStyle: CSSProperties = {
+  fontSize: '12px',
+  color: 'var(--text-secondary)',
+  marginTop: '4px',
+  wordBreak: 'break-all',
 };
 
 const linkStyle: CSSProperties = {
-  color: 'var(--text-primary)',
-  wordBreak: 'break-all',
+  color: '#3b82f6',
+  textDecoration: 'underline',
 };
+
+const STEP_LABELS: Record<PublishStepId, string> = {
+  'album-host': 'Host album feed on MSP + submit to Podcast Index',
+  'publisher-host': 'Host publisher feed on MSP + submit to Podcast Index',
+  'verify-index': 'Verify both feeds appear in Podcast Index',
+};
+
+const STEP_ORDER: PublishStepId[] = ['album-host', 'publisher-host', 'verify-index'];
+
+interface VerifyResult {
+  album: boolean;
+  publisher: boolean;
+}
 
 export function ArtistPublishSection() {
   const { state } = useFeed();
   const { state: nostrState } = useNostr();
   const [hosting, setHosting] = useState(false);
-  const [progress, setProgress] = useState<string | null>(null);
+  const [steps, setSteps] = useState<Map<PublishStepId, PublishStep>>(new Map());
   const [result, setResult] = useState<HostBothResult | null>(null);
+  const [verify, setVerify] = useState<VerifyResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   if (!state.publisherFeed || !state.album) {
@@ -88,18 +167,37 @@ export function ArtistPublishSection() {
   const publisherFeed = state.publisherFeed;
   const canHostBoth = nostrState.isLoggedIn && !!nostrState.user?.pubkey;
 
+  const updateStep = (step: PublishStep) => {
+    setSteps((prev) => {
+      const next = new Map(prev);
+      next.set(step.id, step);
+      return next;
+    });
+  };
+
   const handleHostBoth = async () => {
     if (!canHostBoth || !nostrState.user) return;
     setHosting(true);
     setError(null);
     setResult(null);
+    setVerify(null);
+    setSteps(new Map());
+
     try {
-      const r = await hostBothOnMSP(album, publisherFeed, nostrState.user.pubkey, setProgress);
-      setResult(r);
-      setProgress(null);
+      const hostResult = await hostBothOnMSP(
+        album,
+        publisherFeed,
+        nostrState.user.pubkey,
+        updateStep
+      );
+      setResult(hostResult);
+
+      updateStep({ id: 'verify-index', status: 'in-progress' });
+      const verifyResult = await waitForBothFeedsInIndex(album.podcastGuid, publisherFeed.podcastGuid);
+      updateStep({ id: 'verify-index', status: verifyResult.album && verifyResult.publisher ? 'done' : 'pending' });
+      setVerify(verifyResult);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to host feeds');
-      setProgress(null);
     } finally {
       setHosting(false);
     }
@@ -107,6 +205,50 @@ export function ArtistPublishSection() {
 
   const handleDownloadPackage = () => {
     downloadArtistFeedPackage(album, publisherFeed);
+  };
+
+  const renderStepDetail = (id: PublishStepId) => {
+    if (id === 'album-host' && result) {
+      return (
+        <div style={detailLineStyle}>
+          <a href={result.album.url} target="_blank" rel="noopener noreferrer" style={linkStyle}>{result.album.url}</a>
+          {result.album.podcastIndexId && <span> · PI ID {result.album.podcastIndexId}</span>}
+        </div>
+      );
+    }
+    if (id === 'publisher-host' && result) {
+      return (
+        <div style={detailLineStyle}>
+          <a href={result.publisher.url} target="_blank" rel="noopener noreferrer" style={linkStyle}>{result.publisher.url}</a>
+          {result.publisher.podcastIndexId && <span> · PI ID {result.publisher.podcastIndexId}</span>}
+        </div>
+      );
+    }
+    if (id === 'verify-index' && verify) {
+      const albumLookup = `https://podcastindex.org/search?q=${encodeURIComponent(album.podcastGuid)}`;
+      const pubLookup = `https://podcastindex.org/search?q=${encodeURIComponent(publisherFeed.podcastGuid)}`;
+      if (verify.album && verify.publisher) {
+        return (
+          <div style={detailLineStyle}>
+            Both feeds are searchable in Podcast Index.
+            {' '}
+            <a href={albumLookup} target="_blank" rel="noopener noreferrer" style={linkStyle}>Album in PI →</a>
+            {' · '}
+            <a href={pubLookup} target="_blank" rel="noopener noreferrer" style={linkStyle}>Publisher in PI →</a>
+          </div>
+        );
+      }
+      return (
+        <div style={detailLineStyle}>
+          Submitted, but Podcast Index hasn't crawled {verify.album && !verify.publisher ? 'the publisher feed' : !verify.album && verify.publisher ? 'the album feed' : 'either feed'} yet — this can take a few minutes. Check back later, or use the links below to look them up manually.
+          <br />
+          <a href={albumLookup} target="_blank" rel="noopener noreferrer" style={linkStyle}>Check album →</a>
+          {' · '}
+          <a href={pubLookup} target="_blank" rel="noopener noreferrer" style={linkStyle}>Check publisher →</a>
+        </div>
+      );
+    }
+    return null;
   };
 
   return (
@@ -127,10 +269,10 @@ export function ArtistPublishSection() {
             onClick={handleHostBoth}
             disabled={hosting}
           >
-            {hosting ? (progress || 'Hosting...') : 'Host on MSP — album + publisher (one click)'}
+            {hosting ? 'Working…' : 'Host on MSP — album + publisher (one click)'}
           </button>
           <p style={helperText}>
-            Uploads both feeds to msp.podtards.com and auto-submits them to Podcast Index. Linked to your Nostr identity for future edits.
+            Uploads both feeds to msp.podtards.com, submits them to Podcast Index, and verifies they appear. Linked to your Nostr identity for future edits.
           </p>
         </>
       ) : (
@@ -146,6 +288,26 @@ export function ArtistPublishSection() {
             Log in with Nostr (top-right) to enable one-click hosting + Podcast Index submission for both feeds.
           </p>
         </>
+      )}
+
+      {steps.size > 0 && (
+        <div style={stepListStyle}>
+          {STEP_ORDER.map((id) => {
+            const step = steps.get(id) || { id, status: 'pending' as const };
+            return (
+              <div key={id} style={stepRowStyle}>
+                <span style={stepIconStyle(step.status)}>{stepIconChar(step.status)}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={stepLabelStyle(step.status)}>{STEP_LABELS[id]}</div>
+                  {renderStepDetail(id)}
+                  {step.status === 'failed' && step.message && (
+                    <div style={{ ...detailLineStyle, color: 'var(--danger-color, #ef4444)' }}>{step.message}</div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
 
       <div style={orRow}>
@@ -166,28 +328,8 @@ export function ArtistPublishSection() {
         Downloads both XML files plus a next-steps guide. Host them anywhere — GitHub Pages, S3, your own CDN.
       </p>
 
-      {progress && !result && (
-        <div style={{ ...statusBoxStyle, background: 'rgba(99, 102, 241, 0.1)', border: '1px solid rgba(99, 102, 241, 0.3)' }}>
-          {progress}
-        </div>
-      )}
-
-      {result && (
-        <div style={{ ...statusBoxStyle, background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.3)' }}>
-          <div style={{ fontWeight: 600, marginBottom: '6px' }}>
-            ✓ Both feeds hosted{result.album.podcastIndexId || result.publisher.podcastIndexId ? ' and submitted to Podcast Index' : ''}.
-          </div>
-          <div>
-            <strong>Album:</strong> <a href={result.album.url} target="_blank" rel="noopener noreferrer" style={linkStyle}>{result.album.url}</a>
-          </div>
-          <div>
-            <strong>Publisher:</strong> <a href={result.publisher.url} target="_blank" rel="noopener noreferrer" style={linkStyle}>{result.publisher.url}</a>
-          </div>
-        </div>
-      )}
-
       {error && (
-        <div style={{ ...statusBoxStyle, background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: 'var(--text-primary)' }}>
+        <div style={{ marginTop: '16px', padding: '12px 14px', borderRadius: '8px', fontSize: '13px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: 'var(--text-primary)' }}>
           ✕ {error}
         </div>
       )}

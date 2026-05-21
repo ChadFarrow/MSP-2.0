@@ -19,6 +19,15 @@ export interface HostBothResult {
   publisher: HostedFeedResult;
 }
 
+export type PublishStepId = 'album-host' | 'publisher-host' | 'verify-index';
+export type PublishStepStatus = 'pending' | 'in-progress' | 'done' | 'failed';
+
+export interface PublishStep {
+  id: PublishStepId;
+  status: PublishStepStatus;
+  message?: string;
+}
+
 const hostOne = async (
   xml: string,
   title: string,
@@ -55,24 +64,79 @@ export async function hostBothOnMSP(
   album: Album,
   publisherFeed: PublisherFeed,
   userPubkey: string,
-  onProgress?: (msg: string) => void
+  onStep?: (step: PublishStep) => void
 ): Promise<HostBothResult> {
   const now = new Date().toUTCString();
   const albumXml = generateRssFeed({ ...album, lastBuildDate: now });
   const pubXml = generatePublisherRssFeed({ ...publisherFeed, lastBuildDate: now });
 
-  onProgress?.('Hosting album feed...');
-  const albumResult = await hostOne(albumXml, album.title || 'Album', album.podcastGuid, userPubkey);
+  onStep?.({ id: 'album-host', status: 'in-progress' });
+  let albumResult: HostedFeedResult;
+  try {
+    albumResult = await hostOne(albumXml, album.title || 'Album', album.podcastGuid, userPubkey);
+    onStep?.({ id: 'album-host', status: 'done' });
+  } catch (err) {
+    onStep?.({ id: 'album-host', status: 'failed', message: err instanceof Error ? err.message : 'Failed to host album' });
+    throw err;
+  }
 
-  onProgress?.('Hosting publisher feed...');
-  const publisherResult = await hostOne(
-    pubXml,
-    publisherFeed.title || 'Publisher Catalog',
-    publisherFeed.podcastGuid,
-    userPubkey
-  );
+  onStep?.({ id: 'publisher-host', status: 'in-progress' });
+  let publisherResult: HostedFeedResult;
+  try {
+    publisherResult = await hostOne(
+      pubXml,
+      publisherFeed.title || 'Publisher Catalog',
+      publisherFeed.podcastGuid,
+      userPubkey
+    );
+    onStep?.({ id: 'publisher-host', status: 'done' });
+  } catch (err) {
+    onStep?.({ id: 'publisher-host', status: 'failed', message: err instanceof Error ? err.message : 'Failed to host publisher' });
+    throw err;
+  }
 
   return { album: albumResult, publisher: publisherResult };
+}
+
+/**
+ * Look up a feed in Podcast Index by its podcast:guid.
+ * Returns true if PI has registered the feed and it's queryable.
+ * Note: PI's `add/byfeedurl` returns a podcastIndexId immediately on submission,
+ * but `byguid` lookups can lag by a few seconds while PI commits the registration.
+ */
+export async function verifyInPodcastIndex(podcastGuid: string): Promise<boolean> {
+  try {
+    const response = await fetch(`/api/pisearch?q=${encodeURIComponent(podcastGuid)}`);
+    if (!response.ok) return false;
+    const data = await response.json();
+    const feeds = Array.isArray(data.feeds) ? data.feeds : [];
+    return feeds.some((f: { podcastGuid?: string }) => f.podcastGuid === podcastGuid);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Poll PI until both feeds are found, or the timeout window elapses.
+ * Resolves to `{ album, publisher }` booleans indicating which were found
+ * within the polling window. Total wall-clock budget is ~22 seconds.
+ */
+export async function waitForBothFeedsInIndex(
+  albumGuid: string,
+  publisherGuid: string
+): Promise<{ album: boolean; publisher: boolean }> {
+  const delays = [3000, 4000, 5000, 5000, 5000]; // ~22 s total
+  let albumFound = false;
+  let publisherFound = false;
+
+  for (const delay of delays) {
+    await new Promise((r) => setTimeout(r, delay));
+    if (!albumFound) albumFound = await verifyInPodcastIndex(albumGuid);
+    if (!publisherFound) publisherFound = await verifyInPodcastIndex(publisherGuid);
+    if (albumFound && publisherFound) break;
+  }
+
+  return { album: albumFound, publisher: publisherFound };
 }
 
 export function downloadArtistFeedPackage(album: Album, publisherFeed: PublisherFeed): void {

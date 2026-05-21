@@ -534,7 +534,11 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
             album,
             publisherFeed,
             nostrState.user.pubkey,
-            (msg) => setMessage({ type: 'success', text: msg })
+            (step) => {
+              if (step.status !== 'in-progress') return;
+              if (step.id === 'album-host') setMessage({ type: 'success', text: 'Hosting album feed...' });
+              if (step.id === 'publisher-host') setMessage({ type: 'success', text: 'Hosting publisher feed...' });
+            }
           );
 
           // Surface the album's hosted state in the current modal session

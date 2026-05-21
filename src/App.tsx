@@ -114,6 +114,20 @@ function AppContent() {
       dispatch({ type: 'SET_PUBLISHER_FEED', payload: createEmptyPublisherFeed() });
     } else if (pendingNewFeedType === 'video') {
       dispatch({ type: 'SET_VIDEO_FEED', payload: createEmptyVideoAlbum() });
+    } else if (pendingNewFeedType === 'artist') {
+      const albumGuid = crypto.randomUUID();
+      const publisherGuid = crypto.randomUUID();
+      dispatch({ type: 'SET_PUBLISHER_FEED', payload: {
+        ...createEmptyPublisherFeed(),
+        podcastGuid: publisherGuid,
+        remoteItems: [{ feedGuid: albumGuid, feedUrl: '', title: '', medium: 'music' }]
+      }});
+      dispatch({ type: 'SET_ALBUM', payload: {
+        ...createEmptyAlbum(),
+        podcastGuid: albumGuid,
+        publisher: { feedGuid: publisherGuid }
+      }});
+      dispatch({ type: 'SET_FEED_TYPE', payload: 'artist' });
     } else {
       dispatch({ type: 'SET_ALBUM', payload: createEmptyAlbum() });
     }
@@ -310,7 +324,7 @@ function AppContent() {
           <button
             className="bottom-toolbar-btn"
             onClick={() => handleNew(state.feedType)}
-            title={`New ${state.feedType === 'publisher' ? 'Publisher' : state.feedType === 'video' ? 'Video Feed' : 'Album'}`}
+            title={`New ${state.feedType === 'publisher' ? 'Publisher' : state.feedType === 'video' ? 'Video Feed' : state.feedType === 'artist' ? 'Artist (Album + Publisher)' : 'Album'}`}
           >
             <span className="bottom-toolbar-icon">📂</span>
             <span className="bottom-toolbar-label">New</span>

@@ -121,18 +121,7 @@ function AppContent() {
   };
 
   const handleArtistSetup = () => {
-    pendingHostedStorage.clear();
-    const albumGuid = crypto.randomUUID();
-    const publisherGuid = crypto.randomUUID();
-    const newAlbum = { ...createEmptyAlbum(), podcastGuid: albumGuid, publisher: { feedGuid: publisherGuid } };
-    const newPublisher = {
-      ...createEmptyPublisherFeed(),
-      podcastGuid: publisherGuid,
-      remoteItems: [{ feedGuid: albumGuid, feedUrl: '', title: '', medium: 'music' }]
-    };
-    // Dispatch publisher first, then album — SET_ALBUM wins and keeps feedType:'album'
-    dispatch({ type: 'SET_PUBLISHER_FEED', payload: newPublisher });
-    dispatch({ type: 'SET_ALBUM', payload: newAlbum });
+    handleSwitchFeedType('artist');
     setShowNewFeedChoiceModal(false);
   };
 

@@ -13,6 +13,7 @@ import {
   type PublishStepStatus,
   type VerifyProgress,
 } from '../../utils/artistPublish';
+import { getHostedFeedInfo, buildHostedUrl } from '../../utils/hostedFeed';
 
 const containerStyle: CSSProperties = {
   marginTop: '32px',
@@ -157,6 +158,60 @@ export function ArtistPublishSection() {
   const [error, setError] = useState<string | null>(null);
   const pollCancelRef = useRef<CancellationToken | null>(null);
 
+  const updateStep = (step: PublishStep) => {
+    setSteps((prev) => {
+      const next = new Map(prev);
+      next.set(step.id, step);
+      return next;
+    });
+  };
+
+  const albumGuid = state.album?.podcastGuid;
+  const publisherGuid = state.publisherFeed?.podcastGuid;
+
+  // On mount (or when GUIDs change): if both feeds are already hosted in this
+  // browser per localStorage, hydrate the section as "post-host, verifying"
+  // so a page refresh doesn't trick the user into re-submitting. Resumes PI
+  // verification polling automatically.
+  useEffect(() => {
+    if (!albumGuid || !publisherGuid) return;
+    const albumInfo = getHostedFeedInfo(albumGuid);
+    const pubInfo = getHostedFeedInfo(publisherGuid);
+    if (!albumInfo || !pubInfo) return;
+
+    setResult({
+      album: { feedId: albumInfo.feedId, url: buildHostedUrl(albumInfo.feedId) },
+      publisher: { feedId: pubInfo.feedId, url: buildHostedUrl(pubInfo.feedId) },
+    });
+    updateStep({ id: 'album-host', status: 'done' });
+    updateStep({ id: 'publisher-host', status: 'done' });
+    updateStep({ id: 'verify-index', status: 'in-progress' });
+
+    const cancelToken: CancellationToken = { cancelled: false };
+    pollCancelRef.current = cancelToken;
+
+    waitForBothFeedsInIndex(
+      albumGuid,
+      publisherGuid,
+      (progress) => {
+        if (cancelToken.cancelled) return;
+        setVerify(progress);
+        if (progress.album && progress.publisher) {
+          updateStep({ id: 'verify-index', status: 'done' });
+        }
+      },
+      cancelToken
+    ).then((final) => {
+      if (cancelToken.cancelled) return;
+      setVerify(final);
+      updateStep({
+        id: 'verify-index',
+        status: final.album && final.publisher ? 'done' : 'pending',
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [albumGuid, publisherGuid]);
+
   // Cancel any in-flight polling when the component unmounts so we don't
   // setState on an unmounted component or burn API calls in the background.
   useEffect(() => {
@@ -175,14 +230,6 @@ export function ArtistPublishSection() {
   const publisherTitleSet = !!publisherFeed.title?.trim();
   const titlesReady = albumTitleSet && publisherTitleSet;
   const canHostBoth = nostrState.isLoggedIn && !!nostrState.user?.pubkey;
-
-  const updateStep = (step: PublishStep) => {
-    setSteps((prev) => {
-      const next = new Map(prev);
-      next.set(step.id, step);
-      return next;
-    });
-  };
 
   const handleHostBoth = async () => {
     if (!canHostBoth || !nostrState.user) return;

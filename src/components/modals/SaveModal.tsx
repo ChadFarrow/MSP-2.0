@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { generateRssFeed, generatePublisherRssFeed, downloadXml, copyToClipboard } from '../../utils/xmlGenerator';
+import { generateRssFeed, generatePublisherRssFeed, downloadXml, downloadText, copyToClipboard } from '../../utils/xmlGenerator';
 import { saveFeedToNostr, publishNostrMusicTracks, deleteNostrMusicTracks } from '../../utils/nostrSync';
 import { uploadFeedToBlossom } from '../../utils/blossom';
 import { publishToNsite, defaultSiteId } from '../../utils/nsite';
@@ -42,7 +42,7 @@ interface SaveModalProps {
 export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', isDirty, isLoggedIn, onImport }: SaveModalProps) {
   const { state: nostrState } = useNostr();
   const { showExperimental } = useExperimental();
-  const [mode, setMode] = useState<'local' | 'download' | 'clipboard' | 'nostr' | 'nostrMusic' | 'blossom' | 'nsite' | 'hosted' | 'podcastIndex'>('local');
+  const [mode, setMode] = useState<'local' | 'download' | 'clipboard' | 'nostr' | 'nostrMusic' | 'blossom' | 'nsite' | 'hosted' | 'podcastIndex' | 'package'>('local');
   const isPublisherMode = feedType === 'publisher';
   const isVideoMode = feedType === 'video';
 
@@ -93,7 +93,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
   const getButtonText = () => {
     if (loading) {
       if (mode === 'nostrMusic' || mode === 'blossom' || mode === 'hosted' || mode === 'nsite') return 'Uploading...';
-      if (mode === 'download') return 'Downloading...';
+      if (mode === 'download' || mode === 'package') return 'Downloading...';
       if (mode === 'clipboard') return 'Copying...';
       if (mode === 'podcastIndex') return 'Submitting...';
       return 'Saving...';
@@ -101,6 +101,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
     if (mode === 'nostrMusic') return 'Publish';
     if (mode === 'blossom' || mode === 'hosted' || mode === 'nsite') return 'Upload';
     if (mode === 'download') return 'Download';
+    if (mode === 'package') return 'Download Package';
     if (mode === 'clipboard') return 'Copy to Clipboard';
     if (mode === 'podcastIndex') return 'Submit to PodcastIndex';
     return 'Save';
@@ -346,6 +347,47 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
           downloadXml(xml, filename);
           showSuccessAndClose('Download started');
           break;
+        case 'package': {
+          if (!publisherFeed) break;
+          const now = new Date().toUTCString();
+          const slug = (album.author || publisherFeed.author || 'artist')
+            .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+          const albumXml = generateRssFeed({ ...album, lastBuildDate: now });
+          const pubXml = generatePublisherRssFeed({ ...publisherFeed, lastBuildDate: now });
+          const instructions = [
+            'MSP 2.0 — Feed Package Next Steps',
+            '==================================',
+            '',
+            'You have downloaded two RSS feed files:',
+            `  1. ${slug}-album-feed.xml       (medium=music, your album tracks)`,
+            `  2. ${slug}-publisher-feed.xml   (medium=publisher, your catalog)`,
+            '',
+            'STEP 1 — Host both files',
+            '  Upload both XML files to your web host, CDN, or GitHub Pages.',
+            '  Example:',
+            '    Album feed:     https://yourdomain.com/album-feed.xml',
+            '    Publisher feed: https://yourdomain.com/publisher-feed.xml',
+            '',
+            'STEP 2 — Submit both feeds to Podcast Index',
+            '  In MSP 2.0, switch to Album view then open Save → Submit to PodcastIndex.',
+            '  Repeat in Publisher view for the publisher feed.',
+            '',
+            'STEP 3 — Update feedUrls (optional but recommended)',
+            '  Once hosted, open MSP 2.0 and add your publisher feed URL in the',
+            '  album\'s "Publisher Feed" section. Re-download and re-upload the album XML.',
+            '',
+            `Album GUID:     ${album.podcastGuid}`,
+            `Publisher GUID: ${publisherFeed.podcastGuid}`,
+            '',
+            'These GUIDs are already cross-referenced in both files. Keep this file —',
+            'GUIDs never change and can be used to re-link feeds if needed.',
+          ].join('\n');
+          downloadXml(albumXml, `${slug}-album-feed.xml`);
+          setTimeout(() => downloadXml(pubXml, `${slug}-publisher-feed.xml`), 400);
+          setTimeout(() => downloadText(instructions, `${slug}-next-steps.txt`), 800);
+          showSuccessAndClose('Download started — 3 files');
+          break;
+        }
         case 'clipboard':
           const xmlContent = generateCurrentFeedXml();
           await copyToClipboard(xmlContent);
@@ -653,6 +695,9 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
               <option value="clipboard">Copy to Clipboard</option>
               <option value="hosted">Host on MSP</option>
               <option value="podcastIndex">Submit to PodcastIndex</option>
+              {!isPublisherMode && publisherFeed && album.publisher?.feedGuid === publisherFeed.podcastGuid && (
+                <option value="package">Download Feed Package (album + publisher)</option>
+              )}
               {!isPublisherMode && isLoggedIn && <option value="nostrMusic">Publish to Nostr Music</option>}
               {showExperimental && isLoggedIn && <option value="nostr">Save RSS feed to Nostr 🧪</option>}
               {showExperimental && isLoggedIn && <option value="blossom">Publish RSS feed to a Blossom server 🧪</option>}
@@ -687,6 +732,18 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '16px' }}>
               Download the RSS feed as an XML file to your computer.
             </p>
+          )}
+          {mode === 'package' && (
+            <div style={{ marginTop: '16px' }}>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '10px' }}>
+                Downloads your album feed and publisher catalog as separate XML files, plus a next-steps guide for hosting and Podcast Index submission.
+              </p>
+              <ol style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', margin: 0, paddingLeft: '20px', lineHeight: '1.7' }}>
+                <li>Upload both XML files to your web host</li>
+                <li>Submit both feed URLs to Podcast Index (use Save &rarr; Submit to PodcastIndex for each)</li>
+                <li>Optionally, come back and add your hosted URLs to the Publisher Feed section so feeds cross-link by URL too</li>
+              </ol>
+            </div>
           )}
           {mode === 'clipboard' && (
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '16px' }}>

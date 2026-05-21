@@ -558,6 +558,19 @@ export const downloadXml = (xml: string, filename: string = 'feed.xml'): void =>
   URL.revokeObjectURL(url);
 };
 
+// Download plain text as file
+export const downloadText = (text: string, filename: string): void => {
+  const blob = new Blob([text], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
 // Copy XML to clipboard
 export const copyToClipboard = async (xml: string): Promise<boolean> => {
   try {

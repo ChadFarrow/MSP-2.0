@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { PublisherFeed } from '../../../types/feed';
 import { createEmptyRemoteItem } from '../../../types/feed';
 import type { FeedAction } from '../../../store/feedStore';
+import { useFeed } from '../../../store/feedStore';
 import { useNostr } from '../../../store/nostrStore';
 import { createAdminAuthHeader } from '../../../utils/adminAuth';
 import { checkSignerConnection } from '../../../utils/nostrSigner';
@@ -39,6 +40,7 @@ interface CatalogFeedsSectionProps {
 
 export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSectionProps) {
   const { state: nostrState } = useNostr();
+  const { state: feedState } = useFeed();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -254,6 +256,11 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
     }
   };
 
+  const currentAlbum = feedState.feedType !== 'publisher' ? feedState.album : null;
+  const albumAlreadyInCatalog = currentAlbum?.podcastGuid
+    ? publisherFeed.remoteItems.some(item => item.feedGuid === currentAlbum.podcastGuid)
+    : true;
+
   return (
     <Section title="Catalog Feeds" icon="&#128218;">
       <p style={{ color: 'var(--text-secondary)', marginBottom: '16px', fontSize: '14px' }}>
@@ -262,6 +269,51 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
           Note: All catalog feeds must be in the Podcast Index for the publisher reference to work.
         </strong>
       </p>
+
+      {/* Current-album shortcut */}
+      {currentAlbum?.podcastGuid && (
+        <div style={{
+          backgroundColor: albumAlreadyInCatalog ? 'rgba(34, 197, 94, 0.08)' : 'rgba(99, 102, 241, 0.08)',
+          border: `1px solid ${albumAlreadyInCatalog ? 'rgba(34, 197, 94, 0.3)' : 'rgba(99, 102, 241, 0.3)'}`,
+          borderRadius: '8px',
+          padding: '10px 14px',
+          marginBottom: '16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+          flexWrap: 'wrap',
+          fontSize: '13px'
+        }}>
+          {albumAlreadyInCatalog ? (
+            <span style={{ color: 'var(--text-secondary)' }}>
+              Current album <strong style={{ color: 'var(--text-primary)' }}>{currentAlbum.title || 'Untitled Album'}</strong> is in this catalog.
+            </span>
+          ) : (
+            <>
+              <span style={{ color: 'var(--text-secondary)' }}>
+                Current album <strong style={{ color: 'var(--text-primary)' }}>{currentAlbum.title || 'Untitled Album'}</strong> is not in this catalog yet.
+              </span>
+              <button
+                className="btn btn-secondary"
+                style={{ fontSize: '12px', padding: '4px 10px', whiteSpace: 'nowrap' }}
+                onClick={() => dispatch({
+                  type: 'ADD_REMOTE_ITEM',
+                  payload: {
+                    ...createEmptyRemoteItem(),
+                    feedGuid: currentAlbum.podcastGuid,
+                    feedUrl: '',
+                    title: currentAlbum.title || 'Untitled Album',
+                    medium: 'music'
+                  }
+                })}
+              >
+                Add This Album
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Search UI */}
       <div style={{ marginBottom: '20px' }}>

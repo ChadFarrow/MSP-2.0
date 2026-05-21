@@ -3,10 +3,6 @@ import { Editor } from './Editor';
 import { PublisherEditor } from './PublisherEditor';
 import { ArtistPublishSection } from './ArtistPublishSection';
 
-interface ArtistEditorProps {
-  onOpenSaveModal: () => void;
-}
-
 const sectionHeaderStyle: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
@@ -44,7 +40,7 @@ const subtitleStyle: CSSProperties = {
   marginLeft: '4px',
 };
 
-export function ArtistEditor({ onOpenSaveModal }: ArtistEditorProps) {
+export function ArtistEditor() {
   return (
     <div className="main-content">
       <div className="editor-panel">
@@ -60,7 +56,7 @@ export function ArtistEditor({ onOpenSaveModal }: ArtistEditorProps) {
         </div>
         <PublisherEditor chromeless />
 
-        <ArtistPublishSection onOpenSaveModal={onOpenSaveModal} />
+        <ArtistPublishSection />
       </div>
     </div>
   );

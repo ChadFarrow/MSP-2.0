@@ -318,7 +318,7 @@ function AppContent() {
           </div>
         </header>
         {state.feedType === 'publisher' ? <PublisherEditor />
-          : state.feedType === 'artist' ? <ArtistEditor onOpenSaveModal={() => setShowSaveModal(true)} />
+          : state.feedType === 'artist' ? <ArtistEditor />
           : <Editor key={`${state.feedType}-${state.album?.podcastGuid}-${state.videoFeed?.podcastGuid}`} />}
         <div className="bottom-toolbar">
           <button

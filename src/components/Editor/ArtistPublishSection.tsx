@@ -4,10 +4,6 @@ import { useFeed } from '../../store/feedStore';
 import { useNostr } from '../../store/nostrStore';
 import { hostBothOnMSP, downloadArtistFeedPackage, type HostBothResult } from '../../utils/artistPublish';
 
-interface ArtistPublishSectionProps {
-  onOpenSaveModal: () => void;
-}
-
 const containerStyle: CSSProperties = {
   marginTop: '32px',
   padding: '24px',
@@ -63,18 +59,6 @@ const helperText: CSSProperties = {
   marginBottom: 0,
 };
 
-const moreLinkStyle: CSSProperties = {
-  display: 'inline-block',
-  marginTop: '20px',
-  fontSize: '13px',
-  color: 'var(--text-secondary)',
-  background: 'transparent',
-  border: 'none',
-  padding: 0,
-  cursor: 'pointer',
-  textDecoration: 'underline',
-};
-
 const statusBoxStyle: CSSProperties = {
   marginTop: '16px',
   padding: '12px 14px',
@@ -88,7 +72,7 @@ const linkStyle: CSSProperties = {
   wordBreak: 'break-all',
 };
 
-export function ArtistPublishSection({ onOpenSaveModal }: ArtistPublishSectionProps) {
+export function ArtistPublishSection() {
   const { state } = useFeed();
   const { state: nostrState } = useNostr();
   const [hosting, setHosting] = useState(false);
@@ -181,10 +165,6 @@ export function ArtistPublishSection({ onOpenSaveModal }: ArtistPublishSectionPr
       <p style={helperText}>
         Downloads both XML files plus a next-steps guide. Host them anywhere — GitHub Pages, S3, your own CDN.
       </p>
-
-      <button type="button" style={moreLinkStyle} onClick={onOpenSaveModal}>
-        More save options →
-      </button>
 
       {progress && !result && (
         <div style={{ ...statusBoxStyle, background: 'rgba(99, 102, 241, 0.1)', border: '1px solid rgba(99, 102, 241, 0.3)' }}>

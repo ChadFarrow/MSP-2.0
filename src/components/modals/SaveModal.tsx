@@ -42,7 +42,7 @@ interface SaveModalProps {
 export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', isDirty, isLoggedIn, onImport }: SaveModalProps) {
   const { state: nostrState } = useNostr();
   const { showExperimental } = useExperimental();
-  const [mode, setMode] = useState<'local' | 'download' | 'clipboard' | 'nostr' | 'nostrMusic' | 'blossom' | 'nsite' | 'hosted' | 'podcastIndex' | 'package'>('local');
+  const [mode, setMode] = useState<'local' | 'download' | 'clipboard' | 'nostr' | 'nostrMusic' | 'blossom' | 'nsite' | 'hosted' | 'hostedBoth' | 'podcastIndex' | 'package'>('local');
   const isPublisherMode = feedType === 'publisher';
   const isVideoMode = feedType === 'video';
 
@@ -92,7 +92,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
   // Helper to get button text based on mode and loading state
   const getButtonText = () => {
     if (loading) {
-      if (mode === 'nostrMusic' || mode === 'blossom' || mode === 'hosted' || mode === 'nsite') return 'Uploading...';
+      if (mode === 'nostrMusic' || mode === 'blossom' || mode === 'hosted' || mode === 'hostedBoth' || mode === 'nsite') return 'Uploading...';
       if (mode === 'download' || mode === 'package') return 'Downloading...';
       if (mode === 'clipboard') return 'Copying...';
       if (mode === 'podcastIndex') return 'Submitting...';
@@ -100,6 +100,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
     }
     if (mode === 'nostrMusic') return 'Publish';
     if (mode === 'blossom' || mode === 'hosted' || mode === 'nsite') return 'Upload';
+    if (mode === 'hostedBoth') return 'Host Both';
     if (mode === 'download') return 'Download';
     if (mode === 'package') return 'Download Package';
     if (mode === 'clipboard') return 'Copy to Clipboard';
@@ -369,12 +370,18 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
             '    Publisher feed: https://yourdomain.com/publisher-feed.xml',
             '',
             'STEP 2 — Submit both feeds to Podcast Index',
-            '  In MSP 2.0, switch to Album view then open Save → Submit to PodcastIndex.',
-            '  Repeat in Publisher view for the publisher feed.',
+            '  Open MSP 2.0 in Artist mode → Save → Submit to PodcastIndex.',
+            '  Paste each hosted URL (album, then publisher) and submit.',
             '',
-            'STEP 3 — Update feedUrls (optional but recommended)',
-            '  Once hosted, open MSP 2.0 and add your publisher feed URL in the',
-            '  album\'s "Publisher Feed" section. Re-download and re-upload the album XML.',
+            '  Faster path: if you log in with Nostr, use Save →',
+            '  "Host on MSP (album + publisher)" — MSP hosts both feeds at',
+            '  predictable URLs and auto-submits them to Podcast Index in one click.',
+            '',
+            'STEP 3 — Cross-link by URL (optional)',
+            '  The two feeds are already cross-linked by GUID. If you want',
+            '  hosted URL cross-references too, open MSP 2.0, switch to Album',
+            '  mode, paste your publisher feed URL into the Publisher Feed',
+            '  section, then re-download and re-upload the album XML.',
             '',
             `Album GUID:     ${album.podcastGuid}`,
             `Publisher GUID: ${publisherFeed.podcastGuid}`,
@@ -553,6 +560,69 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
             setMessage({ type: 'success', text: successMsg });
           }
           break;
+        case 'hostedBoth': {
+          if (!publisherFeed) {
+            setMessage({ type: 'error', text: 'Publisher feed not available' });
+            break;
+          }
+          if (!isLoggedIn || !nostrState.user?.pubkey) {
+            setMessage({ type: 'error', text: 'Log in with Nostr to host both feeds at once' });
+            break;
+          }
+
+          const now = new Date().toUTCString();
+          const albumXml = generateRssFeed({ ...album, lastBuildDate: now });
+          const pubXml = generatePublisherRssFeed({ ...publisherFeed, lastBuildDate: now });
+          const albumTitle = album.title || 'Album';
+          const pubTitle = publisherFeed.title || 'Publisher Catalog';
+          const userPubkey = nostrState.user.pubkey;
+
+          const hostFeed = async (xml: string, title: string, podcastGuid: string) => {
+            const existing = getHostedFeedInfo(podcastGuid);
+            if (existing) {
+              const updateResult = await updateHostedFeedWithNostr(existing.feedId, xml, title);
+              saveHostedFeedInfo(podcastGuid, { ...existing, lastUpdated: Date.now() });
+              return { feedId: existing.feedId, podcastIndexId: updateResult.podcastIndexId };
+            }
+            const createResult = await createHostedFeedWithNostr(xml, title, podcastGuid);
+            saveHostedFeedInfo(podcastGuid, {
+              feedId: createResult.feedId,
+              editToken: '',
+              createdAt: Date.now(),
+              lastUpdated: Date.now(),
+              ownerPubkey: userPubkey,
+              linkedAt: Date.now()
+            });
+            return { feedId: createResult.feedId, podcastIndexId: createResult.podcastIndexId };
+          };
+
+          setMessage({ type: 'success', text: 'Hosting album feed...' });
+          const albumResult = await hostFeed(albumXml, albumTitle, album.podcastGuid);
+
+          setMessage({ type: 'success', text: 'Hosting publisher feed...' });
+          const pubResult = await hostFeed(pubXml, pubTitle, publisherFeed.podcastGuid);
+
+          // Surface the album's hosted state in the current modal session
+          const albumInfo = getHostedFeedInfo(album.podcastGuid);
+          if (albumInfo) {
+            setHostedInfo(albumInfo);
+            setHostedUrl(buildHostedUrl(albumResult.feedId));
+            setPendingToken(null);
+            setTokenAcknowledged(false);
+          }
+
+          const piNotified = albumResult.podcastIndexId || pubResult.podcastIndexId;
+          if (piNotified) {
+            setPodcastIndexPending(true);
+          }
+          const albumUrl = buildHostedUrl(albumResult.feedId);
+          const pubUrl = buildHostedUrl(pubResult.feedId);
+          setMessage({
+            type: 'success',
+            text: `Both feeds hosted${piNotified ? ' and submitted to Podcast Index' : ''}. Album: ${albumUrl} — Publisher: ${pubUrl}`
+          });
+          break;
+        }
         case 'podcastIndex': {
           const submitUrl = podcastIndexSubmitUrl.trim();
           if (!submitUrl) {
@@ -693,7 +763,11 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
               <option value="local">Local Storage</option>
               <option value="download">Download XML</option>
               <option value="clipboard">Copy to Clipboard</option>
-              <option value="hosted">Host on MSP</option>
+              {feedType === 'artist' && isLoggedIn && publisherFeed ? (
+                <option value="hostedBoth">Host on MSP (album + publisher)</option>
+              ) : (
+                <option value="hosted">Host on MSP</option>
+              )}
               <option value="podcastIndex">Submit to PodcastIndex</option>
               {!isPublisherMode && publisherFeed && album.publisher?.feedGuid === publisherFeed.podcastGuid && (
                 <option value="package">Download Feed Package (album + publisher)</option>
@@ -742,6 +816,23 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                 <li>Upload both XML files to your web host</li>
                 <li>Submit both feed URLs to Podcast Index (use Save &rarr; Submit to PodcastIndex for each)</li>
                 <li>Optionally, come back and add your hosted URLs to the Publisher Feed section so feeds cross-link by URL too</li>
+              </ol>
+              {isLoggedIn && (
+                <p style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem', marginTop: '10px', fontStyle: 'italic' }}>
+                  Tip: <strong>Host on MSP (album + publisher)</strong> does all of this in one click using MSP's hosting and auto-submits both feeds to Podcast Index.
+                </p>
+              )}
+            </div>
+          )}
+          {mode === 'hostedBoth' && (
+            <div style={{ marginTop: '16px' }}>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '10px' }}>
+                Hosts your album and publisher feeds on MSP and auto-submits both to Podcast Index in one step. Linked to your Nostr identity for future edits.
+              </p>
+              <ol style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', margin: 0, paddingLeft: '20px', lineHeight: '1.7' }}>
+                <li>Album feed uploaded to msp.podtards.com</li>
+                <li>Publisher feed uploaded to msp.podtards.com</li>
+                <li>Both URLs submitted to Podcast Index (pubnotify + add/byfeedurl)</li>
               </ol>
             </div>
           )}

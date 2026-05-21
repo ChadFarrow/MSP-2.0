@@ -132,15 +132,16 @@ export interface CancellationToken {
 /**
  * Schedule of delays between PI byguid checks.
  *
- * First 5 attempts cluster in ~22 s (PI typically commits new submissions in a few seconds),
- * then back off to 30 s and 60 s intervals for the long tail. Total wall-clock budget
- * is ~6.5 minutes — long enough to catch PI's usual crawl latency without spinning forever.
+ * PI typically takes 30 s to a few minutes to commit new submissions to its
+ * byguid index. Checking faster than that just burns API calls without finding
+ * anything, so the schedule starts at 20 s and backs off from there. Total
+ * wall-clock budget is ~10 minutes.
  */
 const POLL_DELAYS_MS = [
-  3000, 4000, 5000, 5000, 5000, // fast: first 22s
-  15000, 15000, 15000, 15000, // 1 min
-  30000, 30000, 30000, 30000, // 2 more min
-  60000, 60000, 60000, // 3 more min
+  20000, 20000, 30000, // first ~70 s
+  30000, 30000, 30000, // 90 s more (~2.5 min)
+  60000, 60000, 60000, 60000, // 4 more min (~6.5 min)
+  120000, 120000, // 4 more min (~10.5 min)
 ];
 
 /**

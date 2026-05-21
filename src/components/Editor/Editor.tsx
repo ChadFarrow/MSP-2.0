@@ -681,38 +681,37 @@ export function Editor({ chromeless = false }: EditorProps = {}) {
             />
           </Section>
 
-          {/* Publisher Section */}
+          {/* Publisher Section — hidden in Artist mode (combined editor handles cross-link via local publisher feed) */}
+          {state.feedType !== 'artist' && (
           <Section title="Publisher Feed (Advanced)" icon="&#127970;">
-            {state.feedType !== 'artist' && (
-              state.publisherFeed && album.publisher?.feedGuid === state.publisherFeed.podcastGuid ? (
-                <div style={{
-                  backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                  border: '1px solid rgba(34, 197, 94, 0.3)',
-                  borderRadius: '8px',
-                  padding: '12px 14px',
-                  marginBottom: '16px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '12px',
-                  flexWrap: 'wrap'
-                }}>
-                  <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-primary)' }}>
-                    Linked to publisher feed: <strong>{state.publisherFeed.title || 'Publisher Catalog'}</strong>. Switch to Publisher view to review the catalog and download both feeds.
-                  </p>
-                  <button
-                    className="btn btn-secondary"
-                    style={{ fontSize: '12px', padding: '4px 10px', whiteSpace: 'nowrap' }}
-                    onClick={() => dispatch({ type: 'SET_FEED_TYPE', payload: 'publisher' })}
-                  >
-                    Go to Publisher
-                  </button>
-                </div>
-              ) : (
-                <p style={{ color: 'var(--text-secondary)', marginBottom: '16px', fontSize: '14px' }}>
-                  Link this album to a publisher catalog. If you haven't created a publisher feed yet, use <strong>Artist Setup</strong> when creating a new album, or switch to Publisher mode from the dropdown.
+            {state.publisherFeed && album.publisher?.feedGuid === state.publisherFeed.podcastGuid ? (
+              <div style={{
+                backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                border: '1px solid rgba(34, 197, 94, 0.3)',
+                borderRadius: '8px',
+                padding: '12px 14px',
+                marginBottom: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '12px',
+                flexWrap: 'wrap'
+              }}>
+                <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-primary)' }}>
+                  Linked to publisher feed: <strong>{state.publisherFeed.title || 'Publisher Catalog'}</strong>. Switch to Publisher view to review the catalog and download both feeds.
                 </p>
-              )
+                <button
+                  className="btn btn-secondary"
+                  style={{ fontSize: '12px', padding: '4px 10px', whiteSpace: 'nowrap' }}
+                  onClick={() => dispatch({ type: 'SET_FEED_TYPE', payload: 'publisher' })}
+                >
+                  Go to Publisher
+                </button>
+              </div>
+            ) : (
+              <p style={{ color: 'var(--text-secondary)', marginBottom: '16px', fontSize: '14px' }}>
+                Link this album to a publisher catalog. If you haven't created a publisher feed yet, use <strong>Artist Setup</strong> when creating a new album, or switch to Publisher mode from the dropdown.
+              </p>
             )}
             <div className="form-group">
               <label className="form-label">Publisher Feed URL<InfoIcon text={FIELD_INFO.publisherUrl} /></label>
@@ -785,6 +784,7 @@ export function Editor({ chromeless = false }: EditorProps = {}) {
               )}
             </div>
           </Section>
+          )}
 
           {/* Tracks/Videos Section */}
           <Section title={isVideo ? "Videos" : "Tracks"} icon={isVideo ? "🎬" : "🎵"}>

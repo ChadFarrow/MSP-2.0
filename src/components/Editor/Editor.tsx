@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import type { ReactNode } from 'react';
 import { useFeed } from '../../store/feedStore';
 import { useNostr } from '../../store/nostrStore';
 import { LANGUAGES, PERSON_GROUPS, PERSON_ROLES, createEmptyPersonRole, createEmptyTrack, isVideoMedium, isCommunitySupport, createSupportRecipients, hasUserRecipients } from '../../types/feed';
@@ -109,7 +110,11 @@ function Op3StatsLink({ podcastGuid }: { podcastGuid: string }) {
   );
 }
 
-export function Editor() {
+interface EditorProps {
+  chromeless?: boolean;
+}
+
+export function Editor({ chromeless = false }: EditorProps = {}) {
   const { state, dispatch } = useFeed();
   const { state: nostrState } = useNostr();
   // Get the active album based on feedType (album or videoFeed)
@@ -254,10 +259,17 @@ export function Editor() {
     }
   };
 
+  const wrap = (content: ReactNode) => chromeless ? content : (
+    <div className="main-content">
+      <div className="editor-panel">
+        {content}
+      </div>
+    </div>
+  );
+
   return (
     <>
-      <div className="main-content">
-        <div className="editor-panel">
+      {wrap(<>
           {/* Album/Video Info Section */}
           <Section title={isVideo ? "Video Info" : "Album Info"} icon={isVideo ? "🎬" : "💿"}>
             <div className="form-grid">
@@ -1538,8 +1550,7 @@ export function Editor() {
               </button>
             </div>
           </Section>
-        </div>
-      </div>
+      </>)}
       <RolesModal isOpen={showRolesModal} onClose={() => setShowRolesModal(false)} />
     </>
   );

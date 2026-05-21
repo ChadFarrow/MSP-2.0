@@ -17,6 +17,7 @@ import { PodpingModal } from './components/modals/PodpingModal';
 import { InfoModal } from './components/modals/InfoModal';
 import { NostrConnectModal } from './components/modals/NostrConnectModal';
 import { NewFeedChoiceModal } from './components/modals/NewFeedChoiceModal';
+import { OnboardingModal } from './components/modals/OnboardingModal';
 import { Editor } from './components/Editor/Editor';
 import { PublisherEditor } from './components/Editor/PublisherEditor';
 import { AdminPage } from './components/admin/AdminPage';
@@ -38,9 +39,22 @@ function AppContent() {
   const [showNewFeedChoiceModal, setShowNewFeedChoiceModal] = useState(false);
   const [pendingNewFeedType, setPendingNewFeedType] = useState<FeedType>('album');
   const [isTemplateMode, setIsTemplateMode] = useState(false);
+  const [showOnboardingModal, setShowOnboardingModal] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { state: nostrState, logout: nostrLogout } = useNostr();
+
+  // Show onboarding on first visit
+  useEffect(() => {
+    if (!localStorage.getItem('msp-onboarding-complete')) {
+      setShowOnboardingModal(true);
+    }
+  }, []);
+
+  const handleOnboardingClose = () => {
+    localStorage.setItem('msp-onboarding-complete', 'true');
+    setShowOnboardingModal(false);
+  };
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -190,6 +204,12 @@ function AppContent() {
               </button>
               {showDropdown && (
                 <div className="dropdown-menu">
+                  <button
+                    className="dropdown-item"
+                    onClick={() => { setShowOnboardingModal(true); setShowDropdown(false); }}
+                  >
+                    🚀 Getting Started
+                  </button>
                   <button
                     className="dropdown-item"
                     onClick={() => { setShowInfoModal(true); setShowDropdown(false); }}
@@ -383,6 +403,11 @@ function AppContent() {
         onStartBlank={handleStartBlank}
         onUseTemplate={handleUseTemplate}
         onCancel={() => setShowNewFeedChoiceModal(false)}
+      />
+
+      <OnboardingModal
+        isOpen={showOnboardingModal}
+        onClose={handleOnboardingClose}
       />
     </>
   );

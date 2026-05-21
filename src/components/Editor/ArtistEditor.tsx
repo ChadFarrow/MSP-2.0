@@ -1,6 +1,11 @@
 import type { CSSProperties } from 'react';
 import { Editor } from './Editor';
 import { PublisherEditor } from './PublisherEditor';
+import { ArtistPublishSection } from './ArtistPublishSection';
+
+interface ArtistEditorProps {
+  onOpenSaveModal: () => void;
+}
 
 const sectionHeaderStyle: CSSProperties = {
   display: 'flex',
@@ -39,7 +44,7 @@ const subtitleStyle: CSSProperties = {
   marginLeft: '4px',
 };
 
-export function ArtistEditor() {
+export function ArtistEditor({ onOpenSaveModal }: ArtistEditorProps) {
   return (
     <div className="main-content">
       <div className="editor-panel">
@@ -54,6 +59,8 @@ export function ArtistEditor() {
           <span style={subtitleStyle}>— fields below go into your publisher (label) RSS feed</span>
         </div>
         <PublisherEditor chromeless />
+
+        <ArtistPublishSection onOpenSaveModal={onOpenSaveModal} />
       </div>
     </div>
   );

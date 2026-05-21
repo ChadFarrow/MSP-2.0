@@ -256,7 +256,7 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
     }
   };
 
-  const currentAlbum = feedState.feedType !== 'publisher' ? feedState.album : null;
+  const currentAlbum = feedState.album;
   const albumAlreadyInCatalog = currentAlbum?.podcastGuid
     ? publisherFeed.remoteItems.some(item => item.feedGuid === currentAlbum.podcastGuid)
     : true;

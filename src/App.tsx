@@ -176,6 +176,16 @@ function AppContent() {
           podcastGuid: publisherGuid,
           remoteItems: [{ feedGuid: albumGuid, feedUrl: '', title: '', medium: 'music' }]
         }});
+      } else if (!state.publisherFeed.remoteItems.some(item => item.feedGuid === albumGuid)) {
+        // Publisher exists but its catalog doesn't yet reference this album — link them.
+        // Without this, the hosted publisher XML would carry a stale remoteItem and
+        // Podcast Index would never associate the two feeds.
+        dispatch({ type: 'UPDATE_PUBLISHER_FEED', payload: {
+          remoteItems: [
+            ...state.publisherFeed.remoteItems,
+            { feedGuid: albumGuid, feedUrl: '', title: '', medium: 'music' }
+          ]
+        }});
       }
       if (!state.album) {
         dispatch({ type: 'SET_ALBUM', payload: {

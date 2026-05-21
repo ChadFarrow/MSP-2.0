@@ -171,6 +171,9 @@ export function ArtistPublishSection() {
 
   const album = state.album;
   const publisherFeed = state.publisherFeed;
+  const albumTitleSet = !!album.title?.trim();
+  const publisherTitleSet = !!publisherFeed.title?.trim();
+  const titlesReady = albumTitleSet && publisherTitleSet;
   const canHostBoth = nostrState.isLoggedIn && !!nostrState.user?.pubkey;
 
   const updateStep = (step: PublishStep) => {
@@ -306,10 +309,10 @@ export function ArtistPublishSection() {
             className="btn btn-primary"
             style={{
               ...primaryBtnStyle,
-              ...(hosting || result ? { opacity: 0.6, cursor: 'not-allowed' } : {}),
+              ...(hosting || result || !titlesReady ? { opacity: 0.6, cursor: 'not-allowed' } : {}),
             }}
             onClick={handleHostBoth}
-            disabled={hosting || !!result}
+            disabled={hosting || !!result || !titlesReady}
           >
             {hosting
               ? 'Working…'
@@ -322,7 +325,9 @@ export function ArtistPublishSection() {
           <p style={helperText}>
             {result
               ? 'Already hosted in this session. Refresh the page to re-host (or edit the feeds and use Save in the bottom toolbar).'
-              : 'Uploads both feeds to msp.podtards.com, submits them to Podcast Index, and verifies they appear. Linked to your Nostr identity for future edits.'}
+              : !titlesReady
+                ? `Add a title to your ${!albumTitleSet && !publisherTitleSet ? 'album and publisher' : !albumTitleSet ? 'album' : 'publisher'} feed above to enable hosting. Podcast Index won't index feeds without a title.`
+                : 'Uploads both feeds to msp.podtards.com, submits them to Podcast Index, and verifies they appear. Linked to your Nostr identity for future edits.'}
           </p>
         </>
       ) : (

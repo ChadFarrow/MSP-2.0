@@ -1,7 +1,7 @@
 // MSP 2.0 - Feed Type Definitions (Demu Template Compatible)
 
 // Feed type enum
-export type FeedType = 'album' | 'video' | 'publisher';
+export type FeedType = 'album' | 'video' | 'publisher' | 'artist';
 
 // All person groups from Podcasting 2.0 taxonomy + custom 'music' group
 export type PersonGroup =

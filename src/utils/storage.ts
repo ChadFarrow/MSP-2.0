@@ -136,7 +136,7 @@ export const publisherStorage = {
 export const feedTypeStorage = {
   load: (): FeedType => {
     const stored = getItem<FeedType>(STORAGE_KEYS.FEED_TYPE);
-    return stored && ['album', 'video', 'publisher'].includes(stored) ? stored : 'album';
+    return stored && ['album', 'video', 'publisher', 'artist'].includes(stored) ? stored : 'album';
   },
   save: (feedType: FeedType): boolean => setItem(STORAGE_KEYS.FEED_TYPE, feedType)
 };

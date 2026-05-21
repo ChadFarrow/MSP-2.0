@@ -17,7 +17,7 @@ import { PodpingModal } from './components/modals/PodpingModal';
 import { InfoModal } from './components/modals/InfoModal';
 import { NostrConnectModal } from './components/modals/NostrConnectModal';
 import { NewFeedChoiceModal } from './components/modals/NewFeedChoiceModal';
-import { OnboardingModal } from './components/modals/OnboardingModal';
+import { OnboardingPage } from './components/OnboardingPage';
 import { Editor } from './components/Editor/Editor';
 import { PublisherEditor } from './components/Editor/PublisherEditor';
 import { AdminPage } from './components/admin/AdminPage';
@@ -39,7 +39,8 @@ function AppContent() {
   const [showNewFeedChoiceModal, setShowNewFeedChoiceModal] = useState(false);
   const [pendingNewFeedType, setPendingNewFeedType] = useState<FeedType>('album');
   const [isTemplateMode, setIsTemplateMode] = useState(false);
-  const [showOnboardingModal, setShowOnboardingModal] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingStartAtGate, setOnboardingStartAtGate] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { state: nostrState, logout: nostrLogout } = useNostr();
@@ -47,13 +48,14 @@ function AppContent() {
   // Show onboarding on first visit
   useEffect(() => {
     if (!localStorage.getItem('msp-onboarding-complete')) {
-      setShowOnboardingModal(true);
+      setOnboardingStartAtGate(true);
+      setShowOnboarding(true);
     }
   }, []);
 
   const handleOnboardingClose = () => {
     localStorage.setItem('msp-onboarding-complete', 'true');
-    setShowOnboardingModal(false);
+    setShowOnboarding(false);
   };
 
   // Close dropdown when clicking outside
@@ -171,6 +173,10 @@ function AppContent() {
     }
   };
 
+  if (showOnboarding) {
+    return <OnboardingPage startAtGate={onboardingStartAtGate} onClose={handleOnboardingClose} />;
+  }
+
   return (
     <>
       <div className="app">
@@ -206,7 +212,7 @@ function AppContent() {
                 <div className="dropdown-menu">
                   <button
                     className="dropdown-item"
-                    onClick={() => { setShowOnboardingModal(true); setShowDropdown(false); }}
+                    onClick={() => { setOnboardingStartAtGate(false); setShowOnboarding(true); setShowDropdown(false); }}
                   >
                     🚀 Getting Started
                   </button>
@@ -405,10 +411,6 @@ function AppContent() {
         onCancel={() => setShowNewFeedChoiceModal(false)}
       />
 
-      <OnboardingModal
-        isOpen={showOnboardingModal}
-        onClose={handleOnboardingClose}
-      />
     </>
   );
 }

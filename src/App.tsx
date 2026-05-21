@@ -19,6 +19,7 @@ import { NostrConnectModal } from './components/modals/NostrConnectModal';
 import { NewFeedChoiceModal } from './components/modals/NewFeedChoiceModal';
 import { Editor } from './components/Editor/Editor';
 import { PublisherEditor } from './components/Editor/PublisherEditor';
+import { ArtistEditor } from './components/Editor/ArtistEditor';
 import { AdminPage } from './components/admin/AdminPage';
 import type { Album } from './types/feed';
 import mspLogo from './assets/msp-logo.png';
@@ -313,7 +314,9 @@ function AppContent() {
             </div>
           </div>
         </header>
-        {state.feedType === 'publisher' ? <PublisherEditor /> : <Editor key={`${state.feedType}-${state.album?.podcastGuid}-${state.videoFeed?.podcastGuid}`} />}
+        {state.feedType === 'publisher' ? <PublisherEditor />
+          : state.feedType === 'artist' ? <ArtistEditor />
+          : <Editor key={`${state.feedType}-${state.album?.podcastGuid}-${state.videoFeed?.podcastGuid}`} />}
         <div className="bottom-toolbar">
           <button
             className="bottom-toolbar-btn"

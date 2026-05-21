@@ -191,6 +191,7 @@ function AppContent() {
               <option value="album">Album</option>
               <option value="video">Video</option>
               <option value="publisher">Publisher</option>
+              <option value="artist">Artist (Album + Publisher)</option>
             </select>
           </div>
           <div className="header-actions">

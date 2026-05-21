@@ -8,7 +8,7 @@ import { ExperimentalProvider, useExperimental } from './store/experimentalStore
 import { parseRssFeed, isPublisherFeed, isVideoFeed, parsePublisherRssFeed } from './utils/xmlParser';
 import { createEmptyAlbum, createEmptyPublisherFeed, createEmptyVideoAlbum } from './types/feed';
 import { pendingHostedStorage } from './utils/storage';
-import { generateTestAlbum } from './utils/testData';
+import { generateTestAlbum, generateTestPublisher } from './utils/testData';
 import { NostrLoginButton } from './components/NostrLoginButton';
 import { ImportModal } from './components/modals/ImportModal';
 import { SaveModal } from './components/modals/SaveModal';
@@ -302,7 +302,22 @@ function AppContent() {
                       <button
                         className="dropdown-item"
                         onClick={() => {
-                          dispatch({ type: 'SET_ALBUM', payload: generateTestAlbum() });
+                          const testAlbum = generateTestAlbum();
+                          if (state.feedType === 'artist') {
+                            const testPublisher = generateTestPublisher();
+                            // Cross-link the fixtures so Host Both has a real catalog reference
+                            const linkedAlbum = { ...testAlbum, publisher: { feedGuid: testPublisher.podcastGuid } };
+                            const linkedPublisher = {
+                              ...testPublisher,
+                              remoteItems: [{ feedGuid: testAlbum.podcastGuid, feedUrl: '', title: testAlbum.title, medium: 'music' }]
+                            };
+                            dispatch({ type: 'SET_PUBLISHER_FEED', payload: linkedPublisher });
+                            dispatch({ type: 'SET_ALBUM', payload: linkedAlbum });
+                            // SET_ALBUM resets feedType to 'album'; restore artist mode last
+                            dispatch({ type: 'SET_FEED_TYPE', payload: 'artist' });
+                          } else {
+                            dispatch({ type: 'SET_ALBUM', payload: testAlbum });
+                          }
                           setShowDropdown(false);
                         }}
                       >

@@ -162,12 +162,35 @@ function AppContent() {
   };
 
   const handleSwitchFeedType = (feedType: FeedType) => {
+    if (feedType === 'artist') {
+      const albumGuid = state.album?.podcastGuid || crypto.randomUUID();
+      const publisherGuid = state.publisherFeed?.podcastGuid || crypto.randomUUID();
+
+      if (!state.publisherFeed) {
+        dispatch({ type: 'SET_PUBLISHER_FEED', payload: {
+          ...createEmptyPublisherFeed(),
+          podcastGuid: publisherGuid,
+          remoteItems: [{ feedGuid: albumGuid, feedUrl: '', title: '', medium: 'music' }]
+        }});
+      }
+      if (!state.album) {
+        dispatch({ type: 'SET_ALBUM', payload: {
+          ...createEmptyAlbum(),
+          podcastGuid: albumGuid,
+          publisher: { feedGuid: publisherGuid }
+        }});
+      } else if (state.album.publisher?.feedGuid !== publisherGuid) {
+        dispatch({ type: 'UPDATE_ALBUM', payload: { publisher: { feedGuid: publisherGuid } } });
+      }
+      // SET_ALBUM and SET_PUBLISHER_FEED both set feedType themselves; override last
+      dispatch({ type: 'SET_FEED_TYPE', payload: 'artist' });
+      return;
+    }
+
     dispatch({ type: 'SET_FEED_TYPE', payload: feedType });
-    // If switching to video and no video feed exists, create one
     if (feedType === 'video' && !state.videoFeed) {
       dispatch({ type: 'CREATE_NEW_VIDEO_FEED' });
     }
-    // If switching to publisher and no publisher feed exists, create one
     if (feedType === 'publisher' && !state.publisherFeed) {
       dispatch({ type: 'CREATE_NEW_PUBLISHER_FEED' });
     }

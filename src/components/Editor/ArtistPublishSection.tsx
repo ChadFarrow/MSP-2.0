@@ -182,8 +182,8 @@ export function ArtistPublishSection() {
     setResult({
       album: { feedId: albumInfo.feedId, url: buildHostedUrl(albumInfo.feedId) },
       publisher: { feedId: pubInfo.feedId, url: buildHostedUrl(pubInfo.feedId) },
-      injectedAlbumPublisherFeedUrl: '',
-      injectedPublisherRemoteItemFeedUrl: '',
+      patchedAlbum: state.album!,
+      patchedPublisherFeed: state.publisherFeed!,
     });
     updateStep({ id: 'album-host', status: 'done' });
     updateStep({ id: 'publisher-host', status: 'done' });
@@ -257,27 +257,16 @@ export function ArtistPublishSection() {
 
       // Reflect the cross-link feedUrls we injected into the XMLs back into the
       // in-store feeds, so the editor shows the same URLs that just shipped.
-      if (hostResult.injectedAlbumPublisherFeedUrl) {
+      if (hostResult.patchedAlbum.publisher?.feedUrl !== album.publisher?.feedUrl) {
         dispatch({
           type: 'UPDATE_ALBUM',
-          payload: {
-            publisher: {
-              feedGuid: publisherFeed.podcastGuid,
-              feedUrl: hostResult.injectedAlbumPublisherFeedUrl,
-            },
-          },
+          payload: { publisher: hostResult.patchedAlbum.publisher },
         });
       }
-      if (hostResult.injectedPublisherRemoteItemFeedUrl) {
+      if (hostResult.patchedPublisherFeed.remoteItems !== publisherFeed.remoteItems) {
         dispatch({
           type: 'UPDATE_PUBLISHER_FEED',
-          payload: {
-            remoteItems: publisherFeed.remoteItems.map((item) =>
-              item.feedGuid === album.podcastGuid && !item.feedUrl
-                ? { ...item, feedUrl: hostResult.injectedPublisherRemoteItemFeedUrl }
-                : item
-            ),
-          },
+          payload: { remoteItems: hostResult.patchedPublisherFeed.remoteItems },
         });
       }
 

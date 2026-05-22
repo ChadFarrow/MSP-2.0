@@ -58,9 +58,10 @@ const hostOne = async (
 export interface HostBothResult {
   album: HostedFeedResult;
   publisher: HostedFeedResult;
-  /** Cross-link URLs injected into the XMLs before upload (empty string if the user already had a different URL set). */
-  injectedAlbumPublisherFeedUrl: string;
-  injectedPublisherRemoteItemFeedUrl: string;
+  /** The album as serialized to XML — includes any cross-link feedUrls injected before upload. */
+  patchedAlbum: Album;
+  /** The publisher as serialized to XML — includes any cross-link feedUrls injected before upload. */
+  patchedPublisherFeed: PublisherFeed;
 }
 
 export async function hostBothOnMSP(
@@ -84,34 +85,26 @@ export async function hostBothOnMSP(
   // Only fill in feedUrl when it's currently empty — never overwrite a value
   // the user set manually (e.g., they may be linking to an externally hosted
   // publisher and just using MSP for the album).
-  const albumPublisherFeedUrl = album.publisher?.feedUrl || computedPublisherUrl;
-  const injectedAlbumPublisherFeedUrl = album.publisher?.feedUrl ? '' : computedPublisherUrl;
-
   const patchedAlbum: Album = {
     ...album,
     lastBuildDate: now,
     publisher: album.publisher
-      ? { ...album.publisher, feedUrl: albumPublisherFeedUrl }
+      ? { ...album.publisher, feedUrl: album.publisher.feedUrl || computedPublisherUrl }
       : { feedGuid: publisherFeed.podcastGuid, feedUrl: computedPublisherUrl },
   };
 
-  let injectedPublisherRemoteItemFeedUrl = '';
-  const patchedRemoteItems = publisherFeed.remoteItems.map((item) => {
-    if (item.feedGuid === album.podcastGuid && !item.feedUrl) {
-      injectedPublisherRemoteItemFeedUrl = computedAlbumUrl;
-      return { ...item, feedUrl: computedAlbumUrl };
-    }
-    return item;
-  });
-
-  const patchedPublisher: PublisherFeed = {
+  const patchedPublisherFeed: PublisherFeed = {
     ...publisherFeed,
     lastBuildDate: now,
-    remoteItems: patchedRemoteItems,
+    remoteItems: publisherFeed.remoteItems.map((item) =>
+      item.feedGuid === album.podcastGuid && !item.feedUrl
+        ? { ...item, feedUrl: computedAlbumUrl }
+        : item
+    ),
   };
 
   const albumXml = generateRssFeed(patchedAlbum);
-  const pubXml = generatePublisherRssFeed(patchedPublisher);
+  const pubXml = generatePublisherRssFeed(patchedPublisherFeed);
 
   onStep?.({ id: 'album-host', status: 'in-progress' });
   let albumResult: HostedFeedResult;
@@ -128,7 +121,7 @@ export async function hostBothOnMSP(
   try {
     publisherResult = await hostOne(
       pubXml,
-      patchedPublisher.title || 'Publisher Catalog',
+      patchedPublisherFeed.title || 'Publisher Catalog',
       publisherFeed.podcastGuid,
       userPubkey
     );
@@ -141,8 +134,8 @@ export async function hostBothOnMSP(
   return {
     album: albumResult,
     publisher: publisherResult,
-    injectedAlbumPublisherFeedUrl,
-    injectedPublisherRemoteItemFeedUrl,
+    patchedAlbum,
+    patchedPublisherFeed,
   };
 }
 

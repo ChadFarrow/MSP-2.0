@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { ReactNode } from 'react';
 import { useFeed } from '../../store/feedStore';
 import { useNostr } from '../../store/nostrStore';
 import { LANGUAGES, PERSON_GROUPS, PERSON_ROLES, createEmptyPersonRole, createEmptyTrack, isVideoMedium, isCommunitySupport, createSupportRecipients, hasUserRecipients } from '../../types/feed';
@@ -13,6 +12,7 @@ import { getFeedUrlError } from '../../utils/urlValidation';
 import { InfoIcon } from '../InfoIcon';
 import { Section } from '../Section';
 import { Toggle } from '../Toggle';
+import { EditorChrome } from './EditorChrome';
 import { AddRecipientSelect } from '../AddRecipientSelect';
 import { RecipientsList } from '../RecipientsList';
 import { FundingFields } from '../FundingFields';
@@ -259,17 +259,9 @@ export function Editor({ chromeless = false }: EditorProps = {}) {
     }
   };
 
-  const wrap = (content: ReactNode) => chromeless ? content : (
-    <div className="main-content">
-      <div className="editor-panel">
-        {content}
-      </div>
-    </div>
-  );
-
   return (
     <>
-      {wrap(<>
+      <EditorChrome chromeless={chromeless}>
           {/* Album/Video Info Section */}
           <Section title={isVideo ? "Video Info" : "Album Info"} icon={isVideo ? "🎬" : "💿"}>
             <div className="form-grid">
@@ -1552,7 +1544,7 @@ export function Editor({ chromeless = false }: EditorProps = {}) {
               </button>
             </div>
           </Section>
-      </>)}
+      </EditorChrome>
       <RolesModal isOpen={showRolesModal} onClose={() => setShowRolesModal(false)} />
     </>
   );

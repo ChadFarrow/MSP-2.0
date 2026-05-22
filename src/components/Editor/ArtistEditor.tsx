@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
 import { Editor } from './Editor';
+import { EditorChrome } from './EditorChrome';
 import { PublisherEditor } from './PublisherEditor';
 import { ArtistPublishSection } from './ArtistPublishSection';
 
@@ -42,22 +43,20 @@ const subtitleStyle: CSSProperties = {
 
 export function ArtistEditor() {
   return (
-    <div className="main-content">
-      <div className="editor-panel">
-        <div style={albumHeaderStyle}>
-          <span>🎵 Album</span>
-          <span style={subtitleStyle}>— fields below go into your album RSS feed</span>
-        </div>
-        <Editor chromeless />
-
-        <div style={publisherHeaderStyle}>
-          <span>🏢 Publisher</span>
-          <span style={subtitleStyle}>— fields below go into your publisher (label) RSS feed</span>
-        </div>
-        <PublisherEditor chromeless />
-
-        <ArtistPublishSection />
+    <EditorChrome>
+      <div style={albumHeaderStyle}>
+        <span>🎵 Album</span>
+        <span style={subtitleStyle}>— fields below go into your album RSS feed</span>
       </div>
-    </div>
+      <Editor chromeless />
+
+      <div style={publisherHeaderStyle}>
+        <span>🏢 Publisher</span>
+        <span style={subtitleStyle}>— fields below go into your publisher (label) RSS feed</span>
+      </div>
+      <PublisherEditor chromeless />
+
+      <ArtistPublishSection />
+    </EditorChrome>
   );
 }

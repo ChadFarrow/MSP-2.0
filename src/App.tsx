@@ -6,7 +6,7 @@ import { NostrProvider, useNostr } from './store/nostrStore.tsx';
 import { ThemeProvider, useTheme } from './store/themeStore.tsx';
 import { ExperimentalProvider, useExperimental } from './store/experimentalStore.tsx';
 import { parseRssFeed, isPublisherFeed, isVideoFeed, parsePublisherRssFeed } from './utils/xmlParser';
-import { createEmptyAlbum, createEmptyPublisherFeed, createEmptyVideoAlbum } from './types/feed';
+import { createEmptyAlbum, createEmptyPublisherFeed, createEmptyVideoAlbum, createEmptyRemoteItem } from './types/feed';
 import { pendingHostedStorage } from './utils/storage';
 import { generateTestAlbum, generateTestPublisher } from './utils/testData';
 import { NostrLoginButton } from './components/NostrLoginButton';
@@ -120,7 +120,7 @@ function AppContent() {
       dispatch({ type: 'SET_PUBLISHER_FEED', payload: {
         ...createEmptyPublisherFeed(),
         podcastGuid: publisherGuid,
-        remoteItems: [{ feedGuid: albumGuid, feedUrl: '', title: '', medium: 'music' }]
+        remoteItems: [{ ...createEmptyRemoteItem(), feedGuid: albumGuid }]
       }});
       dispatch({ type: 'SET_ALBUM', payload: {
         ...createEmptyAlbum(),
@@ -174,7 +174,7 @@ function AppContent() {
         dispatch({ type: 'SET_PUBLISHER_FEED', payload: {
           ...createEmptyPublisherFeed(),
           podcastGuid: publisherGuid,
-          remoteItems: [{ feedGuid: albumGuid, feedUrl: '', title: '', medium: 'music' }]
+          remoteItems: [{ ...createEmptyRemoteItem(), feedGuid: albumGuid }]
         }});
       } else if (!state.publisherFeed.remoteItems.some(item => item.feedGuid === albumGuid)) {
         // Publisher exists but its catalog doesn't yet reference this album — link them.
@@ -183,7 +183,7 @@ function AppContent() {
         dispatch({ type: 'UPDATE_PUBLISHER_FEED', payload: {
           remoteItems: [
             ...state.publisherFeed.remoteItems,
-            { feedGuid: albumGuid, feedUrl: '', title: '', medium: 'music' }
+            { ...createEmptyRemoteItem(), feedGuid: albumGuid }
           ]
         }});
       }
@@ -309,7 +309,7 @@ function AppContent() {
                             const linkedAlbum = { ...testAlbum, publisher: { feedGuid: testPublisher.podcastGuid } };
                             const linkedPublisher = {
                               ...testPublisher,
-                              remoteItems: [{ feedGuid: testAlbum.podcastGuid, feedUrl: '', title: testAlbum.title, medium: 'music' }]
+                              remoteItems: [{ ...createEmptyRemoteItem(), feedGuid: testAlbum.podcastGuid, title: testAlbum.title }]
                             };
                             dispatch({ type: 'SET_PUBLISHER_FEED', payload: linkedPublisher });
                             dispatch({ type: 'SET_ALBUM', payload: linkedAlbum });

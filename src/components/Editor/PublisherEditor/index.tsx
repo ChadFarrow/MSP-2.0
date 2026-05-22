@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react';
 import { useFeed } from '../../../store/feedStore';
+import { EditorChrome } from '../EditorChrome';
 import { PublisherInfoSection } from './PublisherInfoSection';
 import { PublisherArtworkSection } from './PublisherArtworkSection';
 import { CatalogFeedsSection } from './CatalogFeedsSection';
@@ -18,19 +18,13 @@ export function PublisherEditor({ chromeless = false }: PublisherEditorProps = {
   const { state, dispatch } = useFeed();
   const { publisherFeed } = state;
 
-  const wrap = (content: ReactNode) => chromeless ? content : (
-    <div className="main-content">
-      <div className="editor-panel">
-        {content}
-      </div>
-    </div>
-  );
-
   if (!publisherFeed) {
-    return wrap(
-      <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-        No publisher feed loaded. Create a new publisher feed or import an existing one.
-      </div>
+    return (
+      <EditorChrome chromeless={chromeless}>
+        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+          No publisher feed loaded. Create a new publisher feed or import an existing one.
+        </div>
+      </EditorChrome>
     );
   }
 
@@ -42,8 +36,8 @@ export function PublisherEditor({ chromeless = false }: PublisherEditorProps = {
   // shouldn't surface catalog management, redundant download/host UI, or publish flows.
   const isArtistMode = state.feedType === 'artist';
 
-  return wrap(
-    <>
+  return (
+    <EditorChrome chromeless={chromeless}>
       <PublisherInfoSection publisherFeed={publisherFeed} dispatch={dispatch} />
       <PublisherArtworkSection publisherFeed={publisherFeed} dispatch={dispatch} />
       {!isArtistMode && <CatalogFeedsSection publisherFeed={publisherFeed} dispatch={dispatch} />}
@@ -52,6 +46,6 @@ export function PublisherEditor({ chromeless = false }: PublisherEditorProps = {
       {!isArtistMode && <PublisherFeedReminderSection publisherFeed={publisherFeed} />}
       {!isArtistMode && <DownloadCatalogSection publisherFeed={publisherFeed} />}
       {!isArtistMode && allFeedsHosted && <PublishSection publisherFeed={publisherFeed} />}
-    </>
+    </EditorChrome>
   );
 }

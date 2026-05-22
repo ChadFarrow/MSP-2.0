@@ -186,11 +186,11 @@ export interface CancellationToken {
  * wall-clock budget is ~10 minutes.
  */
 const POLL_DELAYS_MS = [
-  20000, 20000, 30000, // first ~70 s
-  30000, 30000, 30000, // 90 s more (~2.5 min)
-  60000, 60000, 60000, 60000, // 4 more min (~6.5 min)
-  120000, 120000, // 4 more min (~10.5 min)
-];
+  20, 20, 30,           // first ~70 s
+  30, 30, 30,           // 90 s more (~2.5 min)
+  60, 60, 60, 60,       // 4 more min (~6.5 min)
+  120, 120,             // 4 more min (~10.5 min)
+].map(s => s * 1000);
 
 /**
  * Poll PI until both feeds are found, or the schedule is exhausted.

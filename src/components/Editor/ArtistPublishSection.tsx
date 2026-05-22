@@ -5,7 +5,7 @@ import { useNostr } from '../../store/nostrStore';
 import {
   hostBothOnMSP,
   downloadArtistFeedPackage,
-  waitForBothFeedsInIndex,
+  waitForAlbumInIndex,
   type CancellationToken,
   type HostBothResult,
   type PublishStep,
@@ -142,14 +142,14 @@ const linkStyle: CSSProperties = {
 
 const STEP_LABELS: Record<PublishStepId, string> = {
   'album-host': 'Host album feed on MSP + submit to Podcast Index',
-  'publisher-host': 'Host publisher feed on MSP + submit to Podcast Index',
-  'verify-index': 'Verify both feeds appear in Podcast Index',
+  'publisher-host': 'Host publisher feed on MSP (cross-linked to album)',
+  'verify-index': 'Verify album appears in Podcast Index',
 };
 
 const STEP_ORDER: PublishStepId[] = ['album-host', 'publisher-host', 'verify-index'];
 
 export function ArtistPublishSection() {
-  const { state } = useFeed();
+  const { state, dispatch } = useFeed();
   const { state: nostrState } = useNostr();
   const [hosting, setHosting] = useState(false);
   const [steps, setSteps] = useState<Map<PublishStepId, PublishStep>>(new Map());
@@ -182,6 +182,8 @@ export function ArtistPublishSection() {
     setResult({
       album: { feedId: albumInfo.feedId, url: buildHostedUrl(albumInfo.feedId) },
       publisher: { feedId: pubInfo.feedId, url: buildHostedUrl(pubInfo.feedId) },
+      injectedAlbumPublisherFeedUrl: '',
+      injectedPublisherRemoteItemFeedUrl: '',
     });
     updateStep({ id: 'album-host', status: 'done' });
     updateStep({ id: 'publisher-host', status: 'done' });
@@ -190,13 +192,12 @@ export function ArtistPublishSection() {
     const cancelToken: CancellationToken = { cancelled: false };
     pollCancelRef.current = cancelToken;
 
-    waitForBothFeedsInIndex(
+    waitForAlbumInIndex(
       albumGuid,
-      publisherGuid,
       (progress) => {
         if (cancelToken.cancelled) return;
         setVerify(progress);
-        if (progress.album && progress.publisher) {
+        if (progress.album) {
           updateStep({ id: 'verify-index', status: 'done' });
         }
       },
@@ -206,10 +207,9 @@ export function ArtistPublishSection() {
       setVerify(final);
       updateStep({
         id: 'verify-index',
-        status: final.album && final.publisher ? 'done' : 'pending',
+        status: final.album ? 'done' : 'pending',
       });
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [albumGuid, publisherGuid]);
 
   // Cancel any in-flight polling when the component unmounts so we don't
@@ -254,14 +254,39 @@ export function ArtistPublishSection() {
       );
       setResult(hostResult);
 
+      // Reflect the cross-link feedUrls we injected into the XMLs back into the
+      // in-store feeds, so the editor shows the same URLs that just shipped.
+      if (hostResult.injectedAlbumPublisherFeedUrl) {
+        dispatch({
+          type: 'UPDATE_ALBUM',
+          payload: {
+            publisher: {
+              feedGuid: publisherFeed.podcastGuid,
+              feedUrl: hostResult.injectedAlbumPublisherFeedUrl,
+            },
+          },
+        });
+      }
+      if (hostResult.injectedPublisherRemoteItemFeedUrl) {
+        dispatch({
+          type: 'UPDATE_PUBLISHER_FEED',
+          payload: {
+            remoteItems: publisherFeed.remoteItems.map((item) =>
+              item.feedGuid === album.podcastGuid && !item.feedUrl
+                ? { ...item, feedUrl: hostResult.injectedPublisherRemoteItemFeedUrl }
+                : item
+            ),
+          },
+        });
+      }
+
       updateStep({ id: 'verify-index', status: 'in-progress' });
-      const finalVerify = await waitForBothFeedsInIndex(
+      const finalVerify = await waitForAlbumInIndex(
         album.podcastGuid,
-        publisherFeed.podcastGuid,
         (progress) => {
           if (cancelToken.cancelled) return;
           setVerify(progress);
-          if (progress.album && progress.publisher) {
+          if (progress.album) {
             updateStep({ id: 'verify-index', status: 'done' });
           }
         },
@@ -271,7 +296,7 @@ export function ArtistPublishSection() {
         setVerify(finalVerify);
         updateStep({
           id: 'verify-index',
-          status: finalVerify.album && finalVerify.publisher ? 'done' : 'pending',
+          status: finalVerify.album ? 'done' : 'pending',
         });
       }
     } catch (err) {
@@ -295,44 +320,36 @@ export function ArtistPublishSection() {
       );
     }
     if (id === 'publisher-host' && result) {
+      const pubLookup = `https://podcastindex.org/search?q=${encodeURIComponent(publisherFeed.podcastGuid)}`;
       return (
         <div style={detailLineStyle}>
           <a href={result.publisher.url} target="_blank" rel="noopener noreferrer" style={linkStyle}>{result.publisher.url}</a>
-          {result.publisher.podcastIndexId && <span> · PI ID {result.publisher.podcastIndexId}</span>}
+          <div style={{ marginTop: '4px', color: 'var(--text-tertiary)' }}>
+            Cross-linked from the album so Podcasting 2.0 clients can discover it. Publisher feeds can take longer than music feeds to index — <a href={pubLookup} target="_blank" rel="noopener noreferrer" style={linkStyle}>check Podcast Index manually →</a>
+          </div>
         </div>
       );
     }
     if (id === 'verify-index' && verify) {
       const albumLookup = `https://podcastindex.org/search?q=${encodeURIComponent(album.podcastGuid)}`;
-      const pubLookup = `https://podcastindex.org/search?q=${encodeURIComponent(publisherFeed.podcastGuid)}`;
       const polling = verify.nextCheckIn !== null;
 
-      if (verify.album && verify.publisher) {
+      if (verify.album) {
         return (
           <div style={detailLineStyle}>
-            Both feeds are searchable in Podcast Index.{' '}
-            <a href={albumLookup} target="_blank" rel="noopener noreferrer" style={linkStyle}>Album in PI →</a>
-            {' · '}
-            <a href={pubLookup} target="_blank" rel="noopener noreferrer" style={linkStyle}>Publisher in PI →</a>
+            Album is searchable in Podcast Index.{' '}
+            <a href={albumLookup} target="_blank" rel="noopener noreferrer" style={linkStyle}>View in PI →</a>
           </div>
         );
       }
 
-      const albumLine = verify.album
-        ? <>✓ Album: found in Podcast Index · <a href={albumLookup} target="_blank" rel="noopener noreferrer" style={linkStyle}>view →</a></>
-        : <>⏳ Album: not yet found · <a href={albumLookup} target="_blank" rel="noopener noreferrer" style={linkStyle}>check manually →</a></>;
-      const publisherLine = verify.publisher
-        ? <>✓ Publisher: found in Podcast Index · <a href={pubLookup} target="_blank" rel="noopener noreferrer" style={linkStyle}>view →</a></>
-        : <>⏳ Publisher: not yet found · <a href={pubLookup} target="_blank" rel="noopener noreferrer" style={linkStyle}>check manually →</a></>;
-
       return (
         <div style={detailLineStyle}>
-          <div>{albumLine}</div>
-          <div style={{ marginTop: '4px' }}>{publisherLine}</div>
+          <div>⏳ Album: not yet in Podcast Index · <a href={albumLookup} target="_blank" rel="noopener noreferrer" style={linkStyle}>check manually →</a></div>
           <div style={{ marginTop: '6px', color: 'var(--text-tertiary)' }}>
             {polling
               ? `Checking again in ${verify.nextCheckIn}s · attempt ${verify.attempt} of ${verify.totalAttempts}`
-              : 'Stopped checking — Podcast Index may still pick these up over the next several minutes. Refresh this page later or use the links above.'}
+              : "Stopped checking — Podcast Index may still pick this up over the next several minutes. Refresh this page later or use the link above."}
           </div>
         </div>
       );
@@ -364,8 +381,8 @@ export function ArtistPublishSection() {
             {hosting
               ? 'Working…'
               : result
-                ? (verify?.album && verify?.publisher
-                    ? '✓ Hosted on MSP and confirmed in Podcast Index'
+                ? (verify?.album
+                    ? '✓ Hosted on MSP and album confirmed in Podcast Index'
                     : '✓ Hosted on MSP — see status below')
                 : 'Host on MSP — album + publisher (one click)'}
           </button>

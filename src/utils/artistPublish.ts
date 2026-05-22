@@ -14,11 +14,6 @@ export interface HostedFeedResult {
   podcastIndexId?: number;
 }
 
-export interface HostBothResult {
-  album: HostedFeedResult;
-  publisher: HostedFeedResult;
-}
-
 export type PublishStepId = 'album-host' | 'publisher-host' | 'verify-index';
 export type PublishStepStatus = 'pending' | 'in-progress' | 'done' | 'failed';
 
@@ -60,6 +55,14 @@ const hostOne = async (
   };
 };
 
+export interface HostBothResult {
+  album: HostedFeedResult;
+  publisher: HostedFeedResult;
+  /** Cross-link URLs injected into the XMLs before upload (empty string if the user already had a different URL set). */
+  injectedAlbumPublisherFeedUrl: string;
+  injectedPublisherRemoteItemFeedUrl: string;
+}
+
 export async function hostBothOnMSP(
   album: Album,
   publisherFeed: PublisherFeed,
@@ -67,13 +70,53 @@ export async function hostBothOnMSP(
   onStep?: (step: PublishStep) => void
 ): Promise<HostBothResult> {
   const now = new Date().toUTCString();
-  const albumXml = generateRssFeed({ ...album, lastBuildDate: now });
-  const pubXml = generatePublisherRssFeed({ ...publisherFeed, lastBuildDate: now });
+
+  // The /api/hosted endpoint uses podcastGuid as the feedId in the URL, so we
+  // can precompute both feeds' hosted URLs before uploading. That lets us
+  // inject cross-link `feedUrl`s into the XMLs in a single pass — without
+  // this, the album's <podcast:publisher> reference and the publisher's
+  // <podcast:remoteItem> would only carry feedGuid, and downstream clients
+  // (including PI's crawler, which doesn't separately register medium=publisher
+  // feeds via add/byfeedurl) couldn't discover the publisher.
+  const computedAlbumUrl = buildHostedUrl(album.podcastGuid);
+  const computedPublisherUrl = buildHostedUrl(publisherFeed.podcastGuid);
+
+  // Only fill in feedUrl when it's currently empty — never overwrite a value
+  // the user set manually (e.g., they may be linking to an externally hosted
+  // publisher and just using MSP for the album).
+  const albumPublisherFeedUrl = album.publisher?.feedUrl || computedPublisherUrl;
+  const injectedAlbumPublisherFeedUrl = album.publisher?.feedUrl ? '' : computedPublisherUrl;
+
+  const patchedAlbum: Album = {
+    ...album,
+    lastBuildDate: now,
+    publisher: album.publisher
+      ? { ...album.publisher, feedUrl: albumPublisherFeedUrl }
+      : { feedGuid: publisherFeed.podcastGuid, feedUrl: computedPublisherUrl },
+  };
+
+  let injectedPublisherRemoteItemFeedUrl = '';
+  const patchedRemoteItems = publisherFeed.remoteItems.map((item) => {
+    if (item.feedGuid === album.podcastGuid && !item.feedUrl) {
+      injectedPublisherRemoteItemFeedUrl = computedAlbumUrl;
+      return { ...item, feedUrl: computedAlbumUrl };
+    }
+    return item;
+  });
+
+  const patchedPublisher: PublisherFeed = {
+    ...publisherFeed,
+    lastBuildDate: now,
+    remoteItems: patchedRemoteItems,
+  };
+
+  const albumXml = generateRssFeed(patchedAlbum);
+  const pubXml = generatePublisherRssFeed(patchedPublisher);
 
   onStep?.({ id: 'album-host', status: 'in-progress' });
   let albumResult: HostedFeedResult;
   try {
-    albumResult = await hostOne(albumXml, album.title || 'Album', album.podcastGuid, userPubkey);
+    albumResult = await hostOne(albumXml, patchedAlbum.title || 'Album', album.podcastGuid, userPubkey);
     onStep?.({ id: 'album-host', status: 'done' });
   } catch (err) {
     onStep?.({ id: 'album-host', status: 'failed', message: err instanceof Error ? err.message : 'Failed to host album' });
@@ -85,7 +128,7 @@ export async function hostBothOnMSP(
   try {
     publisherResult = await hostOne(
       pubXml,
-      publisherFeed.title || 'Publisher Catalog',
+      patchedPublisher.title || 'Publisher Catalog',
       publisherFeed.podcastGuid,
       userPubkey
     );
@@ -95,7 +138,12 @@ export async function hostBothOnMSP(
     throw err;
   }
 
-  return { album: albumResult, publisher: publisherResult };
+  return {
+    album: albumResult,
+    publisher: publisherResult,
+    injectedAlbumPublisherFeedUrl,
+    injectedPublisherRemoteItemFeedUrl,
+  };
 }
 
 /**
@@ -118,7 +166,6 @@ export async function verifyInPodcastIndex(podcastGuid: string): Promise<boolean
 
 export interface VerifyProgress {
   album: boolean;
-  publisher: boolean;
   attempt: number;
   totalAttempts: number;
   /** Seconds until the next check. Null when polling has ended. */
@@ -145,20 +192,26 @@ const POLL_DELAYS_MS = [
 ];
 
 /**
- * Poll PI until both feeds are found, or the schedule is exhausted.
+ * Poll PI until the album feed is found, or the schedule is exhausted.
+ *
+ * Only the album is polled — Podcast Index's add/byfeedurl returns an empty
+ * body for medium=publisher submissions, and PI doesn't surface publisher
+ * feeds via byguid lookup. The publisher gets discovered organically by
+ * crawlers that follow the album's <podcast:publisher feedUrl="…"> reference
+ * (which hostBothOnMSP now injects before upload). Polling for the publisher
+ * directly would just time out every time.
+ *
  * Calls onProgress after every check. Each call passes a `nextCheckIn` (seconds)
  * so the UI can render a countdown to the next attempt — or null when polling stops.
  * Aborts immediately if `cancelToken.cancelled` flips to true.
  */
-export async function waitForBothFeedsInIndex(
+export async function waitForAlbumInIndex(
   albumGuid: string,
-  publisherGuid: string,
   onProgress?: (p: VerifyProgress) => void,
   cancelToken?: CancellationToken
 ): Promise<VerifyProgress> {
   const total = POLL_DELAYS_MS.length;
   let albumFound = false;
-  let publisherFound = false;
 
   for (let i = 0; i < POLL_DELAYS_MS.length; i++) {
     const delay = POLL_DELAYS_MS[i];
@@ -166,7 +219,6 @@ export async function waitForBothFeedsInIndex(
     // Tell the UI how long until the next check (so it can show a countdown).
     onProgress?.({
       album: albumFound,
-      publisher: publisherFound,
       attempt: i,
       totalAttempts: total,
       nextCheckIn: Math.round(delay / 1000),
@@ -176,12 +228,10 @@ export async function waitForBothFeedsInIndex(
     if (cancelToken?.cancelled) break;
 
     if (!albumFound) albumFound = await verifyInPodcastIndex(albumGuid);
-    if (!publisherFound) publisherFound = await verifyInPodcastIndex(publisherGuid);
 
-    const isFinal = albumFound && publisherFound;
+    const isFinal = albumFound;
     onProgress?.({
       album: albumFound,
-      publisher: publisherFound,
       attempt: i + 1,
       totalAttempts: total,
       nextCheckIn: isFinal || i === POLL_DELAYS_MS.length - 1 ? null : Math.round(POLL_DELAYS_MS[i + 1] / 1000),
@@ -192,7 +242,6 @@ export async function waitForBothFeedsInIndex(
 
   return {
     album: albumFound,
-    publisher: publisherFound,
     attempt: POLL_DELAYS_MS.length,
     totalAttempts: total,
     nextCheckIn: null,

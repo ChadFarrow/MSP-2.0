@@ -1,5 +1,6 @@
 // Test data generator for development mode
 import type { Album, Track, Person, ValueRecipient, PublisherFeed } from '../types/feed';
+import { createEmptyRemoteItem } from '../types/feed';
 
 /**
  * Generate a fully populated test album for development testing
@@ -202,5 +203,22 @@ export function generateTestPublisher(): PublisherFeed {
       { url: 'https://example.com/label-support', text: 'Support the label' }
     ],
     remoteItems: []
+  };
+}
+
+/**
+ * Generate a cross-linked album + publisher pair for Artist mode test data.
+ * The album's publisher.feedGuid points at the publisher's podcastGuid, and
+ * the publisher carries the album in its remoteItems — ready to host or ship.
+ */
+export function generateLinkedTestArtistFeeds(): { album: Album; publisher: PublisherFeed } {
+  const album = generateTestAlbum();
+  const publisher = generateTestPublisher();
+  return {
+    album: { ...album, publisher: { feedGuid: publisher.podcastGuid } },
+    publisher: {
+      ...publisher,
+      remoteItems: [{ ...createEmptyRemoteItem(), feedGuid: album.podcastGuid, title: album.title }],
+    },
   };
 }

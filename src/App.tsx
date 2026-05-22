@@ -6,9 +6,10 @@ import { NostrProvider, useNostr } from './store/nostrStore.tsx';
 import { ThemeProvider, useTheme } from './store/themeStore.tsx';
 import { ExperimentalProvider, useExperimental } from './store/experimentalStore.tsx';
 import { parseRssFeed, isPublisherFeed, isVideoFeed, parsePublisherRssFeed } from './utils/xmlParser';
-import { createEmptyAlbum, createEmptyPublisherFeed, createEmptyVideoAlbum, createEmptyRemoteItem } from './types/feed';
+import { createEmptyAlbum, createEmptyPublisherFeed, createEmptyVideoAlbum } from './types/feed';
 import { pendingHostedStorage } from './utils/storage';
-import { generateTestAlbum, generateTestPublisher } from './utils/testData';
+import { generateTestAlbum, generateLinkedTestArtistFeeds } from './utils/testData';
+import { buildArtistSetupActions } from './utils/artistSetup';
 import { NostrLoginButton } from './components/NostrLoginButton';
 import { ImportModal } from './components/modals/ImportModal';
 import { SaveModal } from './components/modals/SaveModal';
@@ -115,19 +116,7 @@ function AppContent() {
     } else if (pendingNewFeedType === 'video') {
       dispatch({ type: 'SET_VIDEO_FEED', payload: createEmptyVideoAlbum() });
     } else if (pendingNewFeedType === 'artist') {
-      const albumGuid = crypto.randomUUID();
-      const publisherGuid = crypto.randomUUID();
-      dispatch({ type: 'SET_PUBLISHER_FEED', payload: {
-        ...createEmptyPublisherFeed(),
-        podcastGuid: publisherGuid,
-        remoteItems: [{ ...createEmptyRemoteItem(), feedGuid: albumGuid }]
-      }});
-      dispatch({ type: 'SET_ALBUM', payload: {
-        ...createEmptyAlbum(),
-        podcastGuid: albumGuid,
-        publisher: { feedGuid: publisherGuid }
-      }});
-      dispatch({ type: 'SET_FEED_TYPE', payload: 'artist' });
+      buildArtistSetupActions({}, { regenerateGuids: true }).forEach(dispatch);
     } else {
       dispatch({ type: 'SET_ALBUM', payload: createEmptyAlbum() });
     }
@@ -167,37 +156,7 @@ function AppContent() {
 
   const handleSwitchFeedType = (feedType: FeedType) => {
     if (feedType === 'artist') {
-      const albumGuid = state.album?.podcastGuid || crypto.randomUUID();
-      const publisherGuid = state.publisherFeed?.podcastGuid || crypto.randomUUID();
-
-      if (!state.publisherFeed) {
-        dispatch({ type: 'SET_PUBLISHER_FEED', payload: {
-          ...createEmptyPublisherFeed(),
-          podcastGuid: publisherGuid,
-          remoteItems: [{ ...createEmptyRemoteItem(), feedGuid: albumGuid }]
-        }});
-      } else if (!state.publisherFeed.remoteItems.some(item => item.feedGuid === albumGuid)) {
-        // Publisher exists but its catalog doesn't yet reference this album — link them.
-        // Without this, the hosted publisher XML would carry a stale remoteItem and
-        // Podcast Index would never associate the two feeds.
-        dispatch({ type: 'UPDATE_PUBLISHER_FEED', payload: {
-          remoteItems: [
-            ...state.publisherFeed.remoteItems,
-            { ...createEmptyRemoteItem(), feedGuid: albumGuid }
-          ]
-        }});
-      }
-      if (!state.album) {
-        dispatch({ type: 'SET_ALBUM', payload: {
-          ...createEmptyAlbum(),
-          podcastGuid: albumGuid,
-          publisher: { feedGuid: publisherGuid }
-        }});
-      } else if (state.album.publisher?.feedGuid !== publisherGuid) {
-        dispatch({ type: 'UPDATE_ALBUM', payload: { publisher: { feedGuid: publisherGuid } } });
-      }
-      // SET_ALBUM and SET_PUBLISHER_FEED both set feedType themselves; override last
-      dispatch({ type: 'SET_FEED_TYPE', payload: 'artist' });
+      buildArtistSetupActions(state).forEach(dispatch);
       return;
     }
 
@@ -302,21 +261,14 @@ function AppContent() {
                       <button
                         className="dropdown-item"
                         onClick={() => {
-                          const testAlbum = generateTestAlbum();
                           if (state.feedType === 'artist') {
-                            const testPublisher = generateTestPublisher();
-                            // Cross-link the fixtures so Host Both has a real catalog reference
-                            const linkedAlbum = { ...testAlbum, publisher: { feedGuid: testPublisher.podcastGuid } };
-                            const linkedPublisher = {
-                              ...testPublisher,
-                              remoteItems: [{ ...createEmptyRemoteItem(), feedGuid: testAlbum.podcastGuid, title: testAlbum.title }]
-                            };
-                            dispatch({ type: 'SET_PUBLISHER_FEED', payload: linkedPublisher });
-                            dispatch({ type: 'SET_ALBUM', payload: linkedAlbum });
+                            const { album, publisher } = generateLinkedTestArtistFeeds();
+                            dispatch({ type: 'SET_PUBLISHER_FEED', payload: publisher });
+                            dispatch({ type: 'SET_ALBUM', payload: album });
                             // SET_ALBUM resets feedType to 'album'; restore artist mode last
                             dispatch({ type: 'SET_FEED_TYPE', payload: 'artist' });
                           } else {
-                            dispatch({ type: 'SET_ALBUM', payload: testAlbum });
+                            dispatch({ type: 'SET_ALBUM', payload: generateTestAlbum() });
                           }
                           setShowDropdown(false);
                         }}

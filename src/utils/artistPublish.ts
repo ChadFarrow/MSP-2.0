@@ -166,6 +166,7 @@ export async function verifyInPodcastIndex(podcastGuid: string): Promise<boolean
 
 export interface VerifyProgress {
   album: boolean;
+  publisher: boolean;
   attempt: number;
   totalAttempts: number;
   /** Seconds until the next check. Null when polling has ended. */
@@ -192,26 +193,25 @@ const POLL_DELAYS_MS = [
 ];
 
 /**
- * Poll PI until the album feed is found, or the schedule is exhausted.
- *
- * Only the album is polled — Podcast Index's add/byfeedurl returns an empty
- * body for medium=publisher submissions, and PI doesn't surface publisher
- * feeds via byguid lookup. The publisher gets discovered organically by
- * crawlers that follow the album's <podcast:publisher feedUrl="…"> reference
- * (which hostBothOnMSP now injects before upload). Polling for the publisher
- * directly would just time out every time.
- *
+ * Poll PI until both feeds are found, or the schedule is exhausted.
  * Calls onProgress after every check. Each call passes a `nextCheckIn` (seconds)
  * so the UI can render a countdown to the next attempt — or null when polling stops.
  * Aborts immediately if `cancelToken.cancelled` flips to true.
+ *
+ * Publisher feeds may take longer than music feeds to land — they require PI's
+ * crawler to follow the cross-linked remoteItem URLs to validate the catalog.
+ * hostBothOnMSP injects those feedUrls before upload, so as long as the album
+ * is reachable PI should eventually register the publisher too.
  */
-export async function waitForAlbumInIndex(
+export async function waitForBothFeedsInIndex(
   albumGuid: string,
+  publisherGuid: string,
   onProgress?: (p: VerifyProgress) => void,
   cancelToken?: CancellationToken
 ): Promise<VerifyProgress> {
   const total = POLL_DELAYS_MS.length;
   let albumFound = false;
+  let publisherFound = false;
 
   for (let i = 0; i < POLL_DELAYS_MS.length; i++) {
     const delay = POLL_DELAYS_MS[i];
@@ -219,6 +219,7 @@ export async function waitForAlbumInIndex(
     // Tell the UI how long until the next check (so it can show a countdown).
     onProgress?.({
       album: albumFound,
+      publisher: publisherFound,
       attempt: i,
       totalAttempts: total,
       nextCheckIn: Math.round(delay / 1000),
@@ -228,10 +229,12 @@ export async function waitForAlbumInIndex(
     if (cancelToken?.cancelled) break;
 
     if (!albumFound) albumFound = await verifyInPodcastIndex(albumGuid);
+    if (!publisherFound) publisherFound = await verifyInPodcastIndex(publisherGuid);
 
-    const isFinal = albumFound;
+    const isFinal = albumFound && publisherFound;
     onProgress?.({
       album: albumFound,
+      publisher: publisherFound,
       attempt: i + 1,
       totalAttempts: total,
       nextCheckIn: isFinal || i === POLL_DELAYS_MS.length - 1 ? null : Math.round(POLL_DELAYS_MS[i + 1] / 1000),
@@ -242,6 +245,7 @@ export async function waitForAlbumInIndex(
 
   return {
     album: albumFound,
+    publisher: publisherFound,
     attempt: POLL_DELAYS_MS.length,
     totalAttempts: total,
     nextCheckIn: null,

@@ -373,22 +373,20 @@ export function ArtistPublishSection() {
             className="btn btn-primary"
             style={{
               ...primaryBtnStyle,
-              ...(hosting || result || !titlesReady ? { opacity: 0.6, cursor: 'not-allowed' } : {}),
+              ...(hosting || !titlesReady ? { opacity: 0.6, cursor: 'not-allowed' } : {}),
             }}
             onClick={handleHostBoth}
-            disabled={hosting || !!result || !titlesReady}
+            disabled={hosting || !titlesReady}
           >
             {hosting
               ? 'Working…'
               : result
-                ? (verify?.album
-                    ? '✓ Hosted on MSP and album confirmed in Podcast Index'
-                    : '✓ Hosted on MSP — see status below')
+                ? 'Re-host both feeds (update with latest XML)'
                 : 'Host on MSP — album + publisher (one click)'}
           </button>
           <p style={helperText}>
             {result
-              ? 'Already hosted in this session. Refresh the page to re-host (or edit the feeds and use Save in the bottom toolbar).'
+              ? 'Already hosted in this session. Click to re-host both XMLs (uses the same MSP URLs and Nostr identity). Useful after editing feed details.'
               : !titlesReady
                 ? `Add a title to your ${!albumTitleSet && !publisherTitleSet ? 'album and publisher' : !albumTitleSet ? 'album' : 'publisher'} feed above to enable hosting. Podcast Index won't index feeds without a title.`
                 : 'Uploads both feeds to msp.podtards.com, submits them to Podcast Index, and verifies they appear. Linked to your Nostr identity for future edits.'}

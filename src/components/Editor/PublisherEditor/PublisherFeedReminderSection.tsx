@@ -80,11 +80,10 @@ export function PublisherFeedReminderSection({ publisherFeed }: PublisherFeedRem
 
       // Auto-submit to Podcast Index
       try {
-        await fetch('/api/pisubmit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: feedUrl })
-        });
+        const piParams = new URLSearchParams({ url: feedUrl });
+        if (publisherFeed.medium) piParams.set('medium', publisherFeed.medium);
+        if (publisherFeed.podcastGuid) piParams.set('guid', publisherFeed.podcastGuid);
+        await fetch(`/api/pubnotify?${piParams}`);
       } catch {
         // Silent fail for PI submission - feed is still hosted
       }

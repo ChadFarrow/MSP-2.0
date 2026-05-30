@@ -8,6 +8,7 @@ import { detectAddressType } from '../../utils/addressUtils';
 import { getMediaDuration, secondsToHHMMSS, formatDuration, getAudioMimeType, isKnownAudioFormat } from '../../utils/audioUtils';
 import { getVideoMimeType } from '../../utils/videoUtils';
 import { isNaddrString, resolveNostrVideo } from '../../utils/nostrVideoConverter';
+import { uploadMediaToBlossom } from '../../utils/blossom';
 import { getFeedUrlError } from '../../utils/urlValidation';
 import { InfoIcon } from '../InfoIcon';
 import { Section } from '../Section';
@@ -129,6 +130,9 @@ export function Editor() {
   // Nostr naddr resolution state (per-track index)
   const [resolvingNaddr, setResolvingNaddr] = useState<Record<number, boolean>>({});
   const [naddrError, setNaddrError] = useState<Record<number, string>>({});
+  const [blossomUploading, setBlossomUploading] = useState<Record<number, boolean>>({});
+  const [blossomError, setBlossomError] = useState<Record<number, string>>({});
+  const [blossomSuccess, setBlossomSuccess] = useState<Record<number, boolean>>({});
 
   // Submit to Podcast Index state
   const [piSubmitting, setPiSubmitting] = useState(false);
@@ -944,6 +948,57 @@ export function Editor() {
                         )
                       )}
                     </div>
+                    {!isVideo && nostrState.isLoggedIn && (
+                      <div className="form-group">
+                        <label className="form-label">Upload to Blossom</label>
+                        <input
+                          type="file"
+                          accept="audio/*"
+                          style={{ display: 'block', width: '100%', fontSize: '0.9em' }}
+                          disabled={blossomUploading[index]}
+                          onChange={async e => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            setBlossomUploading(prev => ({ ...prev, [index]: true }));
+                            setBlossomError(prev => { const next = { ...prev }; delete next[index]; return next; });
+                            setBlossomSuccess(prev => ({ ...prev, [index]: false }));
+                            try {
+                              const result = await uploadMediaToBlossom(file);
+                              if (result.success && result.url) {
+                                dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { enclosureUrl: result.url } } });
+                                dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { enclosureType: file.type || getAudioMimeType(result.url) } } });
+                                dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { enclosureLength: String(file.size) } } });
+                                const duration = await getMediaDuration(result.url);
+                                if (duration !== null) {
+                                  dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { duration: secondsToHHMMSS(duration) } } });
+                                }
+                                setBlossomSuccess(prev => ({ ...prev, [index]: true }));
+                              } else {
+                                setBlossomError(prev => ({ ...prev, [index]: result.message }));
+                              }
+                            } finally {
+                              setBlossomUploading(prev => ({ ...prev, [index]: false }));
+                              e.target.value = '';
+                            }
+                          }}
+                        />
+                        {blossomUploading[index] && (
+                          <div style={{ color: 'var(--text-secondary)', fontSize: '0.85em', marginTop: '4px' }}>
+                            Uploading to Blossom servers...
+                          </div>
+                        )}
+                        {blossomError[index] && (
+                          <div style={{ color: 'var(--error)', fontSize: '0.85em', marginTop: '4px' }}>
+                            {blossomError[index]}
+                          </div>
+                        )}
+                        {blossomSuccess[index] && (
+                          <div style={{ color: 'var(--success, #2d7a2d)', fontSize: '0.85em', marginTop: '4px' }}>
+                            Uploaded — URL, file size, and duration filled in
+                          </div>
+                        )}
+                      </div>
+                    )}
                     <div className="form-group">
                       <label className="form-label">Duration (HH:MM:SS) <span className="required">*</span><InfoIcon text={FIELD_INFO.trackDuration} /></label>
                       <input

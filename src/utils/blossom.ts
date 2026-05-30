@@ -26,6 +26,84 @@ async function sha256Hash(content: string): Promise<string> {
 }
 
 /**
+ * Calculate SHA256 hash of binary data
+ */
+async function sha256HashBinary(data: ArrayBuffer): Promise<string> {
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Well-known public Blossom servers tried in parallel on media upload
+export const BLOSSOM_MEDIA_SERVERS = [
+  'https://blossom.primal.net',
+  'https://blossom.band',
+  'https://cdn.satellite.earth',
+  'https://nostr.download',
+];
+
+/**
+ * Upload a media file to all known Blossom servers in parallel.
+ * Returns the URL from the first server that accepts the upload.
+ */
+export async function uploadMediaToBlossom(
+  file: File
+): Promise<{ success: boolean; message: string; url?: string }> {
+  if (!hasSigner()) {
+    return { success: false, message: 'Nostr login required for Blossom upload' };
+  }
+
+  try {
+    const pubkey = await getPublicKeyWithTimeout();
+    const arrayBuffer = await file.arrayBuffer();
+    const hash = await sha256HashBinary(arrayBuffer);
+
+    const authEvent = await createBlossomAuthEvent(hash, pubkey, 'upload');
+    const signedAuthEvent = await signEventWithTimeout(authEvent);
+    const authHeader = 'Nostr ' + btoa(JSON.stringify(signedAuthEvent));
+
+    const uploadToServer = async (server: string): Promise<string> => {
+      const serverUrl = server.replace(/\/$/, '');
+      const response = await fetch(`${serverUrl}/upload`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': authHeader,
+          'Content-Type': file.type || 'application/octet-stream',
+        },
+        body: arrayBuffer,
+      });
+      if (!response.ok) {
+        throw new Error(`${serverUrl}: ${response.status}`);
+      }
+      const result = await response.json();
+      return result.url || `${serverUrl}/${hash}`;
+    };
+
+    const results = await Promise.allSettled(
+      BLOSSOM_MEDIA_SERVERS.map(server => uploadToServer(server))
+    );
+
+    const firstSuccess = results.find(r => r.status === 'fulfilled');
+    if (firstSuccess && firstSuccess.status === 'fulfilled') {
+      const failures = results.filter(r => r.status === 'rejected').length;
+      if (failures > 0) {
+        console.warn(`Blossom: uploaded to ${results.length - failures}/${results.length} servers`);
+      }
+      return { success: true, message: 'Uploaded successfully', url: firstSuccess.value };
+    }
+
+    const errors = results
+      .filter(r => r.status === 'rejected')
+      .map(r => (r as PromiseRejectedResult).reason?.message || 'Unknown error')
+      .join('; ');
+    return { success: false, message: `All servers rejected the upload: ${errors}` };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return { success: false, message };
+  }
+}
+
+/**
  * Create Blossom auth event (kind 24242)
  */
 async function createBlossomAuthEvent(

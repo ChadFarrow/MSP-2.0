@@ -316,21 +316,24 @@ export function Editor({ chromeless = false }: EditorProps = {}) {
                   label="Explicit Content"
                   labelSuffix={<InfoIcon text={FIELD_INFO.explicit} />}
                 />
-                <Toggle
-                  checked={album.op3}
-                  onChange={val => dispatch({ type: 'UPDATE_ALBUM', payload: { op3: val } })}
-                  label={<>
-                    <a
-                      href="https://op3.dev/"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ color: 'var(--accent-color)', textDecoration: 'underline' }}
-                      title="Learn more at op3.dev"
-                    >OP3</a> Analytics
-                  </>}
-                  labelSuffix={<InfoIcon text={FIELD_INFO.op3} />}
-                />
-                {album.op3 && album.podcastGuid && (
+                {/* OP3 analytics hidden in Artist mode — keep first-time setup minimal */}
+                {state.feedType !== 'artist' && (
+                  <Toggle
+                    checked={album.op3}
+                    onChange={val => dispatch({ type: 'UPDATE_ALBUM', payload: { op3: val } })}
+                    label={<>
+                      <a
+                        href="https://op3.dev/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: 'var(--accent-color)', textDecoration: 'underline' }}
+                        title="Learn more at op3.dev"
+                      >OP3</a> Analytics
+                    </>}
+                    labelSuffix={<InfoIcon text={FIELD_INFO.op3} />}
+                  />
+                )}
+                {state.feedType !== 'artist' && album.op3 && album.podcastGuid && (
                   <Op3StatsLink podcastGuid={album.podcastGuid} />
                 )}
               </div>
@@ -343,6 +346,9 @@ export function Editor({ chromeless = false }: EditorProps = {}) {
                   onChange={e => dispatch({ type: 'UPDATE_ALBUM', payload: { description: e.target.value } })}
                 />
               </div>
+              {/* Podcast GUID hidden in Artist mode — auto-generated + cross-linked
+                  behind the scenes; surfacing it during first-time setup is confusing */}
+              {state.feedType !== 'artist' && (
               <div className="form-group">
                 <label className="form-label">Podcast GUID <span className="required">*</span><InfoIcon text={FIELD_INFO.podcastGuid} /></label>
                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -368,6 +374,7 @@ export function Editor({ chromeless = false }: EditorProps = {}) {
                   </button>
                 </div>
               </div>
+              )}
               <div className="form-group">
                 <label className="form-label">Keywords<InfoIcon text={FIELD_INFO.keywords} /></label>
                 <input

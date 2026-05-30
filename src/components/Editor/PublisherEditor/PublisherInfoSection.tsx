@@ -9,9 +9,11 @@ import { Toggle } from '../../Toggle';
 interface PublisherInfoSectionProps {
   publisherFeed: PublisherFeed;
   dispatch: React.Dispatch<FeedAction>;
+  /** In Artist mode the GUID is auto-generated + cross-linked; hide the field. */
+  isArtistMode?: boolean;
 }
 
-export function PublisherInfoSection({ publisherFeed, dispatch }: PublisherInfoSectionProps) {
+export function PublisherInfoSection({ publisherFeed, dispatch, isArtistMode = false }: PublisherInfoSectionProps) {
   return (
     <Section title="Publisher Info" icon="&#127970;">
       <div className="form-grid">
@@ -66,6 +68,7 @@ export function PublisherInfoSection({ publisherFeed, dispatch }: PublisherInfoS
             onChange={e => dispatch({ type: 'UPDATE_PUBLISHER_FEED', payload: { description: e.target.value } })}
           />
         </div>
+        {!isArtistMode && (
         <div className="form-group">
           <label className="form-label">Publisher GUID <span className="required">*</span><InfoIcon text={FIELD_INFO.podcastGuid} /></label>
           <div style={{ display: 'flex', gap: '8px' }}>
@@ -91,6 +94,7 @@ export function PublisherInfoSection({ publisherFeed, dispatch }: PublisherInfoS
             </button>
           </div>
         </div>
+        )}
         <div className="form-group">
           <Toggle
             checked={publisherFeed.explicit}

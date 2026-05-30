@@ -40,7 +40,7 @@ export function PublisherEditor({ chromeless = false }: PublisherEditorProps = {
 
   return (
     <EditorChrome chromeless={chromeless}>
-      <PublisherInfoSection publisherFeed={publisherFeed} dispatch={dispatch} />
+      <PublisherInfoSection publisherFeed={publisherFeed} dispatch={dispatch} isArtistMode={isArtistMode} />
       <PublisherArtworkSection publisherFeed={publisherFeed} dispatch={dispatch} />
       {!isArtistMode && <CatalogFeedsSection publisherFeed={publisherFeed} dispatch={dispatch} />}
       {isEnabled('lightning') && <PublisherValueSection publisherFeed={publisherFeed} dispatch={dispatch} />}

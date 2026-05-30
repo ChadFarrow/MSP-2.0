@@ -6,15 +6,24 @@ interface BlossomFileUploadProps {
   accept: string;
   onUrl: (url: string) => void;
   label?: string;
+  /** When true, always renders even if not logged in (shows login prompt instead) */
+  required?: boolean;
 }
 
-export function BlossomFileUpload({ accept, onUrl, label = 'Upload to Blossom' }: BlossomFileUploadProps) {
+export function BlossomFileUpload({ accept, onUrl, label = 'Upload to Blossom', required = false }: BlossomFileUploadProps) {
   const { state: nostrState } = useNostr();
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  if (!nostrState.isLoggedIn) return null;
+  if (!nostrState.isLoggedIn) {
+    if (!required) return null;
+    return (
+      <div style={{ color: 'var(--text-secondary)', fontSize: '0.85em', marginTop: '6px' }}>
+        Sign in with Nostr to upload files to Blossom
+      </div>
+    );
+  }
 
   const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -38,7 +47,9 @@ export function BlossomFileUpload({ accept, onUrl, label = 'Upload to Blossom' }
 
   return (
     <div style={{ marginTop: '6px' }}>
-      <label className="form-label" style={{ fontSize: '0.85em', marginBottom: '4px' }}>{label}</label>
+      {!required && (
+        <label className="form-label" style={{ fontSize: '0.85em', marginBottom: '4px' }}>{label}</label>
+      )}
       <input
         type="file"
         accept={accept}

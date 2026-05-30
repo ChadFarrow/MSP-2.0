@@ -37,8 +37,6 @@ async function sha256HashBinary(data: ArrayBuffer): Promise<string> {
 // Well-known public Blossom servers tried in parallel on media upload
 export const BLOSSOM_MEDIA_SERVERS = [
   'https://blossom.primal.net',
-  'https://blossom.band',
-  'https://cdn.satellite.earth',
   'https://nostr.download',
 ];
 

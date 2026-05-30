@@ -9,6 +9,7 @@ import { getMediaDuration, secondsToHHMMSS, formatDuration, getAudioMimeType, is
 import { getVideoMimeType } from '../../utils/videoUtils';
 import { isNaddrString, resolveNostrVideo } from '../../utils/nostrVideoConverter';
 import { uploadMediaToBlossom } from '../../utils/blossom';
+import { BlossomFileUpload } from '../BlossomFileUpload';
 import { getFeedUrlError } from '../../utils/urlValidation';
 import { InfoIcon } from '../InfoIcon';
 import { Section } from '../Section';
@@ -482,6 +483,7 @@ export function Editor() {
                             payload: { index: personIndex, person: { ...person, img: e.target.value } }
                           })}
                         />
+                        <BlossomFileUpload accept="image/*" onUrl={url => dispatch({ type: 'UPDATE_PERSON', payload: { index: personIndex, person: { ...person, img: url } } })} />
                       </div>
                       <div className="form-group">
                         <label className="form-label">Nostr npub<InfoIcon text={FIELD_INFO.personNpub} /></label>
@@ -1132,6 +1134,7 @@ export function Editor() {
                           payload: { index, track: { trackArtUrl: e.target.value } }
                         })}
                       />
+                      <BlossomFileUpload accept="image/*" onUrl={url => dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { trackArtUrl: url } } })} />
                     </div>
                     <div className="form-group">
                       <label className="form-label">Lyrics URL<InfoIcon text={FIELD_INFO.transcriptUrl} /></label>
@@ -1145,6 +1148,7 @@ export function Editor() {
                           payload: { index, track: { transcriptUrl: e.target.value } }
                         })}
                       />
+                      <BlossomFileUpload accept=".srt,.vtt,text/plain" onUrl={url => dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { transcriptUrl: url } } })} label="Upload to Blossom (.srt / .vtt)" />
                     </div>
                     <div className="form-group">
                       <Toggle
@@ -1234,6 +1238,7 @@ export function Editor() {
                                       payload: { trackIndex: index, personIndex, person: { ...person, img: e.target.value } }
                                     })}
                                   />
+                                  <BlossomFileUpload accept="image/*" onUrl={url => dispatch({ type: 'UPDATE_TRACK_PERSON', payload: { trackIndex: index, personIndex, person: { ...person, img: url } } })} />
                                 </div>
                                 <div className="form-group">
                                   <label className="form-label">Nostr npub<InfoIcon text={FIELD_INFO.personNpub} /></label>

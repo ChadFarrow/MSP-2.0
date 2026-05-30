@@ -1,8 +1,6 @@
-import { useState } from 'react';
 import { FIELD_INFO } from '../data/fieldInfo';
 import { InfoIcon } from './InfoIcon';
-import { useNostr } from '../store/nostrStore';
-import { uploadMediaToBlossom } from '../utils/blossom';
+import { BlossomFileUpload } from './BlossomFileUpload';
 
 interface ArtworkFieldsProps {
   imageUrl: string | undefined;
@@ -25,31 +23,6 @@ export function ArtworkFields({
   titlePlaceholder = 'Image description',
   previewAlt = 'Image preview'
 }: ArtworkFieldsProps) {
-  const { state: nostrState } = useNostr();
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [uploadSuccess, setUploadSuccess] = useState(false);
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    setUploadError(null);
-    setUploadSuccess(false);
-    try {
-      const result = await uploadMediaToBlossom(file);
-      if (result.success && result.url) {
-        onUpdate('imageUrl', result.url);
-        setUploadSuccess(true);
-      } else {
-        setUploadError(result.message);
-      }
-    } finally {
-      setUploading(false);
-      e.target.value = '';
-    }
-  };
-
   return (
     <div className="form-grid">
       <div className="form-group">
@@ -61,33 +34,7 @@ export function ArtworkFields({
           value={imageUrl || ''}
           onChange={e => onUpdate('imageUrl', e.target.value)}
         />
-        {nostrState.isLoggedIn && (
-          <div style={{ marginTop: '6px' }}>
-            <label className="form-label" style={{ fontSize: '0.85em', marginBottom: '4px' }}>Upload to Blossom</label>
-            <input
-              type="file"
-              accept="image/*"
-              disabled={uploading}
-              style={{ display: 'block', width: '100%', fontSize: '0.9em' }}
-              onChange={handleFileChange}
-            />
-            {uploading && (
-              <div style={{ color: 'var(--text-secondary)', fontSize: '0.85em', marginTop: '4px' }}>
-                Uploading to Blossom servers...
-              </div>
-            )}
-            {uploadError && (
-              <div style={{ color: 'var(--error)', fontSize: '0.85em', marginTop: '4px' }}>
-                {uploadError}
-              </div>
-            )}
-            {uploadSuccess && (
-              <div style={{ color: 'var(--success, #2d7a2d)', fontSize: '0.85em', marginTop: '4px' }}>
-                Uploaded — URL filled in
-              </div>
-            )}
-          </div>
-        )}
+        <BlossomFileUpload accept="image/*" onUrl={url => onUpdate('imageUrl', url)} />
       </div>
       <div className="form-group">
         <label className="form-label">Image Title<InfoIcon text={FIELD_INFO.imageTitle} /></label>

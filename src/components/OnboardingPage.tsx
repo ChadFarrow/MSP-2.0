@@ -1,22 +1,44 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { FeatureQuestionnaire } from './FeatureQuestionnaire';
 
 interface OnboardingPageProps {
   onClose: () => void;
   startAtGate?: boolean;
 }
 
-const TOTAL_STEPS = 3;
+const TOTAL_STEPS = 4;
 
 export function OnboardingPage({ onClose, startAtGate = false }: OnboardingPageProps) {
-  // step 0 = "have you used this before?" gate; steps 1-3 = guided tour
+  // step 0 = "have you used this before?" gate; steps 1-3 = guided tour; step 4 = feature questionnaire
   const [step, setStep] = useState(startAtGate ? 0 : 1);
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  // Close on Escape
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  // Move focus into the dialog on mount so keyboard users land inside
+  useEffect(() => {
+    closeRef.current?.focus();
+  }, []);
 
   return (
-    <div className="onboarding-page">
+    <div
+      className="onboarding-page"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="onboarding-page-title"
+    >
       <header className="onboarding-page-header">
-        <h1 className="onboarding-page-title">Getting Started with MSP 2.0</h1>
+        <h1 id="onboarding-page-title" className="onboarding-page-title">Getting Started with MSP 2.0</h1>
         <button
           type="button"
+          ref={closeRef}
           className="onboarding-page-close"
           onClick={onClose}
           aria-label="Close getting started"
@@ -161,28 +183,35 @@ export function OnboardingPage({ onClose, startAtGate = false }: OnboardingPageP
             </p>
           </div>
         )}
+
+        {step === 4 && (
+          <div className="onboarding-step">
+            <h2 className="onboarding-heading">Customize Your Workspace</h2>
+            <p className="onboarding-text">
+              MSP 2.0 has some advanced features you may not need yet. Turn off anything you'd
+              rather not see — you can switch these back on anytime from the
+              <strong> ☰ menu → Feature Preferences</strong>.
+            </p>
+            <FeatureQuestionnaire />
+          </div>
+        )}
       </main>
 
       {step > 0 && (
       <footer className="onboarding-page-footer">
         <span className="onboarding-step-indicator">Step {step} of {TOTAL_STEPS}</span>
         <div style={{ flex: 1 }} />
+        {/* Back sits left of the primary button, which stays anchored
+            far-right on every step. */}
         {step > 1 && (
           <button className="btn btn-secondary" onClick={() => setStep(s => s - 1)}>
             ← Back
           </button>
         )}
         {step < TOTAL_STEPS ? (
-          <>
-            <button className="btn btn-primary" onClick={() => setStep(s => s + 1)}>
-              Next →
-            </button>
-            {step === 1 && (
-              <button className="btn btn-secondary" onClick={onClose}>
-                Skip
-              </button>
-            )}
-          </>
+          <button className="btn btn-primary" onClick={() => setStep(s => s + 1)}>
+            Next →
+          </button>
         ) : (
           <button className="btn btn-primary" onClick={onClose}>
             Get Started

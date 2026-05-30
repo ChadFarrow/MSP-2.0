@@ -5,9 +5,10 @@ import type { FeedType } from './store/feedStore.tsx';
 import { NostrProvider, useNostr } from './store/nostrStore.tsx';
 import { ThemeProvider, useTheme } from './store/themeStore.tsx';
 import { ExperimentalProvider, useExperimental } from './store/experimentalStore.tsx';
+import { FeaturePrefsProvider } from './store/featurePrefsStore.tsx';
 import { parseRssFeed, isPublisherFeed, isVideoFeed, parsePublisherRssFeed } from './utils/xmlParser';
 import { createEmptyAlbum, createEmptyPublisherFeed, createEmptyVideoAlbum } from './types/feed';
-import { pendingHostedStorage } from './utils/storage';
+import { pendingHostedStorage, onboardingStorage } from './utils/storage';
 import { generateTestAlbum } from './utils/testData';
 import { NostrLoginButton } from './components/NostrLoginButton';
 import { ImportModal } from './components/modals/ImportModal';
@@ -18,6 +19,7 @@ import { InfoModal } from './components/modals/InfoModal';
 import { NostrConnectModal } from './components/modals/NostrConnectModal';
 import { NewFeedChoiceModal } from './components/modals/NewFeedChoiceModal';
 import { OnboardingPage } from './components/OnboardingPage';
+import { FeaturePreferencesModal } from './components/modals/FeaturePreferencesModal';
 import { Editor } from './components/Editor/Editor';
 import { PublisherEditor } from './components/Editor/PublisherEditor';
 import { AdminPage } from './components/admin/AdminPage';
@@ -35,26 +37,20 @@ function AppContent() {
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showPodpingModal, setShowPodpingModal] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
+  const [showFeaturePrefsModal, setShowFeaturePrefsModal] = useState(false);
   const [showNostrConnectModal, setShowNostrConnectModal] = useState(false);
   const [showNewFeedChoiceModal, setShowNewFeedChoiceModal] = useState(false);
   const [pendingNewFeedType, setPendingNewFeedType] = useState<FeedType>('album');
   const [isTemplateMode, setIsTemplateMode] = useState(false);
-  const [showOnboarding, setShowOnboarding] = useState(false);
-  const [onboardingStartAtGate, setOnboardingStartAtGate] = useState(false);
+  // Show onboarding (starting at the "have you used this before?" gate) on first visit
+  const [showOnboarding, setShowOnboarding] = useState(() => !onboardingStorage.isComplete());
+  const [onboardingStartAtGate, setOnboardingStartAtGate] = useState(() => !onboardingStorage.isComplete());
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { state: nostrState, logout: nostrLogout } = useNostr();
 
-  // Show onboarding on first visit
-  useEffect(() => {
-    if (!localStorage.getItem('msp-onboarding-complete')) {
-      setOnboardingStartAtGate(true);
-      setShowOnboarding(true);
-    }
-  }, []);
-
   const handleOnboardingClose = () => {
-    localStorage.setItem('msp-onboarding-complete', 'true');
+    onboardingStorage.markComplete();
     setShowOnboarding(false);
   };
 
@@ -215,6 +211,12 @@ function AppContent() {
                     onClick={() => { setOnboardingStartAtGate(false); setShowOnboarding(true); setShowDropdown(false); }}
                   >
                     🚀 Getting Started
+                  </button>
+                  <button
+                    className="dropdown-item"
+                    onClick={() => { setShowFeaturePrefsModal(true); setShowDropdown(false); }}
+                  >
+                    ⚙️ Feature Preferences
                   </button>
                   <button
                     className="dropdown-item"
@@ -399,6 +401,10 @@ function AppContent() {
         <InfoModal onClose={() => setShowInfoModal(false)} />
       )}
 
+      {showFeaturePrefsModal && (
+        <FeaturePreferencesModal onClose={() => setShowFeaturePrefsModal(false)} />
+      )}
+
       {showNostrConnectModal && (
         <NostrConnectModal onClose={() => setShowNostrConnectModal(false)} />
       )}
@@ -410,7 +416,6 @@ function AppContent() {
         onUseTemplate={handleUseTemplate}
         onCancel={() => setShowNewFeedChoiceModal(false)}
       />
-
     </>
   );
 }
@@ -423,9 +428,11 @@ function App() {
     return (
       <ThemeProvider>
         <ExperimentalProvider>
-          <NostrProvider>
-            <AdminPage />
-          </NostrProvider>
+          <FeaturePrefsProvider>
+            <NostrProvider>
+              <AdminPage />
+            </NostrProvider>
+          </FeaturePrefsProvider>
         </ExperimentalProvider>
       </ThemeProvider>
     );
@@ -434,11 +441,13 @@ function App() {
   return (
     <ThemeProvider>
       <ExperimentalProvider>
-        <NostrProvider>
-          <FeedProvider>
-            <AppContent />
-          </FeedProvider>
-        </NostrProvider>
+        <FeaturePrefsProvider>
+          <NostrProvider>
+            <FeedProvider>
+              <AppContent />
+            </FeedProvider>
+          </NostrProvider>
+        </FeaturePrefsProvider>
       </ExperimentalProvider>
     </ThemeProvider>
   );

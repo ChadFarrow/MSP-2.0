@@ -1066,7 +1066,7 @@ body {
   height: 28px;
   border-radius: 50%;
   background: var(--accent-primary);
-  color: #fff;
+  color: white;
   font-weight: 700;
   font-size: 0.85rem;
   display: flex;
@@ -1100,6 +1100,115 @@ body {
 .onboarding-step-indicator {
   font-size: 0.8rem;
   color: var(--text-secondary);
+}
+
+/* Tablet: collapse the 3-column feed-type grid to 2 columns */
+@media (max-width: 768px) {
+  .onboarding-mode-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Phone: single column + tighter horizontal padding */
+@media (max-width: 480px) {
+  .onboarding-mode-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .onboarding-page-header {
+    padding: 16px 16px;
+  }
+
+  .onboarding-page-content {
+    padding: 24px 16px;
+  }
+
+  .onboarding-page-footer {
+    padding: 14px 16px;
+    flex-wrap: wrap;
+  }
+}
+
+/* Feature questionnaire (onboarding step 4 + Feature Preferences modal) */
+.feature-questionnaire {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.feature-questionnaire-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.feature-questionnaire-info {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.feature-questionnaire-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+  line-height: 1.2;
+}
+
+.feature-questionnaire-question {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+
+.feature-questionnaire-detail {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-top: 2px;
+}
+
+.feature-questionnaire-toggle {
+  display: inline-flex;
+  flex-shrink: 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm, 6px);
+  overflow: hidden;
+}
+
+.feature-toggle-btn {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: none;
+  padding: 7px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.feature-toggle-btn + .feature-toggle-btn {
+  border-left: 1px solid var(--border-color);
+}
+
+.feature-toggle-btn.active {
+  background: var(--accent-primary);
+  color: white;
+}
+
+@media (max-width: 480px) {
+  .feature-questionnaire-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .feature-questionnaire-toggle {
+    align-self: flex-end;
+  }
 }
 
 /* Info Modal */

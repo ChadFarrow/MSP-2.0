@@ -1332,7 +1332,7 @@ export function Editor({ chromeless = false }: EditorProps = {}) {
                   )}
 
                   {/* Track-specific Value Block */}
-                  {track.overrideValue && !collapsedTracks[track.id] && (() => {
+                  {isEnabled('lightning') && track.overrideValue && !collapsedTracks[track.id] && (() => {
                     const trackRecipients = track.value?.recipients || [];
                     const trackUserRecipients = trackRecipients.filter(r => !isCommunitySupport(r));
                     const trackPlatformRecipients = trackRecipients.filter(r => isCommunitySupport(r));

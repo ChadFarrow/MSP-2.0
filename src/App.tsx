@@ -182,7 +182,13 @@ function AppContent() {
   };
 
   if (showOnboarding) {
-    return <OnboardingPage startAtGate={onboardingStartAtGate} onClose={handleOnboardingClose} />;
+    return (
+      <OnboardingPage
+        startAtGate={onboardingStartAtGate}
+        onClose={handleOnboardingClose}
+        onChooseFirstTime={() => handleSwitchFeedType('artist')}
+      />
+    );
   }
 
   return (
@@ -203,7 +209,7 @@ function AppContent() {
               <option value="album">Album</option>
               <option value="video">Video</option>
               <option value="publisher">Publisher</option>
-              <option value="artist">Artist (Album + Publisher)</option>
+              <option value="artist">New Artist</option>
             </select>
           </div>
           <div className="header-actions">
@@ -329,7 +335,7 @@ function AppContent() {
           <button
             className="bottom-toolbar-btn"
             onClick={() => handleNew(state.feedType)}
-            title={`New ${state.feedType === 'publisher' ? 'Publisher' : state.feedType === 'video' ? 'Video Feed' : state.feedType === 'artist' ? 'Artist (Album + Publisher)' : 'Album'}`}
+            title={`New ${state.feedType === 'publisher' ? 'Publisher' : state.feedType === 'video' ? 'Video Feed' : state.feedType === 'artist' ? 'Artist' : 'Album'}`}
           >
             <span className="bottom-toolbar-icon">📂</span>
             <span className="bottom-toolbar-label">New</span>

@@ -4,11 +4,14 @@ import { FeatureQuestionnaire } from './FeatureQuestionnaire';
 interface OnboardingPageProps {
   onClose: () => void;
   startAtGate?: boolean;
+  /** Fired when a first-time user picks the tour, so the app can drop them
+      into Artist (Album + Publisher) setup behind the tour overlay. */
+  onChooseFirstTime?: () => void;
 }
 
 const TOTAL_STEPS = 4;
 
-export function OnboardingPage({ onClose, startAtGate = false }: OnboardingPageProps) {
+export function OnboardingPage({ onClose, startAtGate = false, onChooseFirstTime }: OnboardingPageProps) {
   // step 0 = "have you used this before?" gate; steps 1-3 = guided tour; step 4 = feature questionnaire
   const [step, setStep] = useState(startAtGate ? 0 : 1);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -67,7 +70,7 @@ export function OnboardingPage({ onClose, startAtGate = false }: OnboardingPageP
               <button
                 type="button"
                 className="btn btn-secondary onboarding-gate-btn"
-                onClick={() => setStep(1)}
+                onClick={() => { onChooseFirstTime?.(); setStep(1); }}
               >
                 No, give me the tour
               </button>
@@ -139,7 +142,7 @@ export function OnboardingPage({ onClose, startAtGate = false }: OnboardingPageP
               </div>
               <div className="onboarding-mode-card">
                 <div className="onboarding-mode-icon">🎤</div>
-                <div className="onboarding-mode-name">Artist (Album + Publisher)</div>
+                <div className="onboarding-mode-name">New Artist</div>
                 <div className="onboarding-mode-desc">
                   Set up a release and its publisher/label catalog together, with cross-linked
                   GUIDs — the fastest path for a first-time artist.

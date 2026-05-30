@@ -886,6 +886,331 @@ body {
   border-top: 1px solid var(--border-color);
 }
 
+/* Onboarding Page */
+.onboarding-page {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.onboarding-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.onboarding-page-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.onboarding-page-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1.8rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm, 4px);
+}
+
+.onboarding-page-close:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.onboarding-page-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px 24px;
+  display: flex;
+  justify-content: center;
+}
+
+.onboarding-page-content > .onboarding-step {
+  width: 100%;
+  max-width: 640px;
+}
+
+.onboarding-page-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.onboarding-step {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.onboarding-gate {
+  text-align: center;
+  align-items: center;
+}
+
+.onboarding-gate .onboarding-welcome-icon {
+  font-size: 3rem;
+}
+
+.onboarding-gate-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+  width: 100%;
+  max-width: 340px;
+}
+
+.onboarding-gate-btn {
+  padding: 12px 18px;
+  font-size: 0.95rem;
+}
+
+.onboarding-welcome-icon {
+  font-size: 2.5rem;
+  text-align: center;
+}
+
+.onboarding-heading {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.onboarding-text {
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.onboarding-highlights {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.onboarding-highlight-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.onboarding-highlight-item span:first-child {
+  flex-shrink: 0;
+  font-size: 1rem;
+}
+
+.onboarding-mode-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.onboarding-mode-card {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.onboarding-mode-icon {
+  font-size: 1.6rem;
+}
+
+.onboarding-mode-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+
+.onboarding-mode-desc {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.onboarding-workflow {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.onboarding-workflow-step {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.onboarding-workflow-num {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  color: white;
+  font-weight: 700;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.onboarding-workflow-label {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  margin-bottom: 3px;
+}
+
+.onboarding-workflow-desc {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.onboarding-tip {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  border-left: 3px solid var(--border-color);
+  padding-left: 10px;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.onboarding-step-indicator {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+/* Tablet: collapse the 3-column feed-type grid to 2 columns */
+@media (max-width: 768px) {
+  .onboarding-mode-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Phone: single column + tighter horizontal padding */
+@media (max-width: 480px) {
+  .onboarding-mode-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .onboarding-page-header {
+    padding: 16px 16px;
+  }
+
+  .onboarding-page-content {
+    padding: 24px 16px;
+  }
+
+  .onboarding-page-footer {
+    padding: 14px 16px;
+    flex-wrap: wrap;
+  }
+}
+
+/* Feature questionnaire (onboarding step 4 + Feature Preferences modal) */
+.feature-questionnaire {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.feature-questionnaire-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.feature-questionnaire-info {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.feature-questionnaire-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+  line-height: 1.2;
+}
+
+.feature-questionnaire-question {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+
+.feature-questionnaire-detail {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-top: 2px;
+}
+
+.feature-questionnaire-toggle {
+  display: inline-flex;
+  flex-shrink: 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm, 6px);
+  overflow: hidden;
+}
+
+.feature-toggle-btn {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: none;
+  padding: 7px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.feature-toggle-btn + .feature-toggle-btn {
+  border-left: 1px solid var(--border-color);
+}
+
+.feature-toggle-btn.active {
+  background: var(--accent-primary);
+  color: white;
+}
+
+@media (max-width: 480px) {
+  .feature-questionnaire-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .feature-questionnaire-toggle {
+    align-self: flex-end;
+  }
+}
+
 /* Info Modal */
 .info-modal {
   max-width: 700px;

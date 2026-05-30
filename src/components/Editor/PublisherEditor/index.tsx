@@ -1,5 +1,6 @@
 import { useFeed } from '../../../store/feedStore';
 import { EditorChrome } from '../EditorChrome';
+import { useFeaturePrefs } from '../../../store/featurePrefsStore';
 import { PublisherInfoSection } from './PublisherInfoSection';
 import { PublisherArtworkSection } from './PublisherArtworkSection';
 import { CatalogFeedsSection } from './CatalogFeedsSection';
@@ -16,6 +17,7 @@ interface PublisherEditorProps {
 
 export function PublisherEditor({ chromeless = false }: PublisherEditorProps = {}) {
   const { state, dispatch } = useFeed();
+  const { isEnabled } = useFeaturePrefs();
   const { publisherFeed } = state;
 
   if (!publisherFeed) {
@@ -41,7 +43,7 @@ export function PublisherEditor({ chromeless = false }: PublisherEditorProps = {
       <PublisherInfoSection publisherFeed={publisherFeed} dispatch={dispatch} />
       <PublisherArtworkSection publisherFeed={publisherFeed} dispatch={dispatch} />
       {!isArtistMode && <CatalogFeedsSection publisherFeed={publisherFeed} dispatch={dispatch} />}
-      <PublisherValueSection publisherFeed={publisherFeed} dispatch={dispatch} />
+      {isEnabled('lightning') && <PublisherValueSection publisherFeed={publisherFeed} dispatch={dispatch} />}
       <PublisherFundingSection publisherFeed={publisherFeed} dispatch={dispatch} />
       {!isArtistMode && <PublisherFeedReminderSection publisherFeed={publisherFeed} />}
       {!isArtistMode && <DownloadCatalogSection publisherFeed={publisherFeed} />}

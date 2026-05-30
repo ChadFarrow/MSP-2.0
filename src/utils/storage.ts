@@ -10,7 +10,9 @@ export const STORAGE_KEYS = {
   FEED_TYPE: 'msp2-feed-type',
   NOSTR_USER: 'msp2-nostr-user',
   HOSTED_PREFIX: 'msp2-hosted-',
-  PENDING_HOSTED: 'msp2-pending-hosted'
+  PENDING_HOSTED: 'msp2-pending-hosted',
+  ONBOARDING_COMPLETE: 'msp2-onboarding-complete',
+  FEATURE_PREFS: 'msp2-feature-prefs'
 } as const;
 
 // Migration helper: convert old person format to new format
@@ -139,6 +141,19 @@ export const feedTypeStorage = {
     return stored && ['album', 'video', 'publisher', 'artist'].includes(stored) ? stored : 'album';
   },
   save: (feedType: FeedType): boolean => setItem(STORAGE_KEYS.FEED_TYPE, feedType)
+};
+
+// Onboarding storage operations
+export const onboardingStorage = {
+  isComplete: (): boolean => getItem<boolean>(STORAGE_KEYS.ONBOARDING_COMPLETE) === true,
+  markComplete: (): boolean => setItem(STORAGE_KEYS.ONBOARDING_COMPLETE, true)
+};
+
+// Feature-visibility preferences (which advanced features a user has hidden).
+// Keyed by FeatureId (see featurePrefsStore.tsx); a missing key means "visible".
+export const featurePrefsStorage = {
+  load: (): Record<string, boolean> => getItem<Record<string, boolean>>(STORAGE_KEYS.FEATURE_PREFS) ?? {},
+  save: (prefs: Record<string, boolean>): boolean => setItem(STORAGE_KEYS.FEATURE_PREFS, prefs)
 };
 
 // Nostr user storage operations

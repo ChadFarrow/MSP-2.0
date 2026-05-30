@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useFeed } from '../../store/feedStore';
 import { useNostr } from '../../store/nostrStore';
+import { useFeaturePrefs } from '../../store/featurePrefsStore';
 import { LANGUAGES, PERSON_GROUPS, PERSON_ROLES, createEmptyPersonRole, createEmptyTrack, isVideoMedium, isCommunitySupport, createSupportRecipients, hasUserRecipients } from '../../types/feed';
 import type { PersonGroup } from '../../types/feed';
 import { FIELD_INFO } from '../../data/fieldInfo';
@@ -117,6 +118,7 @@ interface EditorProps {
 export function Editor({ chromeless = false }: EditorProps = {}) {
   const { state, dispatch } = useFeed();
   const { state: nostrState } = useNostr();
+  const { isEnabled } = useFeaturePrefs();
   // Get the active album based on feedType (album or videoFeed)
   const album = state.feedType === 'video' && state.videoFeed ? state.videoFeed : state.album;
 
@@ -653,6 +655,7 @@ export function Editor({ chromeless = false }: EditorProps = {}) {
           </Section>
 
           {/* Value Block Section */}
+          {isEnabled('lightning') && (
           <Section title="Value Block (Lightning)" icon="&#9889;">
             <RecipientsList
               recipients={album.value.recipients}
@@ -664,6 +667,7 @@ export function Editor({ chromeless = false }: EditorProps = {}) {
               onAdd={recipient => dispatch({ type: 'ADD_RECIPIENT', payload: recipient })}
             />
           </Section>
+          )}
 
           {/* Funding Section */}
           <Section title="Funding" icon="&#128176;">
@@ -1150,6 +1154,7 @@ export function Editor({ chromeless = false }: EditorProps = {}) {
                         labelSuffix={<InfoIcon text={FIELD_INFO.overridePersons} />}
                       />
                     </div>
+                    {isEnabled('lightning') && (
                     <div className="form-group">
                       <Toggle
                         checked={track.overrideValue}
@@ -1161,6 +1166,7 @@ export function Editor({ chromeless = false }: EditorProps = {}) {
                         labelSuffix={<InfoIcon text={FIELD_INFO.overrideValue} />}
                       />
                     </div>
+                    )}
                   </div>
                   )}
 

@@ -25,11 +25,16 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
   const [bunkerUri, setBunkerUri] = useState('');
   const [loginError, setLoginError] = useState('');
 
-  // Step 2 — names
+  // Step 2 — album info
   const [artistName, setArtistName] = useState('');
   const [albumName, setAlbumName] = useState('');
+  const [description, setDescription] = useState('');
+  const [language, setLanguage] = useState('en');
+  const [website, setWebsite] = useState('');
 
-  // Step 3 — upload
+  // Step 3 — upload + track info
+  const [trackTitle, setTrackTitle] = useState('');
+  const [trackDuration, setTrackDuration] = useState('');
   const [audioUrl, setAudioUrl] = useState('');
   const [audioMimeType, setAudioMimeType] = useState('audio/mpeg');
   const [artworkUrl, setArtworkUrl] = useState('');
@@ -94,6 +99,11 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
       if (result.success && result.url) {
         setAudioUrl(result.url);
         setAudioMimeType(file.type || 'audio/mpeg');
+        // Pre-fill track title from filename if not already set
+        if (!trackTitle) {
+          const name = file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ');
+          setTrackTitle(name);
+        }
       } else {
         setAudioUploadError(result.message);
       }
@@ -139,13 +149,17 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
       podcastGuid: albumGuid,
       title: albumName,
       author: artistName,
-      image: artworkUrl,
+      description,
+      language: language || 'en',
+      link: website,
+      imageUrl: artworkUrl,
       publisher: { feedGuid: publisherGuid, feedUrl: '' },
       tracks: [{
         ...createEmptyTrack(1),
-        title: albumName,
+        title: trackTitle || albumName,
         enclosureUrl: audioUrl,
         enclosureType: audioMimeType,
+        duration: trackDuration,
         guid: crypto.randomUUID(),
       }],
     };
@@ -155,6 +169,9 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
       podcastGuid: publisherGuid,
       title: artistName,
       author: artistName,
+      description,
+      language: language || 'en',
+      link: website,
       remoteItems: [{ ...createEmptyRemoteItem(), feedGuid: albumGuid }],
     };
 
@@ -167,14 +184,14 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
         album,
         publisherFeed,
         nostrState.user.npub,
-        (step) => setPublishSteps(prev => {
-          const idx = prev.findIndex(s => s.id === step.id);
+        (s) => setPublishSteps(prev => {
+          const idx = prev.findIndex(p => p.id === s.id);
           if (idx >= 0) {
             const next = [...prev];
-            next[idx] = step;
+            next[idx] = s;
             return next;
           }
-          return [...prev, step];
+          return [...prev, s];
         })
       );
 
@@ -272,15 +289,18 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
     </div>
   );
 
-  // ── Step 2 — Names ─────────────────────────────────────────────────────────
+  // ── Step 2 — Album Info ────────────────────────────────────────────────────
 
   const step2 = (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <p style={{ color: 'var(--text-secondary)', margin: 0 }}>
-        What are you releasing?
+        Tell us about your release. Fields marked <span style={{ color: 'var(--error, #dc2626)' }}>*</span> are required.
       </p>
+
       <div className="form-group">
-        <label className="form-label">Artist / Band Name</label>
+        <label className="form-label">
+          Artist / Band Name <span style={{ color: 'var(--error, #dc2626)' }}>*</span>
+        </label>
         <input
           className="form-input"
           placeholder="e.g. The Midnight"
@@ -289,20 +309,62 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
           autoFocus
         />
       </div>
+
       <div className="form-group">
-        <label className="form-label">Album Name</label>
+        <label className="form-label">
+          Album Name <span style={{ color: 'var(--error, #dc2626)' }}>*</span>
+        </label>
         <input
           className="form-input"
           placeholder="e.g. Monsters"
           value={albumName}
           onChange={e => setAlbumName(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && artistName.trim() && albumName.trim()) setStep(3); }}
         />
+      </div>
+
+      <div className="form-group">
+        <label className="form-label">
+          Description <span style={{ color: 'var(--error, #dc2626)' }}>*</span>
+        </label>
+        <textarea
+          className="form-input"
+          placeholder="What is this album about? A few sentences is plenty."
+          value={description}
+          onChange={e => setDescription(e.target.value)}
+          rows={3}
+          style={{ resize: 'vertical' }}
+        />
+      </div>
+
+      <div style={{ display: 'flex', gap: 12 }}>
+        <div className="form-group" style={{ flex: '0 0 100px' }}>
+          <label className="form-label">
+            Language <span style={{ color: 'var(--error, #dc2626)' }}>*</span>
+          </label>
+          <input
+            className="form-input"
+            placeholder="en"
+            value={language}
+            onChange={e => setLanguage(e.target.value)}
+            maxLength={10}
+          />
+        </div>
+        <div className="form-group" style={{ flex: 1 }}>
+          <label className="form-label">Website <span style={{ color: 'var(--text-secondary)', fontWeight: 'normal' }}>(optional)</span></label>
+          <input
+            className="form-input"
+            placeholder="https://yoursite.com"
+            value={website}
+            onChange={e => setWebsite(e.target.value)}
+          />
+        </div>
       </div>
     </div>
   );
 
-  // ── Step 3 — Upload ────────────────────────────────────────────────────────
+  const step2Valid = artistName.trim() && albumName.trim() && description.trim() && language.trim();
+
+  // ── Step 3 — Upload + Track Info ───────────────────────────────────────────
 
   const step3 = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -312,7 +374,9 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
 
       {/* Audio upload */}
       <div>
-        <label className="form-label">Audio track</label>
+        <label className="form-label">
+          Audio file <span style={{ color: 'var(--error, #dc2626)' }}>*</span>
+        </label>
         <input
           type="file"
           accept="audio/*"
@@ -328,25 +392,47 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
         {audioUploadError && (
           <div style={{ marginTop: 4, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={{ color: 'var(--error, #dc2626)', fontSize: '0.85em' }}>{audioUploadError}</span>
-            <button
-              type="button"
-              className="btn btn-secondary btn-small"
-              onClick={handleRetryAudio}
-            >
+            <button type="button" className="btn btn-secondary btn-small" onClick={handleRetryAudio}>
               Retry
             </button>
           </div>
         )}
         {audioUrl && !uploadingAudio && (
-          <div style={{ color: 'var(--success, #16a34a)', fontSize: '0.85em', marginTop: 4 }}>
-            ✓ Uploaded
-          </div>
+          <div style={{ color: 'var(--success, #16a34a)', fontSize: '0.85em', marginTop: 4 }}>✓ Uploaded</div>
         )}
       </div>
 
+      {/* Track metadata (shown once audio is uploaded) */}
+      {(audioUrl || uploadingAudio) && (
+        <div style={{ display: 'flex', gap: 12 }}>
+          <div className="form-group" style={{ flex: 1 }}>
+            <label className="form-label">
+              Track Title <span style={{ color: 'var(--error, #dc2626)' }}>*</span>
+            </label>
+            <input
+              className="form-input"
+              placeholder="e.g. Track 1"
+              value={trackTitle}
+              onChange={e => setTrackTitle(e.target.value)}
+            />
+          </div>
+          <div className="form-group" style={{ flex: '0 0 110px' }}>
+            <label className="form-label">Duration <span style={{ color: 'var(--text-secondary)', fontWeight: 'normal' }}>(optional)</span></label>
+            <input
+              className="form-input"
+              placeholder="0:00:00"
+              value={trackDuration}
+              onChange={e => setTrackDuration(e.target.value)}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Artwork upload */}
       <div>
-        <label className="form-label">Album artwork <span style={{ color: 'var(--text-secondary)', fontWeight: 'normal' }}>(optional)</span></label>
+        <label className="form-label">
+          Album artwork <span style={{ color: 'var(--text-secondary)', fontWeight: 'normal' }}>(optional — required for most podcast apps)</span>
+        </label>
         <input
           type="file"
           accept="image/*"
@@ -363,13 +449,16 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
           <div style={{ color: 'var(--error, #dc2626)', fontSize: '0.85em', marginTop: 4 }}>{artworkUploadError}</div>
         )}
         {artworkUrl && !uploadingArtwork && (
-          <div style={{ color: 'var(--success, #16a34a)', fontSize: '0.85em', marginTop: 4 }}>
-            ✓ Uploaded
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+            <img src={artworkUrl} alt="Artwork preview" style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 4 }} />
+            <span style={{ color: 'var(--success, #16a34a)', fontSize: '0.85em' }}>✓ Uploaded</span>
           </div>
         )}
       </div>
     </div>
   );
+
+  const step3Valid = audioUrl && !uploadingAudio && !uploadingArtwork && trackTitle.trim();
 
   // ── Step 4 — Publish ───────────────────────────────────────────────────────
 
@@ -395,17 +484,20 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
             background: 'var(--bg-secondary, #f5f5f5)',
             fontSize: '0.9em',
             display: 'flex',
-            flexDirection: 'column',
-            gap: 4,
+            gap: 12,
+            alignItems: 'flex-start',
           }}>
-            <strong>{artistName}</strong>
-            <span style={{ color: 'var(--text-secondary)' }}>{albumName}</span>
             {artworkUrl && (
-              <img src={artworkUrl} alt="Album art" style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 4, marginTop: 4 }} />
+              <img src={artworkUrl} alt="Album art" style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />
             )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <strong>{albumName}</strong>
+              <span style={{ color: 'var(--text-secondary)' }}>by {artistName}</span>
+              <span style={{ color: 'var(--text-secondary)', fontSize: '0.9em' }}>{trackTitle} · {language.toUpperCase()}</span>
+            </div>
           </div>
           <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '0.9em' }}>
-            MSP will host your album feed and create a publisher catalog — both linked together and submitted to Podcast Index automatically.
+            MSP will host your album feed and a publisher catalog — both cross-linked and submitted to Podcast Index automatically.
           </p>
           {publishSteps.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -474,7 +566,7 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
         <button
           className="btn btn-primary"
           onClick={() => setStep(3)}
-          disabled={!artistName.trim() || !albumName.trim()}
+          disabled={!step2Valid}
         >
           Next
         </button>
@@ -483,7 +575,7 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
         <button
           className="btn btn-primary"
           onClick={() => setStep(4)}
-          disabled={!audioUrl || uploadingAudio || uploadingArtwork}
+          disabled={!step3Valid}
         >
           Next: Publish
         </button>

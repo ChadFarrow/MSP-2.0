@@ -48,10 +48,13 @@ export function PublishSection({ publisherFeed }: PublishSectionProps) {
   // Current status
   const [status, setStatus] = useState(() => getPublishStatus(publisherFeed.podcastGuid));
 
-  // Refresh status when podcastGuid changes
-  useEffect(() => {
+  // Refresh status when podcastGuid changes — recompute during render rather
+  // than via an effect to avoid a cascading render.
+  const [statusGuid, setStatusGuid] = useState(publisherFeed.podcastGuid);
+  if (statusGuid !== publisherFeed.podcastGuid) {
+    setStatusGuid(publisherFeed.podcastGuid);
     setStatus(getPublishStatus(publisherFeed.podcastGuid));
-  }, [publisherFeed.podcastGuid]);
+  }
 
   const isPublished = status.isPublished;
   const feedUrl = status.feedUrl;
@@ -65,6 +68,7 @@ export function PublishSection({ publisherFeed }: PublishSectionProps) {
   useEffect(() => {
     if (!progress) return;
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- accumulates step UI state from the async publish progress stream; functional update over prior state, not derivable during render
     setStepStates(prev => {
       const newState = { ...prev };
 

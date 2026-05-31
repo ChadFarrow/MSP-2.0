@@ -25,10 +25,12 @@ export function InfoIcon({ text }: InfoIconProps) {
     return () => mq.removeEventListener('change', update);
   }, []);
 
-  // Auto-detect tooltip side when shown
+  // Auto-detect tooltip side when shown. Requires a live DOM measurement
+  // (getBoundingClientRect) so it cannot be derived during render.
   useEffect(() => {
     if (!show || !wrapperRef.current) return;
     const rect = wrapperRef.current.getBoundingClientRect();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- positions tooltip from a live DOM measurement; can't be derived during render
     setSide(rect.right + 300 > window.innerWidth ? 'left' : 'right');
   }, [show]);
 

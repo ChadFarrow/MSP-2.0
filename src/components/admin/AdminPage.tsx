@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNostr } from '../../store/nostrStore';
 import { FeedList } from './FeedList';
 import mspLogo from '../../assets/msp-logo.png';
@@ -7,18 +7,19 @@ type AuthState = 'checking' | 'no-extension' | 'not-logged-in' | 'ready';
 
 export function AdminPage() {
   const { state: nostrState, login } = useNostr();
-  const [authState, setAuthState] = useState<AuthState>('checking');
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!nostrState.hasExtension) {
-      setAuthState('no-extension');
-    } else if (!nostrState.isLoggedIn) {
-      setAuthState('not-logged-in');
-    } else {
-      setAuthState('ready');
-    }
-  }, [nostrState.hasExtension, nostrState.isLoggedIn]);
+  // Auth state is fully derived from Nostr store flags — compute during render
+  // instead of syncing via an effect. While the Nostr provider is still
+  // detecting the extension / restoring a session (isLoading), stay in
+  // 'checking' so we don't flash 'no-extension' before detection completes.
+  const authState: AuthState = nostrState.isLoading
+    ? 'checking'
+    : !nostrState.hasExtension
+      ? 'no-extension'
+      : !nostrState.isLoggedIn
+        ? 'not-logged-in'
+        : 'ready';
 
   const handleLogin = async () => {
     await login();

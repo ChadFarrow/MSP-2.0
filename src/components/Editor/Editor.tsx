@@ -81,10 +81,16 @@ function RolesModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
 
 function Op3StatsLink({ podcastGuid }: { podcastGuid: string }) {
   const [hasStats, setHasStats] = useState<boolean | null>(null);
+  // Reset to the loading state during render when the guid changes, instead of
+  // calling setState synchronously inside the effect (avoids cascading renders).
+  const [statsGuid, setStatsGuid] = useState(podcastGuid);
+  if (statsGuid !== podcastGuid) {
+    setStatsGuid(podcastGuid);
+    setHasStats(null);
+  }
 
   useEffect(() => {
     let cancelled = false;
-    setHasStats(null);
     fetch(`/api/op3check?guid=${encodeURIComponent(podcastGuid)}`)
       .then(res => res.json())
       .then(data => { if (!cancelled) setHasStats(data.hasStats === true); })

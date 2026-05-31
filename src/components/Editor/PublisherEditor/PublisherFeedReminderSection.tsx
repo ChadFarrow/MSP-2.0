@@ -4,14 +4,12 @@ import { getFeedUrlError } from '../../../utils/urlValidation';
 import { Section } from '../../Section';
 import { generatePublisherRssFeed, downloadXml } from '../../../utils/xmlGenerator';
 import {
-  createHostedFeed,
   createHostedFeedWithNostr,
   buildHostedUrl,
-  generateEditToken,
   saveHostedFeedInfo,
   getHostedFeedInfo
 } from '../../../utils/hostedFeed';
-import { hasSigner, checkSignerConnection } from '../../../utils/nostrSigner';
+import { checkSignerConnection } from '../../../utils/nostrSigner';
 import { useNostr } from '../../../store/nostrStore';
 
 interface PublisherFeedReminderSectionProps {
@@ -41,40 +39,24 @@ export function PublisherFeedReminderSection({ publisherFeed }: PublisherFeedRem
     setResult(null);
 
     try {
+      const health = await checkSignerConnection();
+      if (!health.connected) {
+        setResult({ success: false, message: health.error ?? 'Nostr signer is not connected.' });
+        setIsHosting(false);
+        return;
+      }
+
       const xml = generatePublisherRssFeed({ ...publisherFeed, lastBuildDate: new Date().toUTCString() });
       const title = publisherFeed.title || 'Publisher Feed';
-      const editToken = generateEditToken();
-      const shouldLinkNostr = nostrState.isLoggedIn && nostrState.user?.pubkey && hasSigner();
 
-      if (shouldLinkNostr) {
-        const health = await checkSignerConnection();
-        if (!health.connected) {
-          setResult({ success: false, message: health.error ?? 'Nostr signer is not connected.' });
-          setIsHosting(false);
-          return;
-        }
-      }
-
-      let response;
-      if (shouldLinkNostr) {
-        response = await createHostedFeedWithNostr(xml, title, podcastGuid, editToken);
-        saveHostedFeedInfo(podcastGuid, {
-          feedId: response.feedId,
-          editToken,
-          createdAt: Date.now(),
-          lastUpdated: Date.now(),
-          ownerPubkey: nostrState.user?.pubkey,
-          linkedAt: Date.now()
-        });
-      } else {
-        response = await createHostedFeed(xml, title, podcastGuid, editToken);
-        saveHostedFeedInfo(podcastGuid, {
-          feedId: response.feedId,
-          editToken,
-          createdAt: Date.now(),
-          lastUpdated: Date.now()
-        });
-      }
+      const response = await createHostedFeedWithNostr(xml, title, podcastGuid);
+      saveHostedFeedInfo(podcastGuid, {
+        feedId: response.feedId,
+        createdAt: Date.now(),
+        lastUpdated: Date.now(),
+        ownerPubkey: nostrState.user?.pubkey,
+        linkedAt: Date.now()
+      });
 
       const feedUrl = response.url;
 

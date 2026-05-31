@@ -10,17 +10,12 @@ import {
   getHostedFeedInfo,
   saveHostedFeedInfo,
   clearHostedFeedInfo,
-  createHostedFeed,
-  updateHostedFeed,
   buildHostedUrl,
-  downloadHostedFeedBackup,
-  generateEditToken,
   createHostedFeedWithNostr,
   updateHostedFeedWithNostr,
-  linkNostrToFeed,
   type HostedFeedInfo
 } from '../../utils/hostedFeed';
-import { albumStorage, videoStorage, publisherStorage, pendingHostedStorage } from '../../utils/storage';
+import { albumStorage, videoStorage, publisherStorage } from '../../utils/storage';
 import { useNostr } from '../../store/nostrStore';
 import { useExperimental } from '../../store/experimentalStore';
 import { checkSignerConnection } from '../../utils/nostrSigner';
@@ -39,7 +34,7 @@ interface SaveModalProps {
   onImport?: (xml: string) => void;
 }
 
-export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', isDirty, isLoggedIn, onImport }: SaveModalProps) {
+export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', isDirty, isLoggedIn }: SaveModalProps) {
   const { state: nostrState } = useNostr();
   const { showExperimental } = useExperimental();
   const [mode, setMode] = useState<'local' | 'download' | 'clipboard' | 'nostr' | 'nostrMusic' | 'blossom' | 'nsite' | 'hosted' | 'podcastIndex'>('local');
@@ -68,15 +63,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
   const [stableUrl, setStableUrl] = useState<string | null>(null);
   const [hostedInfo, setHostedInfo] = useState<HostedFeedInfo | null>(null);
   const [hostedUrl, setHostedUrl] = useState<string | null>(null);
-  const [legacyHostedInfo, setLegacyHostedInfo] = useState<HostedFeedInfo | null>(null); // For feeds with mismatched feedId
-  const [showRestore, setShowRestore] = useState(false);
-  const [restoreFeedId, setRestoreFeedId] = useState('');
-  const [restoreToken, setRestoreToken] = useState('');
-  const [restoreLoading, setRestoreLoading] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
-  const [pendingToken, setPendingToken] = useState<string | null>(null);
-  const [tokenAcknowledged, setTokenAcknowledged] = useState(false);
-  const [linkingNostr, setLinkingNostr] = useState(false);
   const [podcastIndexPending, setPodcastIndexPending] = useState(false); // True when PI notified but not yet indexed
   const nsiteSiteId = defaultSiteId(currentFeedGuid);
   const [nsiteUrl, setNsiteUrl] = useState<string | null>(null);
@@ -86,8 +73,8 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
   const [podcastIndexSubmitUrl, setPodcastIndexSubmitUrl] = useState('');
   const [podcastIndexResultUrl, setPodcastIndexResultUrl] = useState<string | null>(null);
 
-  // Check if feed is linked to current user's Nostr identity
-  const isNostrLinked = hostedInfo?.ownerPubkey && nostrState.user?.pubkey === hostedInfo.ownerPubkey;
+  // Check if feed is owned by current Nostr user
+  const isNostrOwner = hostedInfo?.ownerPubkey && nostrState.user?.pubkey === hostedInfo.ownerPubkey;
 
   // Helper to get button text based on mode and loading state
   const getButtonText = () => {
@@ -111,17 +98,10 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
   // Helper to determine if button should be disabled
   const isButtonDisabled = () => {
     if (loading) return true;
-    if (mode === 'hosted' && !hostedInfo && !legacyHostedInfo && !tokenAcknowledged) return true;
+    if (mode === 'hosted' && !isLoggedIn) return true;
     if (mode === 'podcastIndex' && (!podcastIndexSubmitUrl.trim() || !!podcastIndexUrlError)) return true;
     return false;
   };
-
-  // Generate token when selecting hosted mode for a new feed
-  useEffect(() => {
-    if (mode === 'hosted' && !hostedInfo && !legacyHostedInfo && !pendingToken && !showRestore) {
-      setPendingToken(generateEditToken());
-    }
-  }, [mode, hostedInfo, legacyHostedInfo, pendingToken, showRestore]);
 
   // Reset mode if the current selection is an experimental option that just got hidden
   useEffect(() => {
@@ -138,129 +118,15 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
     if (url) setPodcastIndexSubmitUrl(url);
   }, [mode, hostedUrl, stableUrl, nsiteUrl, podcastIndexSubmitUrl]);
 
-  // Check for existing hosted feed on mount, and apply pending credentials
+  // Check for existing hosted feed info on mount
   useEffect(() => {
     if (!currentFeedGuid) return;
-
-    // Check for pending credentials from import
-    const pending = pendingHostedStorage.load();
-    if (pending) {
-      // Only use pending credentials if they match the current feed's GUID
-      if (pending.feedId === currentFeedGuid) {
-        saveHostedFeedInfo(currentFeedGuid, pending);
-        pendingHostedStorage.clear();
-        setHostedInfo(pending);
-        setHostedUrl(buildHostedUrl(pending.feedId));
-        return;
-      } else {
-        // Pending credentials don't match current feed - discard them
-        // (They're stale from a previous import, not a legacy migration)
-        pendingHostedStorage.clear();
-      }
-    }
-
     const info = getHostedFeedInfo(currentFeedGuid);
     if (info) {
-      // Check if feedId matches podcastGuid (legacy feeds may have different IDs)
-      if (info.feedId === currentFeedGuid) {
-        setHostedInfo(info);
-        setHostedUrl(buildHostedUrl(info.feedId));
-      } else {
-        // Legacy feed with mismatched ID - keep it to update both URLs on save
-        setLegacyHostedInfo(info);
-        // Show the correct URL (podcastGuid) as the primary
-        setHostedUrl(buildHostedUrl(currentFeedGuid));
-      }
+      setHostedInfo(info);
+      setHostedUrl(buildHostedUrl(info.feedId));
     }
   }, [currentFeedGuid]);
-
-  // Restore feed credentials from saved token
-  const handleRestore = async () => {
-    if (!restoreFeedId.trim() || !restoreToken.trim()) {
-      setMessage({ type: 'error', text: 'Please enter both Feed ID and Edit Token' });
-      return;
-    }
-
-    setRestoreLoading(true);
-    setMessage(null);
-
-    try {
-      // Try to update the feed with the provided credentials to verify they work
-      const xml = generateCurrentFeedXml();
-      await updateHostedFeed(restoreFeedId.trim(), restoreToken.trim(), xml, currentFeedTitle);
-
-      // Credentials work - save them
-      const newInfo: HostedFeedInfo = {
-        feedId: restoreFeedId.trim(),
-        editToken: restoreToken.trim(),
-        createdAt: Date.now(),
-        lastUpdated: Date.now()
-      };
-      saveHostedFeedInfo(currentFeedGuid, newInfo);
-      setHostedInfo(newInfo);
-      setHostedUrl(buildHostedUrl(restoreFeedId.trim()));
-      setShowRestore(false);
-      setRestoreFeedId('');
-      setRestoreToken('');
-      setMessage({ type: 'success', text: 'Feed restored and updated!' });
-    } catch (err) {
-      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Invalid credentials' });
-    } finally {
-      setRestoreLoading(false);
-    }
-  };
-
-  // Import feed content and restore credentials
-  const handleImportAndRestore = async () => {
-    if (!restoreFeedId.trim() || !restoreToken.trim()) {
-      setMessage({ type: 'error', text: 'Please enter both Feed ID and Edit Token' });
-      return;
-    }
-
-    if (!onImport) {
-      setMessage({ type: 'error', text: 'Import not available' });
-      return;
-    }
-
-    setRestoreLoading(true);
-    setMessage(null);
-
-    try {
-      // Fetch the feed XML (public, no auth needed)
-      const feedUrl = buildHostedUrl(restoreFeedId.trim());
-      const response = await fetch(feedUrl);
-      if (!response.ok) {
-        throw new Error('Feed not found');
-      }
-      const xml = await response.text();
-
-      // Verify the token works by doing a test (we'll update after import)
-      // For now just save the credentials - they'll be validated on next save
-      const newInfo: HostedFeedInfo = {
-        feedId: restoreFeedId.trim(),
-        editToken: restoreToken.trim(),
-        createdAt: Date.now(),
-        lastUpdated: Date.now()
-      };
-
-      // Import the feed content
-      onImport(xml);
-
-      // Save credentials (using the imported feed's podcastGuid will happen after import)
-      // Store with a temporary key, will be updated when user saves
-      pendingHostedStorage.save(newInfo);
-
-      setShowRestore(false);
-      setRestoreFeedId('');
-      setRestoreToken('');
-      onClose();
-      setMessage({ type: 'success', text: 'Feed imported! Save to verify your token.' });
-    } catch (err) {
-      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to import feed' });
-    } finally {
-      setRestoreLoading(false);
-    }
-  };
 
   const handleSave = async () => {
     setLoading(true);
@@ -430,80 +296,42 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
           });
           break;
         }
-        case 'hosted':
-          const hostedXml = generateCurrentFeedXml();
-
-          // If there's a legacy feed with mismatched feedId, update it first
-          if (legacyHostedInfo && legacyHostedInfo.feedId !== currentFeedGuid) {
-            try {
-              await updateHostedFeed(legacyHostedInfo.feedId, legacyHostedInfo.editToken, hostedXml, currentFeedTitle);
-            } catch (legacyErr) {
-              // Log but don't fail - legacy feed update is best-effort
-              console.warn('Failed to update legacy feed:', legacyErr);
-            }
+        case 'hosted': {
+          const health = await checkSignerConnection();
+          if (!health.connected) {
+            setMessage({ type: 'error', text: health.error ?? 'Nostr signer is not connected.' });
+            setLoading(false);
+            return;
           }
 
+          const hostedXml = generateCurrentFeedXml();
+
           if (hostedInfo) {
-            // Update existing feed - use Nostr auth if linked, otherwise token
-            let updateResult;
-            if (isNostrLinked) {
-              updateResult = await updateHostedFeedWithNostr(hostedInfo.feedId, hostedXml, currentFeedTitle);
-            } else {
-              updateResult = await updateHostedFeed(hostedInfo.feedId, hostedInfo.editToken, hostedXml, currentFeedTitle);
-            }
+            const updateResult = await updateHostedFeedWithNostr(hostedInfo.feedId, hostedXml, currentFeedTitle);
             const updatedInfo = { ...hostedInfo, lastUpdated: Date.now() };
             saveHostedFeedInfo(currentFeedGuid, updatedInfo);
             setHostedInfo(updatedInfo);
 
-            // Show PI notification result
             if (updateResult.podcastIndexId) {
               setPodcastIndexPending(true);
               setMessage({ type: 'success', text: 'Feed updated! Podcast Index notified.' });
             } else {
               showSuccessAndClose('Feed updated!');
             }
-          } else if (pendingToken || legacyHostedInfo) {
-            // Create new feed at correct URL - use Nostr auth if user opted in
-            // Use legacy token if available, otherwise use pending token
-            const tokenToUse = legacyHostedInfo?.editToken || pendingToken;
-            if (!tokenToUse) {
-              throw new Error('No edit token available');
-            }
-
-            let hostedResult;
-            let newInfo: HostedFeedInfo;
-            const shouldLinkNostr = isLoggedIn && nostrState.user?.pubkey;
-            if (shouldLinkNostr) {
-              hostedResult = await createHostedFeedWithNostr(hostedXml, currentFeedTitle, currentFeedGuid, tokenToUse);
-              newInfo = {
-                feedId: hostedResult.feedId,
-                editToken: tokenToUse,
-                createdAt: Date.now(),
-                lastUpdated: Date.now(),
-                ownerPubkey: nostrState.user!.pubkey,
-                linkedAt: Date.now()
-              };
-            } else {
-              hostedResult = await createHostedFeed(hostedXml, currentFeedTitle, currentFeedGuid, tokenToUse);
-              newInfo = {
-                feedId: hostedResult.feedId,
-                editToken: tokenToUse,
-                createdAt: Date.now(),
-                lastUpdated: Date.now()
-              };
-            }
+          } else {
+            const hostedResult = await createHostedFeedWithNostr(hostedXml, currentFeedTitle, currentFeedGuid);
+            const newInfo: HostedFeedInfo = {
+              feedId: hostedResult.feedId,
+              createdAt: Date.now(),
+              lastUpdated: Date.now(),
+              ownerPubkey: nostrState.user!.pubkey,
+              linkedAt: Date.now()
+            };
             saveHostedFeedInfo(currentFeedGuid, newInfo);
             setHostedInfo(newInfo);
             setHostedUrl(buildHostedUrl(hostedResult.feedId));
-            setPendingToken(null);
-            setLegacyHostedInfo(null);
-            setTokenAcknowledged(false);
 
-            // Build success message with PI result
-            let successMsg = legacyHostedInfo
-              ? 'Feed migrated to new URL and legacy URL updated!'
-              : (shouldLinkNostr ? 'Feed created and linked to your Nostr identity!' : 'Feed created!');
-
+            let successMsg = 'Feed created and linked to your Nostr identity!';
             if (hostedResult.podcastIndexId) {
               setPodcastIndexPending(true);
               successMsg += ' Podcast Index notified.';
@@ -511,6 +339,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
             setMessage({ type: 'success', text: successMsg });
           }
           break;
+        }
         case 'podcastIndex': {
           const submitUrl = podcastIndexSubmitUrl.trim();
           if (!submitUrl) {
@@ -555,40 +384,6 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
 
   const handleClose = () => {
     onClose();
-  };
-
-  // Link Nostr identity to existing feed
-  const handleLinkNostr = async () => {
-    if (!hostedInfo) return;
-
-    setLinkingNostr(true);
-    setMessage(null);
-
-    const health = await checkSignerConnection();
-    if (!health.connected) {
-      setMessage({ type: 'error', text: health.error ?? 'Nostr signer is not connected.' });
-      setLinkingNostr(false);
-      return;
-    }
-
-    try {
-      const result = await linkNostrToFeed(hostedInfo.feedId, hostedInfo.editToken);
-
-      // Update local storage with linked pubkey
-      const updatedInfo = {
-        ...hostedInfo,
-        ownerPubkey: result.pubkey,
-        linkedAt: Date.now()
-      };
-      saveHostedFeedInfo(currentFeedGuid, updatedInfo);
-      setHostedInfo(updatedInfo);
-
-      setMessage({ type: 'success', text: 'Nostr identity linked! You can now sign in to edit.' });
-    } catch (err) {
-      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to link Nostr identity' });
-    } finally {
-      setLinkingNostr(false);
-    }
   };
 
   return (
@@ -896,108 +691,21 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
             <div style={{ marginTop: '16px' }}>
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '12px' }}>
                 {hostedInfo
-                  ? 'Your feed is already hosted. Click Save to update it with your latest changes.'
-                  : legacyHostedInfo
-                    ? 'Your feed URL will be migrated to match the Podcast GUID. Both old and new URLs will be updated.'
-                    : pendingToken
-                      ? 'Save your edit token before uploading!'
-                      : 'Host your RSS feed on MSP. No account required - just save your edit token!'}
+                  ? 'Your feed is already hosted. Click Upload to update it with your latest changes.'
+                  : isLoggedIn
+                    ? 'Host your RSS feed on MSP. Managed with your Nostr identity — no token needed.'
+                    : 'Nostr login required to host a feed.'}
               </p>
-              {legacyHostedInfo && !hostedInfo && (
-                <div style={{ marginTop: '12px', padding: '12px', backgroundColor: 'rgba(59, 130, 246, 0.1)', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
-                  <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                    <strong style={{ color: '#3b82f6' }}>Feed Migration</strong>
-                  </p>
-                  <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                    Old URL: <code style={{ fontSize: '0.65rem' }}>{buildHostedUrl(legacyHostedInfo.feedId)}</code>
-                  </p>
-                  <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-                    New URL: <code style={{ fontSize: '0.65rem' }}>{buildHostedUrl(currentFeedGuid)}</code>
-                  </p>
-                </div>
-              )}
-              {pendingToken && !hostedInfo && !legacyHostedInfo && (
-                <div style={{ marginTop: '16px', padding: '12px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--warning, #f59e0b)' }}>
-                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.875rem', fontWeight: 600, color: 'var(--warning, #f59e0b)' }}>
-                    {isLoggedIn ? 'Backup Token (save this!)' : 'Edit Token (save this!)'}
-                  </label>
-                  <input
-                    type="text"
-                    value={pendingToken}
-                    readOnly
-                    onClick={(e) => (e.target as HTMLInputElement).select()}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: '4px',
-                      border: '1px solid var(--warning, #f59e0b)',
-                      backgroundColor: 'var(--bg-secondary)',
-                      color: 'var(--text-primary)',
-                      fontSize: '0.75rem',
-                      fontFamily: 'monospace'
-                    }}
-                  />
-                  <p style={{ color: 'var(--warning, #f59e0b)', fontSize: '0.75rem', marginTop: '8px', marginBottom: '12px' }}>
-                    You need this token to edit your feed later. Save it somewhere safe!
-                  </p>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
-                    <button
-                      className="btn btn-secondary"
-                      onClick={() => {
-                        navigator.clipboard.writeText(pendingToken);
-                        setMessage({ type: 'success', text: 'Token copied to clipboard' });
-                      }}
-                    >
-                      Copy Token
-                    </button>
-                    <button
-                      className="btn btn-secondary"
-                      onClick={() => {
-                        downloadHostedFeedBackup(currentFeedGuid, pendingToken, currentFeedTitle, currentFeedGuid);
-                        setMessage({ type: 'success', text: 'Backup file downloaded' });
-                      }}
-                    >
-                      Download Backup
-                    </button>
-                  </div>
-                  <label style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    cursor: 'pointer',
-                    fontSize: '0.75rem',
-                    color: 'var(--text-primary)',
-                    padding: '8px',
-                    backgroundColor: tokenAcknowledged ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
-                    borderRadius: '4px',
-                    border: tokenAcknowledged ? '1px solid var(--success, #10b981)' : '1px solid var(--border-color)'
-                  }}>
-                    <input
-                      type="checkbox"
-                      checked={tokenAcknowledged}
-                      onChange={(e) => setTokenAcknowledged(e.target.checked)}
-                      style={{ width: '16px', height: '16px' }}
-                    />
-                    <span>I have saved my edit token</span>
-                  </label>
-                  <button
-                    className="btn btn-secondary"
-                    style={{ fontSize: '0.75rem', padding: '6px 12px', marginTop: '12px', width: '100%' }}
-                    onClick={() => {
-                      setPendingToken(null);
-                      setTokenAcknowledged(false);
-                      setShowRestore(true);
-                    }}
-                  >
-                    Already have a token? Restore existing feed
-                  </button>
-                </div>
+              {!isLoggedIn && (
+                <p style={{ color: 'var(--warning, #f59e0b)', fontSize: '0.75rem', padding: '8px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '4px' }}>
+                  Sign in with Nostr to host and manage your feed from any device.
+                </p>
               )}
               {hostedUrl && (
                 <div style={{ marginTop: '16px', padding: '12px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--success)' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', fontSize: '0.875rem', fontWeight: 600, color: 'var(--success)' }}>
                     Your Feed URL
-                    {isNostrLinked && (
+                    {isNostrOwner && (
                       <span style={{ fontSize: '0.7rem', padding: '2px 6px', backgroundColor: 'rgba(139, 92, 246, 0.2)', color: '#a78bfa', borderRadius: '4px' }}>
                         Linked to Nostr
                       </span>
@@ -1061,176 +769,6 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                         >
                           Check status or add manually →
                         </a>
-                      </p>
-                    </div>
-                  )}
-                  {/* Link Nostr button for existing feeds without Nostr link */}
-                  {isLoggedIn && hostedInfo && !isNostrLinked && (
-                    <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>
-                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                        Link your Nostr identity to manage this feed without needing the token.
-                      </p>
-                      <button
-                        className="btn btn-secondary"
-                        style={{ fontSize: '0.75rem' }}
-                        onClick={handleLinkNostr}
-                        disabled={linkingNostr}
-                      >
-                        {linkingNostr ? 'Linking...' : 'Link Nostr Identity'}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-              {!hostedInfo && !pendingToken && !legacyHostedInfo && (
-                <div style={{ marginTop: '12px' }}>
-                  <p style={{ color: 'var(--warning, #f59e0b)', fontSize: '0.75rem', padding: '8px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '4px', marginBottom: '12px' }}>
-                    Your edit token will be saved in this browser. If you clear browser data, you won't be able to update this feed.
-                  </p>
-                  {!showRestore ? (
-                    <button
-                      className="btn btn-secondary"
-                      style={{ fontSize: '0.75rem', padding: '6px 12px' }}
-                      onClick={() => setShowRestore(true)}
-                    >
-                      Have a token? Restore existing feed
-                    </button>
-                  ) : (
-                    <div style={{ padding: '12px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                      {/* Upload backup file - primary option */}
-                      <label
-                        style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          padding: '20px',
-                          marginBottom: '12px',
-                          border: '2px dashed var(--border-color)',
-                          borderRadius: '8px',
-                          backgroundColor: 'var(--bg-secondary)',
-                          cursor: 'pointer',
-                          transition: 'border-color 0.2s'
-                        }}
-                      >
-                        <span style={{ fontSize: '1.5rem', marginBottom: '8px' }}>📁</span>
-                        <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                          Upload Backup File
-                        </span>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                          Drop your .json backup file here or click to browse
-                        </span>
-                        <input
-                          type="file"
-                          accept=".json"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (!file) return;
-                            const reader = new FileReader();
-                            reader.onload = (event) => {
-                              try {
-                                const json = JSON.parse(event.target?.result as string);
-                                // Support both old and new format
-                                const feedId = json.feedId || json.feed_id || json.msp_hosted_feed_backup?.feed_id;
-                                const token = json.editToken || json.edit_token || json.msp_hosted_feed_backup?.edit_token;
-                                if (feedId && token) {
-                                  setRestoreFeedId(feedId);
-                                  setRestoreToken(token);
-                                  setMessage({ type: 'success', text: 'Backup file loaded! Click "Link Credentials" to restore.' });
-                                } else {
-                                  setMessage({ type: 'error', text: 'Invalid backup file format' });
-                                }
-                              } catch {
-                                setMessage({ type: 'error', text: 'Could not parse backup file' });
-                              }
-                            };
-                            reader.readAsText(file);
-                            e.target.value = '';
-                          }}
-                          style={{ display: 'none' }}
-                        />
-                      </label>
-
-                      {/* Divider */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '12px 0' }}>
-                        <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--border-color)' }} />
-                        <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>OR ENTER MANUALLY</span>
-                        <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--border-color)' }} />
-                      </div>
-
-                      {/* Manual entry fields */}
-                      <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                        Feed ID
-                      </label>
-                      <input
-                        type="text"
-                        value={restoreFeedId}
-                        onChange={(e) => setRestoreFeedId(e.target.value)}
-                        placeholder="e.g. 95761582-a064-4430-8192-4571d8d3715b"
-                        style={{
-                          width: '100%',
-                          padding: '8px 12px',
-                          borderRadius: '4px',
-                          border: '1px solid var(--border)',
-                          backgroundColor: 'var(--bg-secondary)',
-                          color: 'var(--text-primary)',
-                          fontSize: '0.75rem',
-                          fontFamily: 'monospace',
-                          marginBottom: '8px'
-                        }}
-                      />
-                      <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                        Edit Token
-                      </label>
-                      <input
-                        type="text"
-                        value={restoreToken}
-                        onChange={(e) => setRestoreToken(e.target.value)}
-                        placeholder="Your saved edit token"
-                        style={{
-                          width: '100%',
-                          padding: '8px 12px',
-                          borderRadius: '4px',
-                          border: '1px solid var(--border)',
-                          backgroundColor: 'var(--bg-secondary)',
-                          color: 'var(--text-primary)',
-                          fontSize: '0.75rem',
-                          fontFamily: 'monospace',
-                          marginBottom: '12px'
-                        }}
-                      />
-                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                        <button
-                          className="btn btn-primary"
-                          style={{ fontSize: '0.75rem', padding: '6px 12px' }}
-                          onClick={handleRestore}
-                          disabled={restoreLoading}
-                        >
-                          {restoreLoading ? 'Loading...' : 'Link Credentials'}
-                        </button>
-                        <button
-                          className="btn btn-secondary"
-                          style={{ fontSize: '0.75rem', padding: '6px 12px' }}
-                          onClick={handleImportAndRestore}
-                          disabled={restoreLoading}
-                        >
-                          Import & Link
-                        </button>
-                        <button
-                          className="btn btn-secondary"
-                          style={{ fontSize: '0.75rem', padding: '6px 12px' }}
-                          onClick={() => {
-                            setShowRestore(false);
-                            setRestoreFeedId('');
-                            setRestoreToken('');
-                          }}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                      <p style={{ color: 'var(--text-secondary)', fontSize: '0.7rem', marginTop: '8px' }}>
-                        <strong>Link Credentials</strong>: Links credentials without changing current content<br />
-                        <strong>Import & Link</strong>: Fetches feed content and loads it into the editor
                       </p>
                     </div>
                   )}
@@ -1335,7 +873,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                 <li><strong>Local Storage</strong> - Save to your browser's local storage. Data persists until you clear browser data.</li>
                 <li><strong>Download XML</strong> - Download the RSS feed as an XML file to your computer.</li>
                 <li><strong>Copy to Clipboard</strong> - Copy the RSS XML to your clipboard for pasting elsewhere.</li>
-                <li><strong>Host on MSP</strong> - Host your feed on MSP servers. Get a permanent URL for your RSS feed to use in any app.{isLoggedIn && ' You can link your Nostr identity to edit from any device without needing the token.'}</li>
+                <li><strong>Host on MSP</strong> - Host your feed on MSP servers. Get a permanent URL for your RSS feed to use in any app. Managed with your Nostr identity — edit from any device.</li>
                 <li><strong>Submit to PodcastIndex</strong> - Submit a feed URL to Podcast Index so it gets indexed and becomes discoverable in apps like Fountain, Castamatic, and others.</li>
                 <li><strong>Publish to Nostr Music</strong> - Publishes each track (kind 36787) and the playlist (kind 34139) as Nostr events for Nostr-native music clients like Wavlake and Fountain. Audio files must already be hosted somewhere - these events just point to them. Not a podcast RSS feed.</li>
                 {showExperimental && <li><strong>Save RSS feed to Nostr 🧪</strong> - Stores the entire RSS XML inside a Nostr event (kind 30054) on your relays. Personal cross-device backup tied to your Nostr key. Not readable by podcast apps.</li>}

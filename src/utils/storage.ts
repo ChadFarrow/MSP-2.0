@@ -152,11 +152,11 @@ export const nostrUserStorage = {
 // Hosted feed info type (re-exported from hostedFeed)
 export interface HostedFeedInfo {
   feedId: string;
-  editToken: string;
+  editToken?: string;  // Legacy — no longer used for new feeds (Nostr auth only)
   createdAt: number;
   lastUpdated: number;
-  ownerPubkey?: string;  // Nostr pubkey if linked
-  linkedAt?: number;     // When Nostr was linked
+  ownerPubkey?: string;
+  linkedAt?: number;
 }
 
 // Hosted feed storage operations

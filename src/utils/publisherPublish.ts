@@ -6,15 +6,12 @@ import { generatePublisherRssFeed } from './xmlGenerator';
 import {
   getHostedFeedInfo,
   saveHostedFeedInfo,
-  createHostedFeed,
   createHostedFeedWithNostr,
-  updateHostedFeed,
   updateHostedFeedWithNostr,
   buildHostedUrl,
-  generateEditToken,
   type HostedFeedInfo
 } from './hostedFeed';
-import { hasSigner } from './nostrSigner';
+
 import { fetchFeedFromUrl, parseRssFeed } from './xmlParser';
 import { generateRssFeed } from './xmlGenerator';
 
@@ -132,7 +129,6 @@ function needsHosting(item: RemoteItem): boolean {
 // Host a single catalog feed on MSP
 async function hostCatalogFeed(
   item: RemoteItem,
-  linkNostr: boolean,
   nostrPubkey?: string
 ): Promise<FeedUpdateResult> {
   const title = item.title || item.feedGuid;
@@ -179,32 +175,17 @@ async function hostCatalogFeed(
     const feedTitle = album.title || title;
 
     // Host on MSP
-    const editToken = generateEditToken();
-    const shouldLinkNostr = linkNostr && nostrPubkey && hasSigner();
-
-    let result;
     let hostedInfo: HostedFeedInfo;
 
     try {
-      if (shouldLinkNostr) {
-        result = await createHostedFeedWithNostr(cleanXml, feedTitle, item.feedGuid, editToken);
-        hostedInfo = {
-          feedId: result.feedId,
-          editToken,
-          createdAt: Date.now(),
-          lastUpdated: Date.now(),
-          ownerPubkey: nostrPubkey,
-          linkedAt: Date.now()
-        };
-      } else {
-        result = await createHostedFeed(cleanXml, feedTitle, item.feedGuid, editToken);
-        hostedInfo = {
-          feedId: result.feedId,
-          editToken,
-          createdAt: Date.now(),
-          lastUpdated: Date.now()
-        };
-      }
+      const result = await createHostedFeedWithNostr(cleanXml, feedTitle, item.feedGuid);
+      hostedInfo = {
+        feedId: result.feedId,
+        createdAt: Date.now(),
+        lastUpdated: Date.now(),
+        ownerPubkey: nostrPubkey,
+        linkedAt: Date.now()
+      };
 
       // Save credentials
       saveHostedFeedInfo(item.feedGuid, hostedInfo);
@@ -309,23 +290,8 @@ async function processCatalogFeed(
       const feedId = extractFeedIdFromUrl(feedUrl);
       if (feedId) {
         const hostedInfo = getHostedFeedInfo(album.podcastGuid);
-        if (hostedInfo && hostedInfo.feedId === feedId) {
-          // Check if we can use Nostr auth
-          const isNostrLinked = hostedInfo.ownerPubkey && hasSigner();
-
-          if (isNostrLinked) {
-            await updateHostedFeedWithNostr(feedId, updatedXml, feedTitle);
-          } else if (hostedInfo.editToken) {
-            await updateHostedFeed(feedId, hostedInfo.editToken, updatedXml, feedTitle);
-          } else {
-            // No valid auth method
-            return {
-              title: feedTitle,
-              feedGuid: item.feedGuid,
-              status: 'skipped',
-              message: 'No credentials'
-            };
-          }
+        if (hostedInfo && hostedInfo.feedId === feedId && hostedInfo.ownerPubkey) {
+          await updateHostedFeedWithNostr(feedId, updatedXml, feedTitle);
 
           // Notify PI in background (don't wait)
           notifyPodcastIndex(feedUrl, album.medium).catch(err => console.warn('PI notification failed:', err));
@@ -394,7 +360,7 @@ export async function publishPublisherFeed(
   publisherFeed: PublisherFeed,
   options: PublishOptions
 ): Promise<PublishResult> {
-  const { hostCatalogFeeds, updateCatalogFeeds, linkNostr, nostrPubkey, onProgress } = options;
+  const { hostCatalogFeeds, updateCatalogFeeds, nostrPubkey, onProgress } = options;
 
   const podcastGuid = publisherFeed.podcastGuid;
   if (!podcastGuid) {
@@ -453,7 +419,7 @@ export async function publishPublisherFeed(
           }
         });
 
-        const result = await hostCatalogFeed(item, linkNostr, nostrPubkey);
+        const result = await hostCatalogFeed(item, nostrPubkey);
         catalogHostResults.push(result);
 
         // Update the URL in our copy if hosting succeeded
@@ -482,75 +448,42 @@ export async function publishPublisherFeed(
 
     if (existingInfo) {
       // Update existing feed
-      const isNostrLinked = existingInfo.ownerPubkey && nostrPubkey === existingInfo.ownerPubkey;
-
-      if (isNostrLinked && hasSigner()) {
-        await updateHostedFeedWithNostr(existingInfo.feedId, xml, title);
-      } else {
-        await updateHostedFeed(existingInfo.feedId, existingInfo.editToken, xml, title);
-      }
-
+      await updateHostedFeedWithNostr(existingInfo.feedId, xml, title);
       hostedInfo = { ...existingInfo, lastUpdated: Date.now() };
       saveHostedFeedInfo(podcastGuid, hostedInfo);
       feedUrl = buildHostedUrl(existingInfo.feedId);
     } else {
       // Create new feed
-      const editToken = generateEditToken();
-      const shouldLinkNostr = linkNostr && nostrPubkey && hasSigner();
-
       try {
-        let result;
-        if (shouldLinkNostr) {
-          result = await createHostedFeedWithNostr(xml, title, podcastGuid, editToken);
-          hostedInfo = {
-            feedId: result.feedId,
-            editToken,
-            createdAt: Date.now(),
-            lastUpdated: Date.now(),
-            ownerPubkey: nostrPubkey,
-            linkedAt: Date.now()
-          };
-        } else {
-          result = await createHostedFeed(xml, title, podcastGuid, editToken);
-          hostedInfo = {
-            feedId: result.feedId,
-            editToken,
-            createdAt: Date.now(),
-            lastUpdated: Date.now()
-          };
-        }
-
+        const result = await createHostedFeedWithNostr(xml, title, podcastGuid);
+        hostedInfo = {
+          feedId: result.feedId,
+          createdAt: Date.now(),
+          lastUpdated: Date.now(),
+          ownerPubkey: nostrPubkey,
+          linkedAt: Date.now()
+        };
         saveHostedFeedInfo(podcastGuid, hostedInfo);
         feedUrl = result.url;
       } catch (createErr) {
         const errMsg = createErr instanceof Error ? createErr.message : '';
 
-        // Handle 409 Conflict - feed already exists
+        // Handle 409 Conflict - feed already exists, try to update via Nostr auth
         if (errMsg.includes('already exists') || errMsg.includes('409')) {
-          // If user is logged in with Nostr, try to update via Nostr auth
-          if (nostrPubkey && hasSigner()) {
-            try {
-              await updateHostedFeedWithNostr(podcastGuid, xml, title);
-              // Success - create local hostedInfo without edit token
-              hostedInfo = {
-                feedId: podcastGuid,
-                editToken: '', // We don't have the token, but Nostr works
-                createdAt: Date.now(),
-                lastUpdated: Date.now(),
-                ownerPubkey: nostrPubkey,
-                linkedAt: Date.now()
-              };
-              saveHostedFeedInfo(podcastGuid, hostedInfo);
-              feedUrl = buildHostedUrl(podcastGuid);
-            } catch (nostrErr) {
-              // Nostr update also failed - feed exists but user doesn't have access
-              throw new Error(
-                'This feed already exists on MSP. If you are the owner, use the Restore option in the Save dialog to recover your credentials, or log in with the Nostr identity linked to this feed.'
-              );
-            }
-          } else {
+          try {
+            await updateHostedFeedWithNostr(podcastGuid, xml, title);
+            hostedInfo = {
+              feedId: podcastGuid,
+              createdAt: Date.now(),
+              lastUpdated: Date.now(),
+              ownerPubkey: nostrPubkey,
+              linkedAt: Date.now()
+            };
+            saveHostedFeedInfo(podcastGuid, hostedInfo);
+            feedUrl = buildHostedUrl(podcastGuid);
+          } catch {
             throw new Error(
-              'This feed already exists on MSP. Use the Restore option in the Save dialog to recover your edit credentials.'
+              'This feed already exists on MSP. Sign in with the Nostr identity linked to this feed to update it.'
             );
           }
         } else {

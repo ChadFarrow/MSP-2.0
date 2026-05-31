@@ -36,25 +36,19 @@ export function NewFeedChoiceModal({
       title={`New ${label}`}
       footer={
         <div style={{ display: 'flex', gap: '12px', width: '100%', flexWrap: 'wrap' }}>
-<<<<<<< HEAD
-          <button className="btn btn-warning" onClick={onStartBlank}>
-            Start Blank
-          </button>
-          {showArtistSetup && (
-            <button className="btn btn-primary" onClick={onArtistSetup}>
-              Artist Setup
-            </button>
-          )}
-=======
           {onNewArtist && feedType === 'album' && (
             <button className="btn btn-primary" onClick={onNewArtist}>
               New Artist (Guided)
             </button>
           )}
+          {showArtistSetup && (
+            <button className="btn btn-secondary" onClick={onArtistSetup}>
+              Artist Setup
+            </button>
+          )}
           <button className="btn btn-warning" onClick={onStartBlank}>
             Start Blank
           </button>
->>>>>>> origin/feature/artist-onboarding
           <button className="btn btn-secondary" onClick={onUseTemplate}>
             Use Template
           </button>

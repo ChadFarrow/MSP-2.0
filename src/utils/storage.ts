@@ -10,7 +10,8 @@ export const STORAGE_KEYS = {
   FEED_TYPE: 'msp2-feed-type',
   NOSTR_USER: 'msp2-nostr-user',
   HOSTED_PREFIX: 'msp2-hosted-',
-  PENDING_HOSTED: 'msp2-pending-hosted'
+  PENDING_HOSTED: 'msp2-pending-hosted',
+  WIZARD_COMPLETE: 'msp2-wizard-complete',
 } as const;
 
 // Migration helper: convert old person format to new format
@@ -175,4 +176,10 @@ export const pendingHostedStorage = {
   load: (): HostedFeedInfo | null => getItem<HostedFeedInfo>(STORAGE_KEYS.PENDING_HOSTED),
   save: (info: HostedFeedInfo): boolean => setItem(STORAGE_KEYS.PENDING_HOSTED, info),
   clear: (): boolean => removeItem(STORAGE_KEYS.PENDING_HOSTED)
+};
+
+// New artist onboarding wizard completion flag
+export const wizardStorage = {
+  isComplete: (): boolean => getItem<boolean>(STORAGE_KEYS.WIZARD_COMPLETE) === true,
+  markComplete: (): boolean => setItem(STORAGE_KEYS.WIZARD_COMPLETE, true)
 };

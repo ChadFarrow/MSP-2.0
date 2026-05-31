@@ -7,6 +7,7 @@ interface NewFeedChoiceModalProps {
   onStartBlank: () => void;
   onUseTemplate: () => void;
   onCancel: () => void;
+  onNewArtist?: () => void;
 }
 
 const feedTypeLabel = (feedType: FeedType) =>
@@ -18,6 +19,7 @@ export function NewFeedChoiceModal({
   onStartBlank,
   onUseTemplate,
   onCancel,
+  onNewArtist,
 }: NewFeedChoiceModalProps) {
   const label = feedTypeLabel(feedType);
 
@@ -27,11 +29,16 @@ export function NewFeedChoiceModal({
       onClose={onCancel}
       title={`New ${label}`}
       footer={
-        <div style={{ display: 'flex', gap: '12px', width: '100%' }}>
+        <div style={{ display: 'flex', gap: '12px', width: '100%', flexWrap: 'wrap' }}>
+          {onNewArtist && feedType === 'album' && (
+            <button className="btn btn-primary" onClick={onNewArtist}>
+              New Artist (Guided)
+            </button>
+          )}
           <button className="btn btn-warning" onClick={onStartBlank}>
             Start Blank
           </button>
-          <button className="btn btn-primary" onClick={onUseTemplate}>
+          <button className="btn btn-secondary" onClick={onUseTemplate}>
             Use Template
           </button>
           <div style={{ flex: 1 }} />

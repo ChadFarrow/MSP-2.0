@@ -7,9 +7,10 @@ import { ThemeProvider, useTheme } from './store/themeStore.tsx';
 import { ExperimentalProvider, useExperimental } from './store/experimentalStore.tsx';
 import { parseRssFeed, isPublisherFeed, isVideoFeed, parsePublisherRssFeed } from './utils/xmlParser';
 import { createEmptyAlbum, createEmptyPublisherFeed, createEmptyVideoAlbum } from './types/feed';
-import { pendingHostedStorage } from './utils/storage';
+import { pendingHostedStorage, wizardStorage } from './utils/storage';
 import { generateTestAlbum } from './utils/testData';
 import { NostrLoginButton } from './components/NostrLoginButton';
+import { ArtistOnboardingWizard } from './components/ArtistOnboardingWizard';
 import { ImportModal } from './components/modals/ImportModal';
 import { SaveModal } from './components/modals/SaveModal';
 import { PreviewModal } from './components/modals/PreviewModal';
@@ -38,6 +39,7 @@ function AppContent() {
   const [showNewFeedChoiceModal, setShowNewFeedChoiceModal] = useState(false);
   const [pendingNewFeedType, setPendingNewFeedType] = useState<FeedType>('album');
   const [isTemplateMode, setIsTemplateMode] = useState(false);
+  const [showArtistWizard, setShowArtistWizard] = useState(() => !wizardStorage.isComplete());
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { state: nostrState, logout: nostrLogout } = useNostr();
@@ -383,7 +385,15 @@ function AppContent() {
         onStartBlank={handleStartBlank}
         onUseTemplate={handleUseTemplate}
         onCancel={() => setShowNewFeedChoiceModal(false)}
+        onNewArtist={() => { setShowNewFeedChoiceModal(false); setShowArtistWizard(true); }}
       />
+
+      {showArtistWizard && (
+        <ArtistOnboardingWizard
+          onComplete={() => setShowArtistWizard(false)}
+          onOpenLogin={() => setShowNostrConnectModal(true)}
+        />
+      )}
     </>
   );
 }

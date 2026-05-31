@@ -9,6 +9,8 @@ import { detectAddressType } from '../../utils/addressUtils';
 import { getMediaDuration, secondsToHHMMSS, formatDuration, getAudioMimeType, isKnownAudioFormat } from '../../utils/audioUtils';
 import { getVideoMimeType } from '../../utils/videoUtils';
 import { isNaddrString, resolveNostrVideo } from '../../utils/nostrVideoConverter';
+import { isBlossomMediaUrl } from '../../utils/blossom';
+import { BlossomFileUpload } from '../BlossomFileUpload';
 import { getFeedUrlError } from '../../utils/urlValidation';
 import { InfoIcon } from '../InfoIcon';
 import { Section } from '../Section';
@@ -491,6 +493,7 @@ export function Editor({ chromeless = false }: EditorProps = {}) {
                             payload: { index: personIndex, person: { ...person, img: e.target.value } }
                           })}
                         />
+                        <BlossomFileUpload accept="image/*" onUploaded={({ url }) => dispatch({ type: 'UPDATE_PERSON', payload: { index: personIndex, person: { ...person, img: url } } })} />
                       </div>
                       <div className="form-group">
                         <label className="form-label">Nostr npub<InfoIcon text={FIELD_INFO.personNpub} /></label>
@@ -844,111 +847,102 @@ export function Editor({ chromeless = false }: EditorProps = {}) {
                     <div className="form-group">
                       <label className="form-label">{isVideo ? 'Video URL' : 'MP3 URL'} <span className="required">*</span><InfoIcon text={FIELD_INFO.enclosureUrl} /></label>
                       <input
-                        type="url"
-                        className="form-input"
-                        placeholder={isVideo ? "https://example.com/video.mp4" : "https://example.com/track.mp3"}
-                        value={track.enclosureUrl || ''}
-                        onChange={e => {
-                          const url = e.target.value;
-                          dispatch({
-                            type: 'UPDATE_TRACK',
-                            payload: { index, track: { enclosureUrl: url } }
-                          });
-                          if (url) {
-                            const mimeType = isVideo ? getVideoMimeType(url) : getAudioMimeType(url);
-                            dispatch({
-                              type: 'UPDATE_TRACK',
-                              payload: { index, track: { enclosureType: mimeType } }
-                            });
-                          }
-                        }}
-                        onPaste={async e => {
-                          const pastedText = e.clipboardData.getData('text').trim();
-                          // Detect Nostr naddr strings (video feed only)
-                          if (isVideo && isNaddrString(pastedText)) {
-                            e.preventDefault();
-                            setResolvingNaddr(prev => ({ ...prev, [index]: true }));
-                            setNaddrError(prev => { const next = { ...prev }; delete next[index]; return next; });
-                            try {
-                              const videoData = await resolveNostrVideo(pastedText);
-                              if (videoData) {
-                                dispatch({
-                                  type: 'UPDATE_TRACK',
-                                  payload: {
-                                    index,
-                                    track: {
-                                      enclosureUrl: videoData.url,
-                                      enclosureType: videoData.mimeType,
-                                      enclosureLength: '33',
-                                      ...(videoData.duration && { duration: videoData.duration }),
-                                    }
-                                  }
-                                });
-                              }
-                            } catch (err) {
-                              const msg = err instanceof Error ? err.message : 'Failed to resolve Nostr video';
-                              setNaddrError(prev => ({ ...prev, [index]: msg }));
-                            } finally {
-                              setResolvingNaddr(prev => ({ ...prev, [index]: false }));
-                            }
-                            return;
-                          }
-                          const url = pastedText;
-                          if (url && url.startsWith('http')) {
-                            e.preventDefault();
-                            const isNewUrl = url !== track.enclosureUrl;
-                            // Update the URL field immediately
+                          type="url"
+                          className="form-input"
+                          placeholder={isVideo ? "https://example.com/video.mp4" : "https://example.com/track.mp3"}
+                          value={track.enclosureUrl || ''}
+                          onChange={e => {
+                            const url = e.target.value;
                             dispatch({
                               type: 'UPDATE_TRACK',
                               payload: { index, track: { enclosureUrl: url } }
                             });
-                            const mimeType = isVideo ? getVideoMimeType(url) : getAudioMimeType(url);
-                            dispatch({
-                              type: 'UPDATE_TRACK',
-                              payload: { index, track: { enclosureType: mimeType } }
-                            });
-                            // Fetch duration using unified Media API (works for both audio and video)
-                            if (isNewUrl || !track.duration) {
-                              const duration = await getMediaDuration(url);
-                              if (duration !== null) {
-                                dispatch({
-                                  type: 'UPDATE_TRACK',
-                                  payload: { index, track: { duration: secondsToHHMMSS(duration) } }
-                                });
-                              }
-                            }
-                            // Set placeholder file size
-                            if (isNewUrl || !track.enclosureLength) {
+                            if (url) {
+                              const mimeType = isVideo ? getVideoMimeType(url) : getAudioMimeType(url);
                               dispatch({
                                 type: 'UPDATE_TRACK',
-                                payload: { index, track: { enclosureLength: '33' } }
+                                payload: { index, track: { enclosureType: mimeType } }
                               });
                             }
-                          }
-                        }}
-                        onBlur={async e => {
-                          const url = e.target.value;
-                          if (url && url.startsWith('http')) {
-                            // Fetch duration using unified Media API (works for both audio and video)
-                            if (!track.duration) {
-                              const duration = await getMediaDuration(url);
-                              if (duration !== null) {
-                                dispatch({
-                                  type: 'UPDATE_TRACK',
-                                  payload: { index, track: { duration: secondsToHHMMSS(duration) } }
-                                });
+                          }}
+                          onPaste={async e => {
+                            const pastedText = e.clipboardData.getData('text').trim();
+                            if (isVideo && isNaddrString(pastedText)) {
+                              e.preventDefault();
+                              setResolvingNaddr(prev => ({ ...prev, [index]: true }));
+                              setNaddrError(prev => { const next = { ...prev }; delete next[index]; return next; });
+                              try {
+                                const videoData = await resolveNostrVideo(pastedText);
+                                if (videoData) {
+                                  dispatch({
+                                    type: 'UPDATE_TRACK',
+                                    payload: {
+                                      index,
+                                      track: {
+                                        enclosureUrl: videoData.url,
+                                        enclosureType: videoData.mimeType,
+                                        enclosureLength: '33',
+                                        ...(videoData.duration && { duration: videoData.duration }),
+                                      }
+                                    }
+                                  });
+                                }
+                              } catch (err) {
+                                const msg = err instanceof Error ? err.message : 'Failed to resolve Nostr video';
+                                setNaddrError(prev => ({ ...prev, [index]: msg }));
+                              } finally {
+                                setResolvingNaddr(prev => ({ ...prev, [index]: false }));
+                              }
+                              return;
+                            }
+                            const url = pastedText;
+                            if (url && url.startsWith('http')) {
+                              e.preventDefault();
+                              const isNewUrl = url !== track.enclosureUrl;
+                              dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { enclosureUrl: url } } });
+                              const mimeType = isVideo ? getVideoMimeType(url) : getAudioMimeType(url);
+                              dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { enclosureType: mimeType } } });
+                              if (isNewUrl || !track.duration) {
+                                const duration = await getMediaDuration(url);
+                                if (duration !== null) {
+                                  dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { duration: secondsToHHMMSS(duration) } } });
+                                }
+                              }
+                              if (isNewUrl || !track.enclosureLength) {
+                                dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { enclosureLength: '33' } } });
                               }
                             }
-                            // Set placeholder file size
-                            if (!track.enclosureLength) {
-                              dispatch({
-                                type: 'UPDATE_TRACK',
-                                payload: { index, track: { enclosureLength: '33' } }
-                              });
+                          }}
+                          onBlur={async e => {
+                            const url = e.target.value;
+                            if (url && url.startsWith('http')) {
+                              if (!track.duration) {
+                                const duration = await getMediaDuration(url);
+                                if (duration !== null) {
+                                  dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { duration: secondsToHHMMSS(duration) } } });
+                                }
+                              }
+                              if (!track.enclosureLength) {
+                                dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { enclosureLength: '33' } } });
+                              }
                             }
-                          }
-                        }}
-                      />
+                          }}
+                        />
+                      {!isVideo && (
+                        <BlossomFileUpload
+                          accept="audio/*"
+                          label="Upload audio to Blossom"
+                          onUploaded={async ({ url, file }) => {
+                            dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { enclosureUrl: url } } });
+                            dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { enclosureType: file.type || getAudioMimeType(url) } } });
+                            dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { enclosureLength: String(file.size) } } });
+                            const duration = await getMediaDuration(url);
+                            if (duration !== null) {
+                              dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { duration: secondsToHHMMSS(duration) } } });
+                            }
+                          }}
+                        />
+                      )}
                       {isVideo && resolvingNaddr[index] && (
                         <div style={{ color: 'var(--text-secondary)', fontSize: '0.85em', marginTop: '4px' }}>
                           Resolving Nostr video...
@@ -964,7 +958,7 @@ export function Editor({ chromeless = false }: EditorProps = {}) {
                           Tip: Paste a Nostr naddr to auto-fill video details
                         </div>
                       )}
-                      {!isVideo && track.enclosureUrl && !isKnownAudioFormat(track.enclosureUrl) && (
+                      {!isVideo && track.enclosureUrl && !isKnownAudioFormat(track.enclosureUrl) && !isBlossomMediaUrl(track.enclosureUrl) && (
                         <div style={{ color: 'var(--warning, #b8860b)', fontSize: '0.85em', marginTop: '4px' }}>
                           URL doesn't end with a recognized audio extension (mp3, flac, wav, m4a, aac, ogg, opus, aiff). Podcast apps may not play it.
                         </div>
@@ -1120,6 +1114,7 @@ export function Editor({ chromeless = false }: EditorProps = {}) {
                           payload: { index, track: { trackArtUrl: e.target.value } }
                         })}
                       />
+                      <BlossomFileUpload accept="image/*" onUploaded={({ url }) => dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { trackArtUrl: url } } })} />
                     </div>
                     <div className="form-group">
                       <label className="form-label">Lyrics URL<InfoIcon text={FIELD_INFO.transcriptUrl} /></label>
@@ -1133,6 +1128,7 @@ export function Editor({ chromeless = false }: EditorProps = {}) {
                           payload: { index, track: { transcriptUrl: e.target.value } }
                         })}
                       />
+                      <BlossomFileUpload accept=".srt,.vtt,text/plain" label="Upload lyrics to Blossom (.srt / .vtt)" onUploaded={({ url }) => dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { transcriptUrl: url } } })} />
                     </div>
                     <div className="form-group">
                       <Toggle
@@ -1224,6 +1220,7 @@ export function Editor({ chromeless = false }: EditorProps = {}) {
                                       payload: { trackIndex: index, personIndex, person: { ...person, img: e.target.value } }
                                     })}
                                   />
+                                  <BlossomFileUpload accept="image/*" onUploaded={({ url }) => dispatch({ type: 'UPDATE_TRACK_PERSON', payload: { trackIndex: index, personIndex, person: { ...person, img: url } } })} />
                                 </div>
                                 <div className="form-group">
                                   <label className="form-label">Nostr npub<InfoIcon text={FIELD_INFO.personNpub} /></label>

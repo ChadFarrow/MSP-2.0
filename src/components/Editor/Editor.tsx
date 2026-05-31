@@ -8,9 +8,8 @@ import { detectAddressType } from '../../utils/addressUtils';
 import { getMediaDuration, secondsToHHMMSS, formatDuration, getAudioMimeType, isKnownAudioFormat } from '../../utils/audioUtils';
 import { getVideoMimeType } from '../../utils/videoUtils';
 import { isNaddrString, resolveNostrVideo } from '../../utils/nostrVideoConverter';
-import { uploadMediaToBlossom } from '../../utils/blossom';
+import { isBlossomMediaUrl } from '../../utils/blossom';
 import { BlossomFileUpload } from '../BlossomFileUpload';
-import { useHostingMode } from '../../store/hostingModeStore';
 import { getFeedUrlError } from '../../utils/urlValidation';
 import { InfoIcon } from '../InfoIcon';
 import { Section } from '../Section';
@@ -130,12 +129,8 @@ export function Editor() {
   }>({ loading: false, error: null, feedTitle: null, feedImage: null });
 
   // Nostr naddr resolution state (per-track index)
-  const { hostingMode } = useHostingMode();
   const [resolvingNaddr, setResolvingNaddr] = useState<Record<number, boolean>>({});
   const [naddrError, setNaddrError] = useState<Record<number, string>>({});
-  const [blossomUploading, setBlossomUploading] = useState<Record<number, boolean>>({});
-  const [blossomError, setBlossomError] = useState<Record<number, string>>({});
-  const [blossomSuccess, setBlossomSuccess] = useState<Record<number, boolean>>({});
 
   // Submit to Podcast Index state
   const [piSubmitting, setPiSubmitting] = useState(false);
@@ -475,20 +470,17 @@ export function Editor() {
                       </div>
                       <div className="form-group">
                         <label className="form-label">Photo URL<InfoIcon text={FIELD_INFO.personImg} /></label>
-                        {hostingMode === 'upload' ? (
-                          <BlossomFileUpload accept="image/*" onUrl={url => dispatch({ type: 'UPDATE_PERSON', payload: { index: personIndex, person: { ...person, img: url } } })} required />
-                        ) : (
-                          <input
-                            type="url"
-                            className="form-input"
-                            placeholder="https://..."
-                            value={person.img || ''}
-                            onChange={e => dispatch({
-                              type: 'UPDATE_PERSON',
-                              payload: { index: personIndex, person: { ...person, img: e.target.value } }
-                            })}
-                          />
-                        )}
+                        <input
+                          type="url"
+                          className="form-input"
+                          placeholder="https://..."
+                          value={person.img || ''}
+                          onChange={e => dispatch({
+                            type: 'UPDATE_PERSON',
+                            payload: { index: personIndex, person: { ...person, img: e.target.value } }
+                          })}
+                        />
+                        <BlossomFileUpload accept="image/*" onUploaded={({ url }) => dispatch({ type: 'UPDATE_PERSON', payload: { index: personIndex, person: { ...person, img: url } } })} />
                       </div>
                       <div className="form-group">
                         <label className="form-label">Nostr npub<InfoIcon text={FIELD_INFO.personNpub} /></label>
@@ -811,65 +803,7 @@ export function Editor() {
                     </div>
                     <div className="form-group">
                       <label className="form-label">{isVideo ? 'Video URL' : 'MP3 URL'} <span className="required">*</span><InfoIcon text={FIELD_INFO.enclosureUrl} /></label>
-                      {!isVideo && hostingMode === 'upload' ? (
-                        <>
-                          {nostrState.isLoggedIn ? (
-                            <>
-                              <input
-                                type="file"
-                                accept="audio/*"
-                                style={{ display: 'block', width: '100%', fontSize: '0.9em' }}
-                                disabled={blossomUploading[index]}
-                                onChange={async e => {
-                                  const file = e.target.files?.[0];
-                                  if (!file) return;
-                                  setBlossomUploading(prev => ({ ...prev, [index]: true }));
-                                  setBlossomError(prev => { const next = { ...prev }; delete next[index]; return next; });
-                                  setBlossomSuccess(prev => ({ ...prev, [index]: false }));
-                                  try {
-                                    const result = await uploadMediaToBlossom(file);
-                                    if (result.success && result.url) {
-                                      dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { enclosureUrl: result.url } } });
-                                      dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { enclosureType: file.type || getAudioMimeType(result.url) } } });
-                                      dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { enclosureLength: String(file.size) } } });
-                                      const duration = await getMediaDuration(result.url);
-                                      if (duration !== null) {
-                                        dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { duration: secondsToHHMMSS(duration) } } });
-                                      }
-                                      setBlossomSuccess(prev => ({ ...prev, [index]: true }));
-                                    } else {
-                                      setBlossomError(prev => ({ ...prev, [index]: result.message }));
-                                    }
-                                  } finally {
-                                    setBlossomUploading(prev => ({ ...prev, [index]: false }));
-                                    e.target.value = '';
-                                  }
-                                }}
-                              />
-                              {blossomUploading[index] && (
-                                <div style={{ color: 'var(--text-secondary)', fontSize: '0.85em', marginTop: '4px' }}>
-                                  Uploading to Blossom servers...
-                                </div>
-                              )}
-                              {blossomError[index] && (
-                                <div style={{ color: 'var(--error)', fontSize: '0.85em', marginTop: '4px' }}>
-                                  {blossomError[index]}
-                                </div>
-                              )}
-                              {blossomSuccess[index] && (
-                                <div style={{ color: 'var(--success, #2d7a2d)', fontSize: '0.85em', marginTop: '4px' }}>
-                                  Uploaded — URL, file size, and duration filled in
-                                </div>
-                              )}
-                            </>
-                          ) : (
-                            <div style={{ color: 'var(--text-secondary)', fontSize: '0.85em', marginTop: '6px' }}>
-                              Sign in with Nostr to upload files to Blossom
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        <input
+                      <input
                           type="url"
                           className="form-input"
                           placeholder={isVideo ? "https://example.com/video.mp4" : "https://example.com/track.mp3"}
@@ -951,6 +885,20 @@ export function Editor() {
                             }
                           }}
                         />
+                      {!isVideo && (
+                        <BlossomFileUpload
+                          accept="audio/*"
+                          label="Upload audio to Blossom"
+                          onUploaded={async ({ url, file }) => {
+                            dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { enclosureUrl: url } } });
+                            dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { enclosureType: file.type || getAudioMimeType(url) } } });
+                            dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { enclosureLength: String(file.size) } } });
+                            const duration = await getMediaDuration(url);
+                            if (duration !== null) {
+                              dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { duration: secondsToHHMMSS(duration) } } });
+                            }
+                          }}
+                        />
                       )}
                       {isVideo && resolvingNaddr[index] && (
                         <div style={{ color: 'var(--text-secondary)', fontSize: '0.85em', marginTop: '4px' }}>
@@ -967,7 +915,7 @@ export function Editor() {
                           Tip: Paste a Nostr naddr to auto-fill video details
                         </div>
                       )}
-                      {!isVideo && hostingMode === 'selfhost' && track.enclosureUrl && !isKnownAudioFormat(track.enclosureUrl) && (
+                      {!isVideo && track.enclosureUrl && !isKnownAudioFormat(track.enclosureUrl) && !isBlossomMediaUrl(track.enclosureUrl) && (
                         <div style={{ color: 'var(--warning, #b8860b)', fontSize: '0.85em', marginTop: '4px' }}>
                           URL doesn't end with a recognized audio extension (mp3, flac, wav, m4a, aac, ogg, opus, aiff). Podcast apps may not play it.
                         </div>
@@ -1113,37 +1061,31 @@ export function Editor() {
                     </div>
                     <div className="form-group">
                       <label className="form-label">{isVideo ? 'Thumbnail URL' : 'Track Art URL'}<InfoIcon text={FIELD_INFO.trackArtUrl} /></label>
-                      {hostingMode === 'upload' ? (
-                        <BlossomFileUpload accept="image/*" onUrl={url => dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { trackArtUrl: url } } })} required />
-                      ) : (
-                        <input
-                          type="url"
-                          className="form-input"
-                          placeholder={isVideo ? "Override cover art for this video" : "Override album art for this track"}
-                          value={track.trackArtUrl || ''}
-                          onChange={e => dispatch({
-                            type: 'UPDATE_TRACK',
-                            payload: { index, track: { trackArtUrl: e.target.value } }
-                          })}
-                        />
-                      )}
+                      <input
+                        type="url"
+                        className="form-input"
+                        placeholder={isVideo ? "Override cover art for this video" : "Override album art for this track"}
+                        value={track.trackArtUrl || ''}
+                        onChange={e => dispatch({
+                          type: 'UPDATE_TRACK',
+                          payload: { index, track: { trackArtUrl: e.target.value } }
+                        })}
+                      />
+                      <BlossomFileUpload accept="image/*" onUploaded={({ url }) => dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { trackArtUrl: url } } })} />
                     </div>
                     <div className="form-group">
                       <label className="form-label">Lyrics URL<InfoIcon text={FIELD_INFO.transcriptUrl} /></label>
-                      {hostingMode === 'upload' ? (
-                        <BlossomFileUpload accept=".srt,.vtt,text/plain" onUrl={url => dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { transcriptUrl: url } } })} required label="Upload to Blossom (.srt / .vtt)" />
-                      ) : (
-                        <input
-                          type="url"
-                          className="form-input"
-                          placeholder="https://example.com/lyrics.srt"
-                          value={track.transcriptUrl || ''}
-                          onChange={e => dispatch({
-                            type: 'UPDATE_TRACK',
-                            payload: { index, track: { transcriptUrl: e.target.value } }
-                          })}
-                        />
-                      )}
+                      <input
+                        type="url"
+                        className="form-input"
+                        placeholder="https://example.com/lyrics.srt"
+                        value={track.transcriptUrl || ''}
+                        onChange={e => dispatch({
+                          type: 'UPDATE_TRACK',
+                          payload: { index, track: { transcriptUrl: e.target.value } }
+                        })}
+                      />
+                      <BlossomFileUpload accept=".srt,.vtt,text/plain" label="Upload lyrics to Blossom (.srt / .vtt)" onUploaded={({ url }) => dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { transcriptUrl: url } } })} />
                     </div>
                     <div className="form-group">
                       <Toggle
@@ -1223,20 +1165,17 @@ export function Editor() {
                                 </div>
                                 <div className="form-group">
                                   <label className="form-label">Photo URL<InfoIcon text={FIELD_INFO.personImg} /></label>
-                                  {hostingMode === 'upload' ? (
-                                    <BlossomFileUpload accept="image/*" onUrl={url => dispatch({ type: 'UPDATE_TRACK_PERSON', payload: { trackIndex: index, personIndex, person: { ...person, img: url } } })} required />
-                                  ) : (
-                                    <input
-                                      type="url"
-                                      className="form-input"
-                                      placeholder="https://..."
-                                      value={person.img || ''}
-                                      onChange={e => dispatch({
-                                        type: 'UPDATE_TRACK_PERSON',
-                                        payload: { trackIndex: index, personIndex, person: { ...person, img: e.target.value } }
-                                      })}
-                                    />
-                                  )}
+                                  <input
+                                    type="url"
+                                    className="form-input"
+                                    placeholder="https://..."
+                                    value={person.img || ''}
+                                    onChange={e => dispatch({
+                                      type: 'UPDATE_TRACK_PERSON',
+                                      payload: { trackIndex: index, personIndex, person: { ...person, img: e.target.value } }
+                                    })}
+                                  />
+                                  <BlossomFileUpload accept="image/*" onUploaded={({ url }) => dispatch({ type: 'UPDATE_TRACK_PERSON', payload: { trackIndex: index, personIndex, person: { ...person, img: url } } })} />
                                 </div>
                                 <div className="form-group">
                                   <label className="form-label">Nostr npub<InfoIcon text={FIELD_INFO.personNpub} /></label>

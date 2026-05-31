@@ -5,7 +5,6 @@ import type { FeedType } from './store/feedStore.tsx';
 import { NostrProvider, useNostr } from './store/nostrStore.tsx';
 import { ThemeProvider, useTheme } from './store/themeStore.tsx';
 import { ExperimentalProvider, useExperimental } from './store/experimentalStore.tsx';
-import { HostingModeProvider, useHostingMode } from './store/hostingModeStore.tsx';
 import { parseRssFeed, isPublisherFeed, isVideoFeed, parsePublisherRssFeed } from './utils/xmlParser';
 import { createEmptyAlbum, createEmptyPublisherFeed, createEmptyVideoAlbum } from './types/feed';
 import { pendingHostedStorage } from './utils/storage';
@@ -30,7 +29,6 @@ function AppContent() {
   const { state, dispatch } = useFeed();
   const { theme, toggleTheme } = useTheme();
   const { showExperimental, toggleExperimental } = useExperimental();
-  const { hostingMode, setHostingMode } = useHostingMode();
   const [showImportModal, setShowImportModal] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
@@ -228,12 +226,6 @@ function AppContent() {
                   >
                     🧪 {showExperimental ? 'Hide' : 'Show'} Experimental Features
                   </button>
-                  <button
-                    className="dropdown-item"
-                    onClick={() => { setHostingMode(hostingMode === 'upload' ? 'selfhost' : 'upload'); setShowDropdown(false); }}
-                  >
-                    {hostingMode === 'upload' ? '🔗 Switch to Self-Host Mode' : '☁️ Switch to Upload Mode'}
-                  </button>
                   <div className="dropdown-divider" />
                   {nostrState.isLoggedIn ? (
                     <button
@@ -404,11 +396,9 @@ function App() {
     return (
       <ThemeProvider>
         <ExperimentalProvider>
-          <HostingModeProvider>
-            <NostrProvider>
-              <AdminPage />
-            </NostrProvider>
-          </HostingModeProvider>
+          <NostrProvider>
+            <AdminPage />
+          </NostrProvider>
         </ExperimentalProvider>
       </ThemeProvider>
     );
@@ -417,13 +407,11 @@ function App() {
   return (
     <ThemeProvider>
       <ExperimentalProvider>
-        <HostingModeProvider>
-          <NostrProvider>
-            <FeedProvider>
-              <AppContent />
-            </FeedProvider>
-          </NostrProvider>
-        </HostingModeProvider>
+        <NostrProvider>
+          <FeedProvider>
+            <AppContent />
+          </FeedProvider>
+        </NostrProvider>
       </ExperimentalProvider>
     </ThemeProvider>
   );

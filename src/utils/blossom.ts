@@ -40,15 +40,45 @@ export const BLOSSOM_MEDIA_SERVERS = [
   'https://nostr.download',
 ];
 
+export interface MediaUploadResult {
+  success: boolean;
+  message: string;
+  url?: string;
+  serversSucceeded: number;
+  serversTotal: number;
+}
+
+/**
+ * Returns true if the URL points at one of the known Blossom media servers.
+ * Used to suppress the "unrecognized audio extension" warning for hash-based
+ * Blossom URLs that legitimately have no file extension.
+ */
+export function isBlossomMediaUrl(url: string): boolean {
+  const normalized = url.replace(/\/$/, '');
+  return BLOSSOM_MEDIA_SERVERS.some(server => {
+    const base = server.replace(/\/$/, '');
+    return normalized.startsWith(base);
+  });
+}
+
 /**
  * Upload a media file to all known Blossom servers in parallel.
- * Returns the URL from the first server that accepts the upload.
+ * Returns the URL from the first server that accepts the upload, plus how many
+ * servers succeeded so callers can surface partial failures.
  */
 export async function uploadMediaToBlossom(
-  file: File
-): Promise<{ success: boolean; message: string; url?: string }> {
+  file: File,
+  opts?: { signal?: AbortSignal; timeoutMs?: number }
+): Promise<MediaUploadResult> {
+  const serversTotal = BLOSSOM_MEDIA_SERVERS.length;
+
   if (!hasSigner()) {
-    return { success: false, message: 'Nostr login required for Blossom upload' };
+    return {
+      success: false,
+      message: 'Nostr login required for Blossom upload',
+      serversSucceeded: 0,
+      serversTotal,
+    };
   }
 
   try {
@@ -56,48 +86,80 @@ export async function uploadMediaToBlossom(
     const arrayBuffer = await file.arrayBuffer();
     const hash = await sha256HashBinary(arrayBuffer);
 
-    const authEvent = await createBlossomAuthEvent(hash, pubkey, 'upload');
+    const timeoutMs = opts?.timeoutMs ?? 180000;
+    const authEvent = await createBlossomAuthEvent(
+      hash,
+      pubkey,
+      'upload',
+      Math.max(600, Math.ceil(timeoutMs / 1000) + 60)
+    );
     const signedAuthEvent = await signEventWithTimeout(authEvent);
     const authHeader = 'Nostr ' + btoa(JSON.stringify(signedAuthEvent));
 
     const uploadToServer = async (server: string): Promise<string> => {
       const serverUrl = server.replace(/\/$/, '');
-      const response = await fetch(`${serverUrl}/upload`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': authHeader,
-          'Content-Type': file.type || 'application/octet-stream',
-        },
-        body: arrayBuffer,
-      });
-      if (!response.ok) {
-        throw new Error(`${serverUrl}: ${response.status}`);
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), timeoutMs);
+      const onExternalAbort = () => controller.abort();
+      opts?.signal?.addEventListener('abort', onExternalAbort);
+      try {
+        const response = await fetch(`${serverUrl}/upload`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': authHeader,
+            'Content-Type': file.type || 'application/octet-stream',
+          },
+          body: arrayBuffer,
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          throw new Error(`${serverUrl}: ${response.status}`);
+        }
+        const result = await response.json();
+        return result.url || `${serverUrl}/${hash}`;
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          throw new Error(`${serverUrl}: timed out`);
+        }
+        throw err;
+      } finally {
+        clearTimeout(t);
+        opts?.signal?.removeEventListener('abort', onExternalAbort);
       }
-      const result = await response.json();
-      return result.url || `${serverUrl}/${hash}`;
     };
 
     const results = await Promise.allSettled(
       BLOSSOM_MEDIA_SERVERS.map(server => uploadToServer(server))
     );
 
+    const serversSucceeded = results.filter(r => r.status === 'fulfilled').length;
     const firstSuccess = results.find(r => r.status === 'fulfilled');
     if (firstSuccess && firstSuccess.status === 'fulfilled') {
-      const failures = results.filter(r => r.status === 'rejected').length;
-      if (failures > 0) {
-        console.warn(`Blossom: uploaded to ${results.length - failures}/${results.length} servers`);
+      if (serversSucceeded < serversTotal) {
+        console.warn(`Blossom: uploaded to ${serversSucceeded}/${serversTotal} servers`);
       }
-      return { success: true, message: 'Uploaded successfully', url: firstSuccess.value };
+      return {
+        success: true,
+        message: 'Uploaded successfully',
+        url: firstSuccess.value,
+        serversSucceeded,
+        serversTotal,
+      };
     }
 
     const errors = results
       .filter(r => r.status === 'rejected')
       .map(r => (r as PromiseRejectedResult).reason?.message || 'Unknown error')
       .join('; ');
-    return { success: false, message: `All servers rejected the upload: ${errors}` };
+    return {
+      success: false,
+      message: `All servers rejected the upload: ${errors}`,
+      serversSucceeded: 0,
+      serversTotal,
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    return { success: false, message };
+    return { success: false, message, serversSucceeded: 0, serversTotal };
   }
 }
 
@@ -107,9 +169,10 @@ export async function uploadMediaToBlossom(
 async function createBlossomAuthEvent(
   hash: string,
   pubkey: string,
-  action: 'upload' | 'delete' = 'upload'
+  action: 'upload' | 'delete' = 'upload',
+  expirationSeconds?: number
 ): Promise<NostrEvent> {
-  const expiration = Math.floor(Date.now() / 1000) + 300; // 5 minutes from now
+  const expiration = Math.floor(Date.now() / 1000) + (expirationSeconds ?? 300);
 
   return {
     kind: BLOSSOM_AUTH_KIND,

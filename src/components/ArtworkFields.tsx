@@ -1,7 +1,6 @@
 import { FIELD_INFO } from '../data/fieldInfo';
 import { InfoIcon } from './InfoIcon';
 import { BlossomFileUpload } from './BlossomFileUpload';
-import { useHostingMode } from '../store/hostingModeStore';
 
 interface ArtworkFieldsProps {
   imageUrl: string | undefined;
@@ -24,23 +23,18 @@ export function ArtworkFields({
   titlePlaceholder = 'Image description',
   previewAlt = 'Image preview'
 }: ArtworkFieldsProps) {
-  const { hostingMode } = useHostingMode();
-
   return (
     <div className="form-grid">
       <div className="form-group">
         <label className="form-label">{urlLabel} <span className="required">*</span><InfoIcon text={FIELD_INFO.imageUrl} /></label>
-        {hostingMode === 'upload' ? (
-          <BlossomFileUpload accept="image/*" onUrl={url => onUpdate('imageUrl', url)} required />
-        ) : (
-          <input
-            type="url"
-            className="form-input"
-            placeholder={urlPlaceholder}
-            value={imageUrl || ''}
-            onChange={e => onUpdate('imageUrl', e.target.value)}
-          />
-        )}
+        <input
+          type="url"
+          className="form-input"
+          placeholder={urlPlaceholder}
+          value={imageUrl || ''}
+          onChange={e => onUpdate('imageUrl', e.target.value)}
+        />
+        <BlossomFileUpload accept="image/*" onUploaded={({ url }) => onUpdate('imageUrl', url)} />
       </div>
       <div className="form-group">
         <label className="form-label">Image Title<InfoIcon text={FIELD_INFO.imageTitle} /></label>

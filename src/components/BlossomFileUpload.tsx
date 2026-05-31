@@ -1,55 +1,56 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useNostr } from '../store/nostrStore';
 import { uploadMediaToBlossom } from '../utils/blossom';
 
 interface BlossomFileUploadProps {
   accept: string;
-  onUrl: (url: string) => void;
+  onUploaded: (result: { url: string; file: File }) => void;
   label?: string;
-  /** When true, always renders even if not logged in (shows login prompt instead) */
-  required?: boolean;
 }
 
-export function BlossomFileUpload({ accept, onUrl, label = 'Upload to Blossom', required = false }: BlossomFileUploadProps) {
+export function BlossomFileUpload({ accept, onUploaded, label = 'Upload to Blossom' }: BlossomFileUploadProps) {
   const { state: nostrState } = useNostr();
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [partial, setPartial] = useState<{ succeeded: number; total: number } | null>(null);
+  const lastFileRef = useRef<File | null>(null);
 
-  if (!nostrState.isLoggedIn) {
-    if (!required) return null;
-    return (
-      <div style={{ color: 'var(--text-secondary)', fontSize: '0.85em', marginTop: '6px' }}>
-        Sign in with Nostr to upload files to Blossom
-      </div>
-    );
-  }
+  // The URL field above this control is enough for logged-out users.
+  if (!nostrState.isLoggedIn) return null;
 
-  const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const doUpload = async (file: File) => {
+    lastFileRef.current = file;
     setUploading(true);
     setError(null);
     setSuccess(false);
+    setPartial(null);
     try {
       const result = await uploadMediaToBlossom(file);
       if (result.success && result.url) {
-        onUrl(result.url);
+        onUploaded({ url: result.url, file });
         setSuccess(true);
+        if (result.serversSucceeded < result.serversTotal) {
+          setPartial({ succeeded: result.serversSucceeded, total: result.serversTotal });
+        }
       } else {
         setError(result.message);
       }
     } finally {
       setUploading(false);
-      e.target.value = '';
     }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    doUpload(file);
   };
 
   return (
     <div style={{ marginTop: '6px' }}>
-      {!required && (
-        <label className="form-label" style={{ fontSize: '0.85em', marginBottom: '4px' }}>{label}</label>
-      )}
+      <label className="form-label" style={{ fontSize: '0.85em', marginBottom: '4px' }}>{label}</label>
       <input
         type="file"
         accept={accept}
@@ -59,17 +60,38 @@ export function BlossomFileUpload({ accept, onUrl, label = 'Upload to Blossom', 
       />
       {uploading && (
         <div style={{ color: 'var(--text-secondary)', fontSize: '0.85em', marginTop: '4px' }}>
-          Uploading to Blossom servers...
+          Uploading to Blossom servers…
         </div>
       )}
       {error && (
-        <div style={{ color: 'var(--error)', fontSize: '0.85em', marginTop: '4px' }}>
-          {error}
+        <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <span style={{ color: 'var(--error)', fontSize: '0.85em' }}>{error}</span>
+          <button
+            type="button"
+            className="btn-secondary"
+            style={{
+              fontSize: '0.8em',
+              padding: '2px 10px',
+              cursor: 'pointer',
+              border: '1px solid var(--border-color, #ccc)',
+              borderRadius: '4px',
+              background: 'transparent',
+              color: 'inherit',
+            }}
+            onClick={() => { if (lastFileRef.current) doUpload(lastFileRef.current); }}
+          >
+            Retry
+          </button>
         </div>
       )}
       {success && (
         <div style={{ color: 'var(--success, #2d7a2d)', fontSize: '0.85em', marginTop: '4px' }}>
           Uploaded — URL filled in
+          {partial && (
+            <span style={{ color: 'var(--text-secondary)' }}>
+              {' '}· Hosted on {partial.succeeded} of {partial.total} servers
+            </span>
+          )}
         </div>
       )}
     </div>

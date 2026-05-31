@@ -8,6 +8,7 @@ interface NewFeedChoiceModalProps {
   onUseTemplate: () => void;
   onArtistSetup?: () => void;
   onCancel: () => void;
+  onNewArtist?: () => void;
 }
 
 const feedTypeLabel = (feedType: FeedType) =>
@@ -23,6 +24,7 @@ export function NewFeedChoiceModal({
   onUseTemplate,
   onArtistSetup,
   onCancel,
+  onNewArtist,
 }: NewFeedChoiceModalProps) {
   const label = feedTypeLabel(feedType);
   const showArtistSetup = feedType === 'album' && !!onArtistSetup;
@@ -34,6 +36,7 @@ export function NewFeedChoiceModal({
       title={`New ${label}`}
       footer={
         <div style={{ display: 'flex', gap: '12px', width: '100%', flexWrap: 'wrap' }}>
+<<<<<<< HEAD
           <button className="btn btn-warning" onClick={onStartBlank}>
             Start Blank
           </button>
@@ -42,6 +45,16 @@ export function NewFeedChoiceModal({
               Artist Setup
             </button>
           )}
+=======
+          {onNewArtist && feedType === 'album' && (
+            <button className="btn btn-primary" onClick={onNewArtist}>
+              New Artist (Guided)
+            </button>
+          )}
+          <button className="btn btn-warning" onClick={onStartBlank}>
+            Start Blank
+          </button>
+>>>>>>> origin/feature/artist-onboarding
           <button className="btn btn-secondary" onClick={onUseTemplate}>
             Use Template
           </button>

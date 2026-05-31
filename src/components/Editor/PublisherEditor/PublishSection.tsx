@@ -10,7 +10,7 @@ import {
   type PublishProgress,
   type PublishResult
 } from '../../../utils/publisherPublish';
-import { downloadHostedFeedBackup, type HostedFeedInfo } from '../../../utils/hostedFeed';
+import type { HostedFeedInfo } from '../../../utils/hostedFeed';
 import { publisherStorage } from '../../../utils/storage';
 
 interface PublishSectionProps {
@@ -43,8 +43,6 @@ export function PublishSection({ publisherFeed }: PublishSectionProps) {
   // Options
   const [updateCatalogFeeds, setUpdateCatalogFeeds] = useState(true);
 
-  // Token acknowledgment (for first-time publish)
-  const [tokenAcknowledged, setTokenAcknowledged] = useState(false);
   const [pendingHostedInfo, setPendingHostedInfo] = useState<HostedFeedInfo | null>(null);
 
   // Current status
@@ -98,11 +96,6 @@ export function PublishSection({ publisherFeed }: PublishSectionProps) {
   }, [progress, updateCatalogFeeds, publisherFeed.remoteItems.length]);
 
   const handlePublish = async () => {
-    // For first-time publish without Nostr, require token acknowledgment
-    if (!isPublished && !isLoggedIn && !tokenAcknowledged) {
-      return;
-    }
-
     // Save to local storage first
     publisherStorage.save(publisherFeed);
 
@@ -179,9 +172,7 @@ export function PublishSection({ publisherFeed }: PublishSectionProps) {
     navigator.clipboard.writeText(text);
   };
 
-  // Show token save UI for first-time publish when not logged in
-  const showTokenSaveUI = !isPublished && !isLoggedIn && !tokenAcknowledged;
-  const showNewTokenInfo = pendingHostedInfo && !isLoggedIn;
+  const showNewTokenInfo = pendingHostedInfo && isLoggedIn;
 
   return (
     <Section title="Publish on MSP" icon="&#128640;">
@@ -307,103 +298,18 @@ export function PublishSection({ publisherFeed }: PublishSectionProps) {
         </div>
       )}
 
-      {/* Token Save Warning (first-time publish without Nostr) */}
-      {showTokenSaveUI && (
-        <div style={{
-          marginBottom: '16px',
-          padding: '12px',
-          backgroundColor: 'var(--bg-tertiary)',
-          borderRadius: '8px',
-          border: '1px solid var(--warning-color, #f59e0b)'
-        }}>
-          <p style={{
-            fontSize: '14px',
-            fontWeight: 600,
-            color: 'var(--warning-color, #f59e0b)',
-            marginBottom: '8px'
-          }}>
-            Important: Save your edit token
-          </p>
-          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
-            You'll need an edit token to update this feed later. The token will be shown after publishing.
-            Make sure to save it somewhere safe!
-          </p>
-          <label style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            cursor: 'pointer',
-            fontSize: '14px',
-            padding: '8px',
-            backgroundColor: tokenAcknowledged ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
-            borderRadius: '4px',
-            border: tokenAcknowledged ? '1px solid var(--success-color)' : '1px solid var(--border-color)'
-          }}>
-            <input
-              type="checkbox"
-              checked={tokenAcknowledged}
-              onChange={(e) => setTokenAcknowledged(e.target.checked)}
-              style={{ width: '16px', height: '16px' }}
-            />
-            <span>I understand I need to save my edit token</span>
-          </label>
-        </div>
-      )}
-
-      {/* Show new token after first publish */}
+      {/* Confirmation after first publish */}
       {showNewTokenInfo && (
         <div style={{
           marginBottom: '16px',
           padding: '12px',
           backgroundColor: 'var(--bg-tertiary)',
           borderRadius: '8px',
-          border: '1px solid var(--warning-color, #f59e0b)'
+          border: '1px solid var(--success-color)'
         }}>
-          <p style={{
-            fontSize: '14px',
-            fontWeight: 600,
-            color: 'var(--warning-color, #f59e0b)',
-            marginBottom: '8px'
-          }}>
-            Save your edit token now!
+          <p style={{ fontSize: '14px', color: 'var(--success-color)', margin: 0 }}>
+            Feed published and linked to your Nostr identity. You can update it from any device.
           </p>
-          <input
-            type="text"
-            value={pendingHostedInfo.editToken}
-            readOnly
-            onClick={(e) => (e.target as HTMLInputElement).select()}
-            style={{
-              width: '100%',
-              padding: '8px 12px',
-              borderRadius: '4px',
-              border: '1px solid var(--warning-color, #f59e0b)',
-              backgroundColor: 'var(--bg-secondary)',
-              color: 'var(--text-primary)',
-              fontSize: '12px',
-              fontFamily: 'monospace',
-              marginBottom: '12px'
-            }}
-          />
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <button
-              className="btn btn-secondary"
-              onClick={() => copyToClipboard(pendingHostedInfo.editToken)}
-            >
-              Copy Token
-            </button>
-            <button
-              className="btn btn-secondary"
-              onClick={() => {
-                downloadHostedFeedBackup(
-                  pendingHostedInfo.feedId,
-                  pendingHostedInfo.editToken,
-                  publisherFeed.title || 'Publisher Feed'
-                );
-              }}
-            >
-              Download Backup
-            </button>
-          </div>
         </div>
       )}
 
@@ -426,7 +332,7 @@ export function PublishSection({ publisherFeed }: PublishSectionProps) {
       <button
         className="btn btn-primary"
         onClick={handlePublish}
-        disabled={isPublishing || !canPublish || showTokenSaveUI}
+        disabled={isPublishing || !canPublish}
         style={{
           width: '100%',
           padding: '12px',

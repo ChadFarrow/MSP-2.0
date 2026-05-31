@@ -14,6 +14,33 @@ const FILE_METADATA_KIND = 1063;
 
 const CLIENT_TAG = 'MSP 2.0';
 
+// Well-known public Blossom servers tried in parallel on media upload
+export const BLOSSOM_MEDIA_SERVERS = [
+  'https://blossom.primal.net',
+  'https://nostr.download',
+];
+
+export interface MediaUploadResult {
+  success: boolean;
+  message: string;
+  url?: string;
+  serversSucceeded: number;
+  serversTotal: number;
+}
+
+/**
+ * Returns true if the URL points at one of the known Blossom media servers.
+ * Used to suppress the "unrecognized audio extension" warning for hash-based
+ * Blossom URLs that have no file extension.
+ */
+export function isBlossomMediaUrl(url: string): boolean {
+  const normalized = url.replace(/\/$/, '');
+  return BLOSSOM_MEDIA_SERVERS.some(server => {
+    const base = server.replace(/\/$/, '');
+    return normalized.startsWith(base);
+  });
+}
+
 /**
  * Calculate SHA256 hash of content
  */
@@ -32,33 +59,6 @@ async function sha256HashBinary(data: ArrayBuffer): Promise<string> {
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-// Well-known public Blossom servers tried in parallel on media upload
-export const BLOSSOM_MEDIA_SERVERS = [
-  'https://blossom.primal.net',
-  'https://nostr.download',
-];
-
-export interface MediaUploadResult {
-  success: boolean;
-  message: string;
-  url?: string;
-  serversSucceeded: number;
-  serversTotal: number;
-}
-
-/**
- * Returns true if the URL points at one of the known Blossom media servers.
- * Used to suppress the "unrecognized audio extension" warning for hash-based
- * Blossom URLs that legitimately have no file extension.
- */
-export function isBlossomMediaUrl(url: string): boolean {
-  const normalized = url.replace(/\/$/, '');
-  return BLOSSOM_MEDIA_SERVERS.some(server => {
-    const base = server.replace(/\/$/, '');
-    return normalized.startsWith(base);
-  });
 }
 
 /**

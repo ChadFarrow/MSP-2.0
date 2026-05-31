@@ -12,7 +12,8 @@ export const STORAGE_KEYS = {
   HOSTED_PREFIX: 'msp2-hosted-',
   PENDING_HOSTED: 'msp2-pending-hosted',
   ONBOARDING_COMPLETE: 'msp2-onboarding-complete',
-  FEATURE_PREFS: 'msp2-feature-prefs'
+  FEATURE_PREFS: 'msp2-feature-prefs',
+  WIZARD_COMPLETE: 'msp2-wizard-complete',
 } as const;
 
 // Migration helper: convert old person format to new format
@@ -166,11 +167,11 @@ export const nostrUserStorage = {
 // Hosted feed info type (re-exported from hostedFeed)
 export interface HostedFeedInfo {
   feedId: string;
-  editToken: string;
+  editToken?: string;  // Legacy — no longer used for new feeds (Nostr auth only)
   createdAt: number;
   lastUpdated: number;
-  ownerPubkey?: string;  // Nostr pubkey if linked
-  linkedAt?: number;     // When Nostr was linked
+  ownerPubkey?: string;
+  linkedAt?: number;
 }
 
 // Hosted feed storage operations
@@ -190,4 +191,10 @@ export const pendingHostedStorage = {
   load: (): HostedFeedInfo | null => getItem<HostedFeedInfo>(STORAGE_KEYS.PENDING_HOSTED),
   save: (info: HostedFeedInfo): boolean => setItem(STORAGE_KEYS.PENDING_HOSTED, info),
   clear: (): boolean => removeItem(STORAGE_KEYS.PENDING_HOSTED)
+};
+
+// New artist onboarding wizard completion flag
+export const wizardStorage = {
+  isComplete: (): boolean => getItem<boolean>(STORAGE_KEYS.WIZARD_COMPLETE) === true,
+  markComplete: (): boolean => setItem(STORAGE_KEYS.WIZARD_COMPLETE, true)
 };

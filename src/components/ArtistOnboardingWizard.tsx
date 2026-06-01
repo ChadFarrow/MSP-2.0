@@ -6,7 +6,6 @@ import { wizardStorage } from '../utils/storage';
 import { uploadMediaToBlossom } from '../utils/blossom';
 import { hostBothOnMSP } from '../utils/artistPublish';
 import type { PublishStep } from '../utils/artistPublish';
-import { ModalWrapper } from './modals/ModalWrapper';
 
 interface ArtistOnboardingWizardProps {
   onComplete: () => void;
@@ -20,6 +19,8 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
   const { dispatch } = useFeed();
 
   const [step, setStep] = useState<1 | 2 | 3 | 4>(() => (nostrState.isLoggedIn ? 2 : 1));
+
+  const closeRef = useRef<HTMLButtonElement>(null);
 
   // Step 1 — login
   const [bunkerUri, setBunkerUri] = useState('');
@@ -62,6 +63,23 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
     wizardStorage.markComplete();
     onComplete();
   };
+
+  // Close on Escape (full-page dialog provides its own key handling now that
+  // ModalWrapper is gone)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') handleDismiss();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+    // handleDismiss is stable for the component's lifetime (only closes the wizard)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Move focus into the dialog on mount so keyboard users land inside
+  useEffect(() => {
+    closeRef.current?.focus();
+  }, []);
 
   // ── Step 1 handlers ──────────────────────────────────────────────────────────
 
@@ -613,21 +631,40 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <ModalWrapper
-      isOpen={true}
-      onClose={handleDismiss}
-      title={
+    <div
+      className="onboarding-page"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="artist-wizard-title"
+    >
+      <header className="onboarding-page-header">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <span>New Artist Setup</span>
+          <h1 id="artist-wizard-title" className="onboarding-page-title">New Artist Setup</h1>
           {progressDots}
         </div>
-      }
-      footer={footer}
-    >
-      {step === 1 && step1}
-      {step === 2 && step2}
-      {step === 3 && step3}
-      {step === 4 && step4}
-    </ModalWrapper>
+        <button
+          type="button"
+          ref={closeRef}
+          className="onboarding-page-close"
+          onClick={handleDismiss}
+          aria-label="Close new artist setup"
+        >
+          ×
+        </button>
+      </header>
+
+      <main className="onboarding-page-content">
+        <div className="onboarding-step">
+          {step === 1 && step1}
+          {step === 2 && step2}
+          {step === 3 && step3}
+          {step === 4 && step4}
+        </div>
+      </main>
+
+      <footer className="onboarding-page-footer">
+        {footer}
+      </footer>
+    </div>
   );
 }

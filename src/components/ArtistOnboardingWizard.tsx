@@ -1,22 +1,37 @@
 import { useState, useEffect, useRef } from 'react';
+import QRCode from 'qrcode';
 import { useNostr } from '../store/nostrStore';
 import { useFeed } from '../store/feedStore';
-import { createEmptyAlbum, createEmptyTrack, createEmptyPublisherFeed, createEmptyRemoteItem } from '../types/feed';
+import { createEmptyAlbum, createEmptyTrack, createEmptyPublisherFeed, createEmptyRemoteItem, createSupportRecipients, LANGUAGES, ITUNES_CATEGORIES } from '../types/feed';
+import type { Album } from '../types/feed';
+import { Toggle } from './Toggle';
 import { wizardStorage } from '../utils/storage';
 import { uploadMediaToBlossom } from '../utils/blossom';
+import { getAudioDuration, secondsToHHMMSS } from '../utils/audioUtils';
 import { hostBothOnMSP } from '../utils/artistPublish';
 import type { PublishStep } from '../utils/artistPublish';
 import { buildHostedUrl } from '../utils/hostedFeed';
 import { checkSignerConnection } from '../utils/nostrSigner';
+import { InfoIcon } from './InfoIcon';
 
 interface ArtistOnboardingWizardProps {
   onComplete: () => void;
-  onOpenLogin: () => void;
 }
 
 const STEP_LABELS = ['Login', 'Your Info', 'Upload Music', 'Publish'];
 
-export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboardingWizardProps) {
+interface WizardTrack {
+  id: string;
+  title: string;
+  duration: string;
+  url: string;
+  mimeType: string;
+  uploading: boolean;
+  error: string;
+  file: File | null;
+}
+
+export function ArtistOnboardingWizard({ onComplete }: ArtistOnboardingWizardProps) {
   const { state: nostrState, login, loginWithNip46 } = useNostr();
   const { dispatch } = useFeed();
 
@@ -27,6 +42,11 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
   // Step 1 — login
   const [bunkerUri, setBunkerUri] = useState('');
   const [loginError, setLoginError] = useState('');
+  // NIP-46 QR login (scan with Amber etc.) — folded in from the old "More login
+  // options" modal so mobile users can connect without a second dialog.
+  const [connectUri, setConnectUri] = useState<string | null>(null);
+  const [generatingQr, setGeneratingQr] = useState(false);
+  const qrCanvasRef = useRef<HTMLCanvasElement>(null);
 
   // Step 2 — album info
   const [artistName, setArtistName] = useState('');
@@ -34,22 +54,20 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
   const [description, setDescription] = useState('');
   const [language, setLanguage] = useState('en');
   const [website, setWebsite] = useState('');
+  // Step 2 — optional details (discovery + payments)
+  const [category, setCategory] = useState('Music');
+  const [explicit, setExplicit] = useState(false);
+  const [lightningAddress, setLightningAddress] = useState('');
+  const [ownerName, setOwnerName] = useState('');
+  const [ownerEmail, setOwnerEmail] = useState('');
+  const [keywords, setKeywords] = useState('');
+  const [fundingUrl, setFundingUrl] = useState('');
 
-  // Step 3 — upload + track info
-  const [trackTitle, setTrackTitle] = useState('');
-  const [trackDuration, setTrackDuration] = useState('');
-  const [audioUrl, setAudioUrl] = useState('');
-  const [audioMimeType, setAudioMimeType] = useState('audio/mpeg');
+  // Step 3 — tracks + artwork
+  const [tracks, setTracks] = useState<WizardTrack[]>([]);
   const [artworkUrl, setArtworkUrl] = useState('');
-  const [uploadingAudio, setUploadingAudio] = useState(false);
   const [uploadingArtwork, setUploadingArtwork] = useState(false);
-  const [audioUploadError, setAudioUploadError] = useState('');
   const [artworkUploadError, setArtworkUploadError] = useState('');
-  // Blossom uploads fan out to multiple servers; track how many accepted the
-  // file so we can surface partial success ("uploaded to 1 of 2 servers").
-  const [audioServers, setAudioServers] = useState<{ ok: number; total: number } | null>(null);
-  const [artworkServers, setArtworkServers] = useState<{ ok: number; total: number } | null>(null);
-  const lastAudioFile = useRef<File | null>(null);
   const lastArtworkFile = useRef<File | null>(null);
 
   // Step 4 — publish
@@ -114,32 +132,101 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
     }
   };
 
+  const handleGenerateQr = async () => {
+    setLoginError('');
+    setGeneratingQr(true);
+    setConnectUri(null);
+    try {
+      // Passing no bunker URI + a callback makes the signer generate a
+      // nostrconnect:// URI we render as a QR for the user to scan.
+      await loginWithNip46(undefined, (uri) => setConnectUri(uri));
+    } catch (e) {
+      setLoginError(e instanceof Error ? e.message : 'Could not start QR login');
+    } finally {
+      setGeneratingQr(false);
+    }
+  };
+
+  const handleCopyConnectUri = async () => {
+    if (!connectUri) return;
+    try {
+      await navigator.clipboard.writeText(connectUri);
+    } catch {
+      // Fallback for older / non-secure-context browsers
+      const textArea = document.createElement('textarea');
+      textArea.value = connectUri;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+    }
+  };
+
+  // Render the QR onto the canvas whenever the connect URI changes.
+  useEffect(() => {
+    if (connectUri && qrCanvasRef.current) {
+      QRCode.toCanvas(qrCanvasRef.current, connectUri, {
+        width: 256,
+        margin: 2,
+        color: { dark: '#000000', light: '#ffffff' },
+      }).catch((err) => console.error('Failed to generate QR code:', err));
+    }
+  }, [connectUri]);
+
   // ── Step 3 handlers ──────────────────────────────────────────────────────────
 
-  const handleAudioChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    lastAudioFile.current = file;
-    setAudioUploadError('');
-    setUploadingAudio(true);
+  const updateTrack = (id: string, patch: Partial<WizardTrack>) =>
+    setTracks(prev => prev.map(t => (t.id === id ? { ...t, ...patch } : t)));
+
+  const removeTrack = (id: string) => setTracks(prev => prev.filter(t => t.id !== id));
+
+  // Upload one track's file to Blossom and pull its duration locally (in parallel,
+  // via an object URL, so we don't depend on the hosted copy being CORS-readable).
+  const uploadTrackFile = async (id: string, file: File) => {
+    updateTrack(id, { uploading: true, error: '', file });
+
+    const durationUrl = URL.createObjectURL(file);
+    getAudioDuration(durationUrl)
+      .then((secs) => { if (secs !== null) updateTrack(id, { duration: secondsToHHMMSS(secs) }); })
+      .finally(() => URL.revokeObjectURL(durationUrl));
+
     try {
       const result = await uploadMediaToBlossom(file);
       if (result.success && result.url) {
-        setAudioUrl(result.url);
-        setAudioMimeType(file.type || 'audio/mpeg');
-        setAudioServers({ ok: result.serversSucceeded, total: result.serversTotal });
-        // Pre-fill track title from filename if not already set
-        if (!trackTitle) {
-          const name = file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ');
-          setTrackTitle(name);
-        }
+        updateTrack(id, {
+          url: result.url,
+          mimeType: file.type || 'audio/mpeg',
+        });
       } else {
-        setAudioUploadError(result.message);
+        updateTrack(id, { error: result.message });
       }
     } finally {
-      setUploadingAudio(false);
+      updateTrack(id, { uploading: false });
     }
+  };
+
+  // One or more audio files selected — append a track per file and upload each.
+  const handleAddAudioFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = '';
+    if (!files.length) return;
+    const newTracks: WizardTrack[] = files.map((file) => ({
+      id: crypto.randomUUID(),
+      title: file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' '),
+      duration: '',
+      url: '',
+      mimeType: file.type || 'audio/mpeg',
+      uploading: true,
+      error: '',
+      file,
+    }));
+    setTracks(prev => [...prev, ...newTracks]);
+    newTracks.forEach(t => uploadTrackFile(t.id, t.file!));
+  };
+
+  const handleRetryTrack = (id: string) => {
+    const track = tracks.find(t => t.id === id);
+    if (track?.file) uploadTrackFile(id, track.file);
   };
 
   const handleArtworkChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -153,19 +240,12 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
       const result = await uploadMediaToBlossom(file);
       if (result.success && result.url) {
         setArtworkUrl(result.url);
-        setArtworkServers({ ok: result.serversSucceeded, total: result.serversTotal });
       } else {
         setArtworkUploadError(result.message);
       }
     } finally {
       setUploadingArtwork(false);
     }
-  };
-
-  const handleRetryAudio = () => {
-    const file = lastAudioFile.current;
-    if (!file) return;
-    handleAudioChange({ target: { files: [file], value: '' } } as unknown as React.ChangeEvent<HTMLInputElement>);
   };
 
   const handleRetryArtwork = () => {
@@ -192,24 +272,54 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
     }
     const { album: albumGuid, publisher: publisherGuid } = guidsRef.current;
 
-    const album = {
+    const lnAddr = lightningAddress.trim();
+    const album: Album = {
       ...createEmptyAlbum(),
       podcastGuid: albumGuid,
       title: albumName,
       author: artistName,
+      // We always have the npub from Nostr login — emit it as <podcast:txt purpose="npub">.
+      artistNpub: nostrState.user.npub,
       description,
       language: language || 'en',
       link: website,
       imageUrl: artworkUrl,
+      categories: category ? [category] : [],
+      keywords,
+      explicit,
+      ownerName,
+      ownerEmail,
+      funding: fundingUrl.trim()
+        ? [{ url: fundingUrl.trim(), text: `Support ${artistName}`.trim() }]
+        : [],
+      // Artist gets the lion's share; MSP + Podcast Index keep their 1/1 support
+      // splits. No Lightning address → no recipients (the generator drops the
+      // empty value block).
+      value: {
+        type: 'lightning',
+        method: 'keysend',
+        suggested: '0.000033333',
+        recipients: lnAddr
+          ? [
+              {
+                name: artistName || 'Artist',
+                address: lnAddr,
+                split: 98,
+                type: /^[0-9a-f]{66}$/i.test(lnAddr) ? 'node' : 'lnaddress',
+              },
+              ...createSupportRecipients(),
+            ]
+          : [],
+      },
       publisher: { feedGuid: publisherGuid, feedUrl: '' },
-      tracks: [{
-        ...createEmptyTrack(1),
-        title: trackTitle || albumName,
-        enclosureUrl: audioUrl,
-        enclosureType: audioMimeType,
-        duration: trackDuration,
+      tracks: tracks.map((t, i) => ({
+        ...createEmptyTrack(i + 1),
+        title: t.title || albumName,
+        enclosureUrl: t.url,
+        enclosureType: t.mimeType,
+        duration: t.duration,
         guid: crypto.randomUUID(),
-      }],
+      })),
     };
 
     const publisherFeed = {
@@ -220,6 +330,8 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
       description,
       language: language || 'en',
       link: website,
+      ownerName,
+      ownerEmail,
       // Carry the album art onto the publisher too — PI half-indexes (or skips)
       // publisher feeds with no image, which strands the verify step.
       imageUrl: artworkUrl,
@@ -323,23 +435,51 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
       )}
       <div>
         <label className="form-label">Remote signer (Amber, nsecBunker)</label>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <input
-            className="form-input"
-            style={{ flex: 1 }}
-            placeholder="bunker://..."
-            value={bunkerUri}
-            onChange={e => setBunkerUri(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') handleBunkerLogin(); }}
-          />
-          <button
-            className="btn btn-primary"
-            onClick={handleBunkerLogin}
-            disabled={!bunkerUri.trim() || nostrState.isLoading}
-          >
-            Connect
-          </button>
-        </div>
+        {!connectUri ? (
+          <>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                className="form-input"
+                style={{ flex: 1 }}
+                placeholder="bunker://..."
+                value={bunkerUri}
+                onChange={e => setBunkerUri(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleBunkerLogin(); }}
+              />
+              <button
+                className="btn btn-primary"
+                onClick={handleBunkerLogin}
+                disabled={!bunkerUri.trim() || nostrState.isLoading}
+              >
+                Connect
+              </button>
+            </div>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={handleGenerateQr}
+              disabled={generatingQr || nostrState.isLoading}
+              style={{ marginTop: 8 }}
+            >
+              {generatingQr ? 'Generating…' : 'Or scan a QR code'}
+            </button>
+          </>
+        ) : (
+          <div className="connect-qr-container">
+            <div className="qr-code-wrapper">
+              <canvas ref={qrCanvasRef} />
+            </div>
+            <p className="connect-waiting">Waiting for your signer to connect…</p>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" className="btn btn-secondary btn-small" onClick={handleCopyConnectUri}>
+                Copy URI
+              </button>
+              <button type="button" className="btn btn-secondary btn-small" onClick={() => setConnectUri(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
       {!nostrState.hasExtension && (
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.85em', margin: 0 }}>
@@ -351,13 +491,6 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
           {loginError || nostrState.error}
         </div>
       )}
-      <button
-        className="btn btn-link"
-        onClick={onOpenLogin}
-        style={{ textAlign: 'left', padding: 0, fontSize: '0.85em', color: 'var(--text-secondary)' }}
-      >
-        More login options →
-      </button>
     </div>
   );
 
@@ -372,6 +505,7 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
       <div className="form-group">
         <label className="form-label">
           Artist / Band Name <span style={{ color: 'var(--error, #dc2626)' }}>*</span>
+          <InfoIcon text="Your artist or band name." />
         </label>
         <input
           className="form-input"
@@ -384,7 +518,8 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
 
       <div className="form-group">
         <label className="form-label">
-          Album Name <span style={{ color: 'var(--error, #dc2626)' }}>*</span>
+          Album / Single Name <span style={{ color: 'var(--error, #dc2626)' }}>*</span>
+          <InfoIcon text="The name of your release. For a single, use the song's name." />
         </label>
         <input
           className="form-input"
@@ -397,6 +532,7 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
       <div className="form-group">
         <label className="form-label">
           Description <span style={{ color: 'var(--error, #dc2626)' }}>*</span>
+          <InfoIcon text="A short description of your release." />
         </label>
         <textarea
           className="form-input"
@@ -409,25 +545,114 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
       </div>
 
       <div style={{ display: 'flex', gap: 12 }}>
-        <div className="form-group" style={{ flex: '0 0 100px' }}>
+        <div className="form-group" style={{ flex: '0 0 160px' }}>
           <label className="form-label">
             Language <span style={{ color: 'var(--error, #dc2626)' }}>*</span>
+            <InfoIcon text="The main language of your release." />
           </label>
-          <input
-            className="form-input"
-            placeholder="en"
+          <select
+            className="form-select"
             value={language}
             onChange={e => setLanguage(e.target.value)}
-            maxLength={10}
-          />
+          >
+            {LANGUAGES.map(lang => (
+              <option key={lang.value} value={lang.value}>{lang.label}</option>
+            ))}
+          </select>
         </div>
         <div className="form-group" style={{ flex: 1 }}>
-          <label className="form-label">Website <span style={{ color: 'var(--text-secondary)', fontWeight: 'normal' }}>(optional)</span></label>
+          <label className="form-label">Website <span style={{ color: 'var(--text-secondary)', fontWeight: 'normal' }}>(optional)</span><InfoIcon text="Your artist or band website." /></label>
           <input
             className="form-input"
             placeholder="https://yoursite.com"
             value={website}
             onChange={e => setWebsite(e.target.value)}
+          />
+        </div>
+      </div>
+
+      {/* Optional details — discovery + payments */}
+      <div style={{
+        display: 'flex', flexDirection: 'column', gap: 14,
+        marginTop: 4, paddingTop: 16, borderTop: '1px solid var(--border-color)',
+      }}>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.85em', margin: 0 }}>
+          Optional — improves discovery and lets fans pay you.
+        </p>
+
+        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
+          <div className="form-group" style={{ flex: 1 }}>
+            <label className="form-label">
+              Category
+              <InfoIcon text="The category podcast apps file your release under." />
+            </label>
+            <select className="form-select" value={category} onChange={e => setCategory(e.target.value)}>
+              {ITUNES_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div className="form-group" style={{ flex: '0 0 auto', paddingBottom: 8 }}>
+            <Toggle checked={explicit} onChange={setExplicit} label="Explicit" />
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">
+            Lightning address <span style={{ color: 'var(--text-secondary)', fontWeight: 'normal' }}>(optional)</span>
+            <InfoIcon text="Your Lightning address (e.g. you@getalby.com) so fans can stream sats to you while they listen." />
+          </label>
+          <input
+            className="form-input"
+            placeholder="you@getalby.com"
+            value={lightningAddress}
+            onChange={e => setLightningAddress(e.target.value)}
+          />
+        </div>
+
+        <div style={{ display: 'flex', gap: 12 }}>
+          <div className="form-group" style={{ flex: 1 }}>
+            <label className="form-label">Owner name <span style={{ color: 'var(--text-secondary)', fontWeight: 'normal' }}>(optional)</span></label>
+            <input
+              className="form-input"
+              placeholder="Your name"
+              value={ownerName}
+              onChange={e => setOwnerName(e.target.value)}
+            />
+          </div>
+          <div className="form-group" style={{ flex: 1 }}>
+            <label className="form-label">Owner email <span style={{ color: 'var(--text-secondary)', fontWeight: 'normal' }}>(optional)</span></label>
+            <input
+              className="form-input"
+              type="email"
+              placeholder="you@email.com"
+              value={ownerEmail}
+              onChange={e => setOwnerEmail(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">
+            Keywords <span style={{ color: 'var(--text-secondary)', fontWeight: 'normal' }}>(optional)</span>
+            <InfoIcon text="Comma-separated tags for search (e.g. rock, indie, guitar)." />
+          </label>
+          <input
+            className="form-input"
+            placeholder="rock, indie, guitar"
+            value={keywords}
+            onChange={e => setKeywords(e.target.value)}
+          />
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">
+            Support link <span style={{ color: 'var(--text-secondary)', fontWeight: 'normal' }}>(optional)</span>
+            <InfoIcon text="A page where fans can support you (Patreon, Ko-fi, your site)." />
+          </label>
+          <input
+            className="form-input"
+            placeholder="https://patreon.com/you"
+            value={fundingUrl}
+            onChange={e => setFundingUrl(e.target.value)}
           />
         </div>
       </div>
@@ -441,84 +666,108 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
   const step3 = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       <p style={{ color: 'var(--text-secondary)', margin: 0 }}>
-        Upload your audio and artwork directly to Blossom — no hosting account needed.
+        Upload your audio and artwork directly.
       </p>
 
-      {/* Audio upload */}
+      {/* Tracks */}
       <div>
         <label className="form-label">
-          Audio file <span style={{ color: 'var(--error, #dc2626)' }}>*</span>
+          Tracks <span style={{ color: 'var(--error, #dc2626)' }}>*</span>
         </label>
-        <input
-          type="file"
-          accept="audio/*"
-          disabled={uploadingAudio}
-          style={{ display: 'block', width: '100%' }}
-          onChange={handleAudioChange}
-        />
-        {uploadingAudio && (
-          <div style={{ color: 'var(--text-secondary)', fontSize: '0.85em', marginTop: 4 }}>
-            Uploading to Blossom servers…
-          </div>
-        )}
-        {audioUploadError && (
-          <div style={{ marginTop: 4, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ color: 'var(--error, #dc2626)', fontSize: '0.85em' }}>{audioUploadError}</span>
-            <button type="button" className="btn btn-secondary btn-small" onClick={handleRetryAudio}>
-              Retry
-            </button>
-          </div>
-        )}
-        {audioUrl && !uploadingAudio && (
-          <div style={{ color: 'var(--success, #16a34a)', fontSize: '0.85em', marginTop: 4 }}>
-            ✓ Uploaded
-            {audioServers && audioServers.ok < audioServers.total && (
-              <span style={{ color: 'var(--text-secondary)' }}>
-                {' '}— hosted on {audioServers.ok} of {audioServers.total} servers
-              </span>
-            )}
+        <label className="wizard-upload-btn">
+          {tracks.length > 0 ? '+ Add more tracks' : 'Choose audio files'}
+          <input
+            type="file"
+            accept="audio/*"
+            multiple
+            onChange={handleAddAudioFiles}
+          />
+        </label>
+        <div style={{ color: 'var(--text-secondary)', fontSize: '0.8em', marginTop: 4 }}>
+          Select one or more audio files. You can add more anytime.
+        </div>
+
+        {tracks.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
+            {tracks.map((t, i) => (
+              <div
+                key={t.id}
+                style={{
+                  border: '1px solid var(--border-color, #ccc)',
+                  borderRadius: 8,
+                  padding: 12,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                }}
+              >
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.85em', minWidth: 16 }}>{i + 1}.</span>
+                  <input
+                    className="form-input"
+                    style={{ flex: 1, minWidth: 140 }}
+                    placeholder="Track title"
+                    value={t.title}
+                    onChange={e => updateTrack(t.id, { title: e.target.value })}
+                  />
+                  <input
+                    className="form-input"
+                    style={{ width: 90 }}
+                    placeholder="0:00:00"
+                    value={t.duration}
+                    onChange={e => updateTrack(t.id, { duration: e.target.value })}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-small"
+                    onClick={() => removeTrack(t.id)}
+                    aria-label={`Remove track ${i + 1}`}
+                  >
+                    ×
+                  </button>
+                </div>
+
+                {t.uploading && (
+                  <div style={{ color: 'var(--text-secondary)', fontSize: '0.85em' }}>
+                    Uploading to Blossom servers…
+                  </div>
+                )}
+                {t.error && (
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span style={{ color: 'var(--error, #dc2626)', fontSize: '0.85em' }}>{t.error}</span>
+                    <button type="button" className="btn btn-secondary btn-small" onClick={() => handleRetryTrack(t.id)}>
+                      Retry
+                    </button>
+                  </div>
+                )}
+                {t.url && !t.uploading && (
+                  <audio controls src={t.url} style={{ width: '100%' }}>
+                    Your browser does not support audio playback.
+                  </audio>
+                )}
+              </div>
+            ))}
           </div>
         )}
       </div>
 
-      {/* Track metadata (shown once audio is uploaded) */}
-      {(audioUrl || uploadingAudio) && (
-        <div style={{ display: 'flex', gap: 12 }}>
-          <div className="form-group" style={{ flex: 1 }}>
-            <label className="form-label">
-              Track Title <span style={{ color: 'var(--error, #dc2626)' }}>*</span>
-            </label>
-            <input
-              className="form-input"
-              placeholder="e.g. Track 1"
-              value={trackTitle}
-              onChange={e => setTrackTitle(e.target.value)}
-            />
-          </div>
-          <div className="form-group" style={{ flex: '0 0 110px' }}>
-            <label className="form-label">Duration <span style={{ color: 'var(--text-secondary)', fontWeight: 'normal' }}>(optional)</span></label>
-            <input
-              className="form-input"
-              placeholder="0:00:00"
-              value={trackDuration}
-              onChange={e => setTrackDuration(e.target.value)}
-            />
-          </div>
-        </div>
-      )}
-
       {/* Artwork upload */}
       <div>
         <label className="form-label">
-          Album artwork <span style={{ color: 'var(--text-secondary)', fontWeight: 'normal' }}>(optional — required for most podcast apps)</span>
+          Album / Single art <span style={{ color: 'var(--error, #dc2626)' }}>*</span>
+          <InfoIcon text="Cover art for your whole release. You can add art to each track later in the editor." />
         </label>
-        <input
-          type="file"
-          accept="image/*"
-          disabled={uploadingArtwork}
-          style={{ display: 'block', width: '100%' }}
-          onChange={handleArtworkChange}
-        />
+        {!artworkUrl && (
+          <label className={`wizard-upload-btn${uploadingArtwork ? ' is-disabled' : ''}`}>
+            Choose image
+            <input
+              type="file"
+              accept="image/*"
+              disabled={uploadingArtwork}
+              onChange={handleArtworkChange}
+            />
+          </label>
+        )}
         {uploadingArtwork && (
           <div style={{ color: 'var(--text-secondary)', fontSize: '0.85em', marginTop: 4 }}>
             Uploading to Blossom servers…
@@ -533,23 +782,34 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
           </div>
         )}
         {artworkUrl && !uploadingArtwork && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-            <img src={artworkUrl} alt="Artwork preview" style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 4 }} />
-            <span style={{ color: 'var(--success, #16a34a)', fontSize: '0.85em' }}>
-              ✓ Uploaded
-              {artworkServers && artworkServers.ok < artworkServers.total && (
-                <span style={{ color: 'var(--text-secondary)' }}>
-                  {' '}— hosted on {artworkServers.ok} of {artworkServers.total} servers
-                </span>
-              )}
-            </span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+            <img src={artworkUrl} alt="Artwork preview" style={{ width: 180, height: 180, objectFit: 'cover', borderRadius: 6 }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ color: 'var(--success, #16a34a)', fontSize: '0.85em' }}>✓ Uploaded</span>
+              <button
+                type="button"
+                className="btn btn-secondary btn-small"
+                onClick={() => { setArtworkUrl(''); setArtworkUploadError(''); }}
+                aria-label="Remove artwork"
+              >
+                ×
+              </button>
+            </div>
           </div>
         )}
       </div>
     </div>
   );
 
-  const step3Valid = audioUrl && !uploadingAudio && !uploadingArtwork && trackTitle.trim();
+  // Duration must be present AND non-zero — a 00:00:00 enclosure duration breaks
+  // playback/seek in some podcast apps. /[1-9]/ rejects empty and all-zero values.
+  // Every track must be uploaded, titled, and have a non-zero duration (a
+  // 00:00:00 enclosure duration breaks playback/seek in some podcast apps).
+  const step3Valid =
+    tracks.length > 0 &&
+    !uploadingArtwork &&
+    !!artworkUrl &&
+    tracks.every(t => t.url && !t.uploading && t.title.trim() && /[1-9]/.test(t.duration));
 
   // ── Step 4 — Publish ───────────────────────────────────────────────────────
 
@@ -584,7 +844,7 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               <strong>{albumName}</strong>
               <span style={{ color: 'var(--text-secondary)' }}>by {artistName}</span>
-              <span style={{ color: 'var(--text-secondary)', fontSize: '0.9em' }}>{trackTitle} · {language.toUpperCase()}</span>
+              <span style={{ color: 'var(--text-secondary)', fontSize: '0.9em' }}>{tracks.length} track{tracks.length === 1 ? '' : 's'} · {language.toUpperCase()}</span>
             </div>
           </div>
           <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '0.9em' }}>

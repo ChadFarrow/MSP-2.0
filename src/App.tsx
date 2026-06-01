@@ -468,7 +468,6 @@ function AppContent() {
       {showArtistWizard && (
         <ArtistOnboardingWizard
           onComplete={() => setShowArtistWizard(false)}
-          onOpenLogin={() => setShowNostrConnectModal(true)}
         />
       )}
     </>

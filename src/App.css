@@ -957,6 +957,39 @@ body {
   gap: 14px;
 }
 
+/* Upload control for the onboarding wizard. A styled <label> wrapping a hidden
+   file input — avoids the native "No file selected" text (which is misleading
+   here, since we clear the input value after each successful upload) and the
+   tiny, low-contrast native rendering on the dark theme. */
+.wizard-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.95rem;
+  padding: 10px 18px;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  width: fit-content;
+}
+
+.wizard-upload-btn:hover {
+  background: var(--accent-primary);
+  color: #fff;
+  border-color: var(--accent-primary);
+}
+
+.wizard-upload-btn.is-disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.wizard-upload-btn input {
+  display: none;
+}
+
 .onboarding-gate {
   text-align: center;
   align-items: center;

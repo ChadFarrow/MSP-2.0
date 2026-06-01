@@ -36,7 +36,7 @@ export function NewFeedChoiceModal({
       title={`New ${label}`}
       footer={
         <div style={{ display: 'flex', gap: '12px', width: '100%', flexWrap: 'wrap' }}>
-          {onNewArtist && feedType === 'album' && (
+          {onNewArtist && (
             <button className="btn btn-primary" onClick={onNewArtist}>
               New Artist (Guided)
             </button>

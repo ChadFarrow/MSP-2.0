@@ -569,15 +569,39 @@ export const PERSON_ROLES: Record<PersonGroup, { value: string; label: string }[
 };
 
 // Language codes
+// ISO 639-1 two-letter codes, which is what the RSS <language> tag and podcast
+// apps (Apple Podcasts, Fountain, etc.) expect. English first (default), then
+// alphabetical by name. Apple also accepts regional variants (e.g. en-us), but
+// bare codes keep the list scannable and are valid everywhere.
 export const LANGUAGES = [
   { value: 'en', label: 'English' },
-  { value: 'es', label: 'Spanish' },
-  { value: 'de', label: 'German' },
-  { value: 'fr', label: 'French' },
-  { value: 'pt', label: 'Portuguese' },
-  { value: 'ja', label: 'Japanese' },
+  { value: 'ar', label: 'Arabic' },
+  { value: 'bn', label: 'Bengali' },
   { value: 'zh', label: 'Chinese' },
-  { value: 'ko', label: 'Korean' },
+  { value: 'cs', label: 'Czech' },
+  { value: 'da', label: 'Danish' },
+  { value: 'nl', label: 'Dutch' },
+  { value: 'fi', label: 'Finnish' },
+  { value: 'fr', label: 'French' },
+  { value: 'de', label: 'German' },
+  { value: 'el', label: 'Greek' },
+  { value: 'he', label: 'Hebrew' },
+  { value: 'hi', label: 'Hindi' },
+  { value: 'hu', label: 'Hungarian' },
+  { value: 'id', label: 'Indonesian' },
   { value: 'it', label: 'Italian' },
-  { value: 'nl', label: 'Dutch' }
+  { value: 'ja', label: 'Japanese' },
+  { value: 'ko', label: 'Korean' },
+  { value: 'no', label: 'Norwegian' },
+  { value: 'fa', label: 'Persian' },
+  { value: 'pl', label: 'Polish' },
+  { value: 'pt', label: 'Portuguese' },
+  { value: 'ro', label: 'Romanian' },
+  { value: 'ru', label: 'Russian' },
+  { value: 'es', label: 'Spanish' },
+  { value: 'sv', label: 'Swedish' },
+  { value: 'th', label: 'Thai' },
+  { value: 'tr', label: 'Turkish' },
+  { value: 'uk', label: 'Ukrainian' },
+  { value: 'vi', label: 'Vietnamese' }
 ];

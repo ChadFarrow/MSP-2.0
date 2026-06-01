@@ -8,7 +8,7 @@ export const FIELD_INFO = {
   artistNpub: "Nostr public key (npub1...) for the primary artist. Enables Nostr-based identity and discovery.",
   description: "A brief description of the album, band members, recording info, etc.",
   link: "The main website you want listeners to visit (usually a band website).",
-  language: "The language the feed is written in. See rssboard.org/rss-language-codes for codes.",
+  language: "The primary language spoken on your release (e.g. song lyrics).",
   podcastGuid: "A Globally Unique ID used to identify your feed across platforms and services.",
   keywords: "Comma-separated keywords for search and discovery (e.g., rock, indie, guitar).",
   ownerName: "The feed owner's name. Used for podcast directory contact info.",

@@ -1,7 +1,7 @@
 import type { Album, Track, Person, ValueRecipient, PublisherFeed } from '../types/feed';
 import type { NostrEvent, SavedAlbumInfo, NostrMusicTrackInfo, NostrMusicAlbumGroup, PublishedTrackRef } from '../types/nostr';
 import { generateRssFeed, generatePublisherRssFeed } from './xmlGenerator';
-import { parseRssFeed } from './xmlParser';
+import { parseRssFeed, parsePublisherRssFeed } from './xmlParser';
 import { formatReleasedDate } from './dateUtils';
 import {
   DEFAULT_RELAYS,
@@ -39,6 +39,7 @@ export interface NostrProfile {
   picture?: string;
   nip05?: string;
   about?: string;
+  lud16?: string;
 }
 
 // Fetch user profile (kind 0) from relays
@@ -280,6 +281,87 @@ export async function loadAlbumsFromNostr(
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     return { success: false, albums: [], message };
+  }
+}
+
+// Load saved PUBLISHER feeds owned by the logged-in npub (for returning-artist
+// onboarding). Same kind-30054 author query as loadAlbumsFromNostr, but parses
+// the full RSS content and keeps only publisher-medium feeds. Detects publisher
+// feeds by the <podcast:medium>publisher</podcast:medium> tag in the XML, since
+// parsePublisherRssFeed hardcodes medium and the Nostr event carries no medium tag.
+export async function loadPublisherFeedsFromNostr(
+  relays = DEFAULT_RELAYS
+): Promise<{ success: boolean; feeds: PublisherFeed[]; message: string }> {
+  if (!hasSigner()) {
+    return { success: false, feeds: [], message: 'Not logged in' };
+  }
+
+  try {
+    const pubkey = await getPublicKeyWithTimeout();
+    const allEvents: NostrEvent[] = [];
+
+    const results = await Promise.allSettled(
+      relays.map(async (relayUrl) => {
+        const ws = await connectRelay(relayUrl);
+        try {
+          const subId = Math.random().toString(36).substring(7);
+          const filter = {
+            kinds: [RSS_FEED_KIND],
+            authors: [pubkey]
+          };
+
+          ws.send(JSON.stringify(['REQ', subId, filter]));
+          const events = await collectEvents(ws, subId);
+          return events;
+        } finally {
+          ws.close();
+        }
+      })
+    );
+
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        allEvents.push(...result.value);
+      }
+    }
+
+    // Deduplicate by event id, filter by client tag and publisher medium.
+    const uniqueEvents = new Map<string, NostrEvent>();
+    for (const event of allEvents) {
+      const clientTag = event.tags.find(t => t[0] === 'client')?.[1];
+      if (event.id && !uniqueEvents.has(event.id) && clientTag === CLIENT_TAG) {
+        uniqueEvents.set(event.id, event);
+      }
+    }
+
+    // Parse publisher feeds; keep newest per podcastGuid.
+    const byGuid = new Map<string, { feed: PublisherFeed; createdAt: number }>();
+    for (const event of uniqueEvents.values()) {
+      if (!/<podcast:medium>\s*publisher\s*<\/podcast:medium>/.test(event.content)) continue;
+      try {
+        const feed = parsePublisherRssFeed(event.content);
+        if (!feed.podcastGuid) continue;
+        const prev = byGuid.get(feed.podcastGuid);
+        if (!prev || event.created_at > prev.createdAt) {
+          byGuid.set(feed.podcastGuid, { feed, createdAt: event.created_at });
+        }
+      } catch {
+        // Skip unparseable feeds
+      }
+    }
+
+    const feeds = Array.from(byGuid.values())
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map(e => e.feed);
+
+    return {
+      success: true,
+      feeds,
+      message: `Found ${feeds.length} publisher feed(s)`
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return { success: false, feeds: [], message };
   }
 }
 

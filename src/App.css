@@ -957,6 +957,192 @@ body {
   gap: 14px;
 }
 
+/* ── 7-step wizard rail + body ─────────────────────────────────────────────── */
+/* Top-align the body so it grows with its content and the page scrolls. Without
+   this the row flexbox's default align-items:stretch pins the body to the viewport
+   height, clipping tall steps and breaking scroll. */
+.onboarding-page-content:has(> .onboarding-body) {
+  align-items: flex-start;
+}
+
+/* Body container (used instead of .onboarding-step by OnboardingWizard). A wide,
+   centered column — roomy enough that the multi-field section rows lay out nicely
+   without stretching single inputs across the whole screen. */
+.onboarding-page-content > .onboarding-body {
+  width: 100%;
+  max-width: 960px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Horizontal step rail in the header */
+.onboarding-rail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.rail-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.rail-step:hover:not(:disabled) {
+  border-color: var(--accent-primary, #7c3aed);
+}
+
+.rail-step:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rail-step.current {
+  background: var(--accent-primary, #7c3aed);
+  border-color: var(--accent-primary, #7c3aed);
+  color: #fff;
+}
+
+.rail-step.done {
+  color: var(--success, #16a34a);
+  border-color: var(--success, #16a34a);
+}
+
+.rail-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.15);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.rail-progress {
+  margin-left: 4px;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+}
+
+/* Footer step navigation */
+.step-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Signed-in identity card (auth step) */
+.onboarding-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg-secondary);
+}
+
+.onboarding-identity-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.onboarding-identity-avatar-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-primary, #7c3aed);
+  color: #fff;
+  font-size: 1.2rem;
+}
+
+.onboarding-identity-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.onboarding-identity-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.onboarding-identity-sub {
+  font-size: 0.8em;
+  color: var(--success, #16a34a);
+}
+
+/* Returning-artist publisher chooser */
+.publisher-chooser {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.publisher-chooser ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chooser-item {
+  width: 100%;
+  text-align: left;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm, 6px);
+  padding: 12px 14px;
+  cursor: pointer;
+  color: var(--text-primary);
+  transition: border-color 0.15s;
+}
+
+.chooser-item:hover {
+  border-color: var(--accent-primary, #7c3aed);
+}
+
+.chooser-item span {
+  color: var(--text-secondary);
+  font-size: 0.85em;
+}
+
+/* Lightning-address suggestion banner (value step) */
+.ln-suggestion {
+  border: 1px solid var(--accent-primary, #7c3aed);
+  border-radius: var(--radius-sm, 6px);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  background: var(--bg-secondary);
+}
+
+.ln-suggestion p {
+  margin: 0 0 8px;
+  font-size: 0.9em;
+}
+
 /* Upload control for the onboarding wizard. A styled <label> wrapping a hidden
    file input — avoids the native "No file selected" text (which is misleading
    here, since we clear the input value after each successful upload) and the

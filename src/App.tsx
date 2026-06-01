@@ -12,7 +12,7 @@ import { pendingHostedStorage, onboardingStorage, wizardStorage } from './utils/
 import { generateTestAlbum, generateLinkedTestArtistFeeds } from './utils/testData';
 import { buildArtistSetupActions } from './utils/artistSetup';
 import { NostrLoginButton } from './components/NostrLoginButton';
-import { ArtistOnboardingWizard } from './components/ArtistOnboardingWizard';
+import OnboardingWizard from './components/Onboarding/OnboardingWizard';
 import { ImportModal } from './components/modals/ImportModal';
 import { SaveModal } from './components/modals/SaveModal';
 import { PreviewModal } from './components/modals/PreviewModal';
@@ -466,7 +466,7 @@ function AppContent() {
       />
 
       {showArtistWizard && (
-        <ArtistOnboardingWizard
+        <OnboardingWizard
           onComplete={() => setShowArtistWizard(false)}
         />
       )}

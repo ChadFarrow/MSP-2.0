@@ -6,6 +6,8 @@ import { wizardStorage } from '../utils/storage';
 import { uploadMediaToBlossom } from '../utils/blossom';
 import { hostBothOnMSP } from '../utils/artistPublish';
 import type { PublishStep } from '../utils/artistPublish';
+import { buildHostedUrl } from '../utils/hostedFeed';
+import { checkSignerConnection } from '../utils/nostrSigner';
 
 interface ArtistOnboardingWizardProps {
   onComplete: () => void;
@@ -43,13 +45,22 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
   const [uploadingArtwork, setUploadingArtwork] = useState(false);
   const [audioUploadError, setAudioUploadError] = useState('');
   const [artworkUploadError, setArtworkUploadError] = useState('');
+  // Blossom uploads fan out to multiple servers; track how many accepted the
+  // file so we can surface partial success ("uploaded to 1 of 2 servers").
+  const [audioServers, setAudioServers] = useState<{ ok: number; total: number } | null>(null);
+  const [artworkServers, setArtworkServers] = useState<{ ok: number; total: number } | null>(null);
   const lastAudioFile = useRef<File | null>(null);
+  const lastArtworkFile = useRef<File | null>(null);
 
   // Step 4 — publish
   const [publishing, setPublishing] = useState(false);
   const [publishSteps, setPublishSteps] = useState<PublishStep[]>([]);
   const [publishError, setPublishError] = useState('');
+  const [publisherWarning, setPublisherWarning] = useState('');
   const [albumFeedUrl, setAlbumFeedUrl] = useState('');
+  // Generate the feed GUIDs once and reuse them across publish retries — a fresh
+  // pair each attempt would orphan the already-hosted album and create duplicates.
+  const guidsRef = useRef<{ album: string; publisher: string } | null>(null);
 
   // Auto-advance past step 1 when login completes
   useEffect(() => {
@@ -117,6 +128,7 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
       if (result.success && result.url) {
         setAudioUrl(result.url);
         setAudioMimeType(file.type || 'audio/mpeg');
+        setAudioServers({ ok: result.serversSucceeded, total: result.serversTotal });
         // Pre-fill track title from filename if not already set
         if (!trackTitle) {
           const name = file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ');
@@ -134,12 +146,14 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
+    lastArtworkFile.current = file;
     setArtworkUploadError('');
     setUploadingArtwork(true);
     try {
       const result = await uploadMediaToBlossom(file);
       if (result.success && result.url) {
         setArtworkUrl(result.url);
+        setArtworkServers({ ok: result.serversSucceeded, total: result.serversTotal });
       } else {
         setArtworkUploadError(result.message);
       }
@@ -154,13 +168,29 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
     handleAudioChange({ target: { files: [file], value: '' } } as unknown as React.ChangeEvent<HTMLInputElement>);
   };
 
+  const handleRetryArtwork = () => {
+    const file = lastArtworkFile.current;
+    if (!file) return;
+    handleArtworkChange({ target: { files: [file], value: '' } } as unknown as React.ChangeEvent<HTMLInputElement>);
+  };
+
   // ── Step 4 handler ──────────────────────────────────────────────────────────
 
   const handlePublish = async () => {
-    if (!nostrState.user?.npub) return;
+    if (!nostrState.user?.pubkey) return;
 
-    const albumGuid = crypto.randomUUID();
-    const publisherGuid = crypto.randomUUID();
+    // Fail fast if the signer is unreachable (sleeping phone, backgrounded Amber,
+    // dropped relay) instead of hanging through two sequential 60 s sign timeouts.
+    const health = await checkSignerConnection();
+    if (!health.connected) {
+      setPublishError(health.error || 'Your Nostr signer is not responding. Open your signer app and try again.');
+      return;
+    }
+
+    if (!guidsRef.current) {
+      guidsRef.current = { album: crypto.randomUUID(), publisher: crypto.randomUUID() };
+    }
+    const { album: albumGuid, publisher: publisherGuid } = guidsRef.current;
 
     const album = {
       ...createEmptyAlbum(),
@@ -190,27 +220,41 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
       description,
       language: language || 'en',
       link: website,
+      // Carry the album art onto the publisher too — PI half-indexes (or skips)
+      // publisher feeds with no image, which strands the verify step.
+      imageUrl: artworkUrl,
       remoteItems: [{ ...createEmptyRemoteItem(), feedGuid: albumGuid }],
     };
 
     setPublishError('');
+    setPublisherWarning('');
     setPublishing(true);
     setPublishSteps([]);
+
+    // hostBothOnMSP hosts the album first, then the publisher. If the publisher
+    // leg fails the album is already live — capture its URL from the step events
+    // so we can still show the user their working feed instead of a bare error.
+    let albumHostedUrl = '';
 
     try {
       const result = await hostBothOnMSP(
         album,
         publisherFeed,
-        nostrState.user.npub,
-        (s) => setPublishSteps(prev => {
-          const idx = prev.findIndex(p => p.id === s.id);
-          if (idx >= 0) {
-            const next = [...prev];
-            next[idx] = s;
-            return next;
+        nostrState.user.pubkey,
+        (s) => {
+          if (s.id === 'album-host' && s.status === 'done') {
+            albumHostedUrl = buildHostedUrl(albumGuid);
           }
-          return [...prev, s];
-        })
+          setPublishSteps(prev => {
+            const idx = prev.findIndex(p => p.id === s.id);
+            if (idx >= 0) {
+              const next = [...prev];
+              next[idx] = s;
+              return next;
+            }
+            return [...prev, s];
+          });
+        }
       );
 
       dispatch({ type: 'SET_PUBLISHER_FEED', payload: result.patchedPublisherFeed });
@@ -219,7 +263,17 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
       setAlbumFeedUrl(result.album.url);
       wizardStorage.markComplete();
     } catch (e) {
-      setPublishError(e instanceof Error ? e.message : 'Publishing failed');
+      if (albumHostedUrl) {
+        // Album published; only the publisher catalog failed. Surface the live
+        // album feed and a non-blocking note rather than a dead-end error.
+        setAlbumFeedUrl(albumHostedUrl);
+        setPublisherWarning(
+          'Your album feed is live, but the publisher catalog didn’t finish hosting. You can retry it later from the editor.'
+        );
+        wizardStorage.markComplete();
+      } else {
+        setPublishError(e instanceof Error ? e.message : 'Publishing failed');
+      }
     } finally {
       setPublishing(false);
     }
@@ -416,7 +470,14 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
           </div>
         )}
         {audioUrl && !uploadingAudio && (
-          <div style={{ color: 'var(--success, #16a34a)', fontSize: '0.85em', marginTop: 4 }}>✓ Uploaded</div>
+          <div style={{ color: 'var(--success, #16a34a)', fontSize: '0.85em', marginTop: 4 }}>
+            ✓ Uploaded
+            {audioServers && audioServers.ok < audioServers.total && (
+              <span style={{ color: 'var(--text-secondary)' }}>
+                {' '}— hosted on {audioServers.ok} of {audioServers.total} servers
+              </span>
+            )}
+          </div>
         )}
       </div>
 
@@ -464,12 +525,24 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
           </div>
         )}
         {artworkUploadError && (
-          <div style={{ color: 'var(--error, #dc2626)', fontSize: '0.85em', marginTop: 4 }}>{artworkUploadError}</div>
+          <div style={{ marginTop: 4, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ color: 'var(--error, #dc2626)', fontSize: '0.85em' }}>{artworkUploadError}</span>
+            <button type="button" className="btn btn-secondary btn-small" onClick={handleRetryArtwork}>
+              Retry
+            </button>
+          </div>
         )}
         {artworkUrl && !uploadingArtwork && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
             <img src={artworkUrl} alt="Artwork preview" style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 4 }} />
-            <span style={{ color: 'var(--success, #16a34a)', fontSize: '0.85em' }}>✓ Uploaded</span>
+            <span style={{ color: 'var(--success, #16a34a)', fontSize: '0.85em' }}>
+              ✓ Uploaded
+              {artworkServers && artworkServers.ok < artworkServers.total && (
+                <span style={{ color: 'var(--text-secondary)' }}>
+                  {' '}— hosted on {artworkServers.ok} of {artworkServers.total} servers
+                </span>
+              )}
+            </span>
           </div>
         )}
       </div>
@@ -539,6 +612,17 @@ export function ArtistOnboardingWizard({ onComplete, onOpenLogin }: ArtistOnboar
           <div style={{ color: 'var(--success, #16a34a)', fontWeight: 600, fontSize: '1.05em' }}>
             🎉 Your feed is live!
           </div>
+          {publisherWarning && (
+            <div style={{
+              padding: '8px 12px',
+              borderRadius: 6,
+              background: 'var(--bg-secondary, #f5f5f5)',
+              color: 'var(--text-secondary)',
+              fontSize: '0.85em',
+            }}>
+              ⚠️ {publisherWarning}
+            </div>
+          )}
           <div>
             <label className="form-label">Feed URL (for podcast apps)</label>
             <div style={{ display: 'flex', gap: 8 }}>

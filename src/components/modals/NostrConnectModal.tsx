@@ -169,7 +169,7 @@ export function NostrConnectModal({ onClose }: NostrConnectModalProps) {
             {!connectUri ? (
               <>
                 <p className="connect-description">
-                  Connect using a remote signer like Amber (Android), Nostr Signer (iOS), or any NIP-46 compatible app.
+                  Connect using a remote signer like Primal (iOS/Android), Amber (Android), or any NIP-46 compatible app.
                 </p>
 
                 <div className="connect-option">

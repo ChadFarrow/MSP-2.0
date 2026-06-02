@@ -23,7 +23,7 @@ import { TrackList } from '../Editor/AlbumEditor/TrackList';
 import { wizardStorage } from '../../utils/storage';
 import { loadPublisherFeedsFromNostr } from '../../utils/nostrSync';
 import { checkSignerConnection } from '../../utils/nostrSigner';
-import type { PublisherFeed } from '../../types/feed';
+import type { Album, PublisherFeed } from '../../types/feed';
 
 interface OnboardingWizardProps {
   onComplete: () => void;
@@ -56,6 +56,123 @@ async function lookupExistingPublishers(): Promise<PublisherFeed[]> {
 // Per-track value/persons overrides are hidden during onboarding; the wizard
 // never gates on the lightning feature flag, so a constant false suffices.
 const wizardIsEnabled = () => false;
+
+// ── Review summary ───────────────────────────────────────────────────────────
+function ReviewRow({ label, value }: { label: string; value?: string }) {
+  if (!value || !value.trim()) return null;
+  return (
+    <div style={{ display: 'flex', gap: 12, padding: '4px 0', fontSize: '0.9em' }}>
+      <span style={{ flex: '0 0 130px', color: 'var(--text-secondary)' }}>{label}</span>
+      <span style={{ flex: 1, wordBreak: 'break-word' }}>{value}</span>
+    </div>
+  );
+}
+
+function ReviewBlock({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div style={{ marginTop: 16 }}>
+      <h4 style={{ margin: '0 0 6px', fontSize: '0.95em', color: 'var(--text-primary)' }}>{title}</h4>
+      <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: 6 }}>{children}</div>
+    </div>
+  );
+}
+
+const truncate = (s: string, n = 28) => (s.length > n ? `${s.slice(0, n)}…` : s);
+
+function ReviewSummary({ album, publisher }: { album: Album; publisher: PublisherFeed | null }) {
+  const recipients = album.value?.recipients?.filter((r) => r.address) ?? [];
+  const persons = album.persons?.filter((p) => p.name?.trim()) ?? [];
+  const funding = album.funding?.filter((f) => f.url?.trim()) ?? [];
+  const owner = [album.ownerName, album.ownerEmail].filter(Boolean).join(' · ');
+
+  return (
+    <div>
+      {/* Header card */}
+      <div style={{ padding: '12px 16px', borderRadius: 8, background: 'var(--bg-secondary)', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+        {album.imageUrl && (
+          <img src={album.imageUrl} alt="Album art" style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />
+        )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <strong style={{ fontSize: '1.1em' }}>{album.title || 'Untitled album'}</strong>
+          <span style={{ color: 'var(--text-secondary)' }}>by {album.author || publisher?.title || 'Unknown artist'}</span>
+          <span style={{ color: 'var(--text-secondary)', fontSize: '0.85em' }}>
+            {album.tracks.length} track{album.tracks.length === 1 ? '' : 's'}
+            {album.language ? ` · ${album.language.toUpperCase()}` : ''}
+            {album.categories?.[0] ? ` · ${album.categories[0]}` : ''}
+            {album.explicit ? ' · Explicit' : ''}
+          </span>
+        </div>
+      </div>
+
+      {publisher && (
+        <ReviewBlock title="Artist / Publisher">
+          <ReviewRow label="Name" value={publisher.title} />
+          <ReviewRow label="Website" value={publisher.link} />
+          <ReviewRow label="Description" value={publisher.description} />
+        </ReviewBlock>
+      )}
+
+      <ReviewBlock title="Album">
+        <ReviewRow label="Title" value={album.title} />
+        <ReviewRow label="Artist" value={album.author} />
+        <ReviewRow label="Description" value={album.description} />
+        <ReviewRow label="Website" value={album.link} />
+        <ReviewRow label="Keywords" value={album.keywords} />
+        <ReviewRow label="Owner" value={owner} />
+      </ReviewBlock>
+
+      <ReviewBlock title={`Tracks (${album.tracks.length})`}>
+        {album.tracks.length === 0 ? (
+          <div style={{ fontSize: '0.9em', color: 'var(--text-secondary)' }}>No tracks added.</div>
+        ) : (
+          <ol style={{ margin: 0, paddingLeft: 20 }}>
+            {album.tracks.map((t, i) => (
+              <li key={t.id || i} style={{ padding: '3px 0', fontSize: '0.9em' }}>
+                <span>{t.title || 'Untitled track'}</span>
+                {t.duration && t.duration !== '00:00:00' && (
+                  <span style={{ color: 'var(--text-secondary)' }}> · {t.duration}</span>
+                )}
+                {t.explicit && <span style={{ color: 'var(--text-secondary)' }}> · Explicit</span>}
+              </li>
+            ))}
+          </ol>
+        )}
+      </ReviewBlock>
+
+      {recipients.length > 0 && (
+        <ReviewBlock title="Value / V4V splits">
+          {recipients.map((r, i) => (
+            <div key={i} style={{ display: 'flex', gap: 12, padding: '3px 0', fontSize: '0.9em' }}>
+              <span style={{ flex: 1 }}>{r.name || 'Recipient'} <span style={{ color: 'var(--text-secondary)' }}>· {truncate(r.address)}</span></span>
+              <span style={{ flex: '0 0 50px', textAlign: 'right' }}>{r.split}%</span>
+            </div>
+          ))}
+        </ReviewBlock>
+      )}
+
+      {persons.length > 0 && (
+        <ReviewBlock title="Credits">
+          {persons.map((p, i) => (
+            <div key={i} style={{ padding: '3px 0', fontSize: '0.9em' }}>
+              <span>{p.name}</span>
+              {p.roles?.length > 0 && (
+                <span style={{ color: 'var(--text-secondary)' }}> · {p.roles.map((r) => r.role).join(', ')}</span>
+              )}
+            </div>
+          ))}
+        </ReviewBlock>
+      )}
+
+      {funding.length > 0 && (
+        <ReviewBlock title="Funding">
+          {funding.map((f, i) => (
+            <ReviewRow key={i} label={f.text || 'Support'} value={f.url} />
+          ))}
+        </ReviewBlock>
+      )}
+    </div>
+  );
+}
 
 export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   const w = useOnboardingDraft(lookupExistingPublishers);
@@ -338,17 +455,8 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
         <Section title="Review & publish" icon="🚀" defaultOpen>
           {!feedUrl && (
             <>
-              <div style={{ padding: '12px 16px', borderRadius: 8, background: 'var(--bg-secondary, #f5f5f5)', fontSize: '0.9em', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                {state.album.imageUrl && (
-                  <img src={state.album.imageUrl} alt="Album art" style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />
-                )}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <strong>{state.album.title || 'Untitled album'}</strong>
-                  <span style={{ color: 'var(--text-secondary)' }}>by {state.album.author || state.publisherFeed?.title || 'Unknown artist'}</span>
-                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.9em' }}>{state.album.tracks.length} track{state.album.tracks.length === 1 ? '' : 's'}</span>
-                </div>
-              </div>
-              <p style={{ color: 'var(--text-secondary)', margin: '12px 0 0', fontSize: '0.9em' }}>
+              <ReviewSummary album={state.album} publisher={state.publisherFeed} />
+              <p style={{ color: 'var(--text-secondary)', margin: '16px 0 0', fontSize: '0.9em' }}>
                 MSP will host your album feed and {w.isReturningArtist ? 'add it to your existing publisher catalog' : 'a publisher catalog'} — cross-linked and submitted to Podcast Index automatically.
               </p>
               {w.progress && <p style={{ fontSize: '0.9em' }}>{w.progress.step}: {w.progress.message}</p>}

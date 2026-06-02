@@ -182,6 +182,22 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
     }
   }, [nostrState.user?.npub, state.album.artistNpub, dispatch]);
 
+  // ── Auto-balance the artist's V4V split as the remainder ─────────────────────
+  // The primary recipient (the artist, with their lightning address) always gets
+  // 100 − (everyone else's splits): two 1% community splits → 98%, and any
+  // collaborators you add reduce the artist's share automatically.
+  useEffect(() => {
+    if (step !== 'value') return;
+    const recipients = state.album.value.recipients;
+    const primary = recipients[0];
+    if (!primary?.address) return;
+    const others = recipients.slice(1).reduce((sum, r) => sum + (Number(r.split) || 0), 0);
+    const computed = Math.max(0, 100 - others);
+    if ((Number(primary.split) || 0) !== computed) {
+      dispatch({ type: 'UPDATE_RECIPIENT', payload: { index: 0, recipient: { ...primary, split: computed } } });
+    }
+  }, [step, state.album.value.recipients, dispatch]);
+
   // ── Hydrate local tracks from the store on first entry into the tracks step ──
   useEffect(() => {
     if (step !== 'tracks' || tracks.length > 0) return;
@@ -684,6 +700,11 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
             <button className="btn btn-secondary btn-small" style={{ marginBottom: 12 }} onClick={() => w.confirmLightningAddress()}>
               Use my Nostr lightning address ({w.suggestedLightningAddress})
             </button>
+          )}
+          {state.album.value.recipients[0]?.address && (
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85em', margin: '0 0 8px' }}>
+              Your share is calculated automatically — you get whatever's left after the other recipients ({state.album.value.recipients[0].split}% right now).
+            </p>
           )}
           <RecipientsList
             recipients={state.album.value.recipients}

@@ -8,7 +8,7 @@ import { detectAddressType } from '../../../utils/addressUtils';
 import { getMediaDuration, secondsToHHMMSS, formatDuration, getAudioMimeType, isKnownAudioFormat } from '../../../utils/audioUtils';
 import { getVideoMimeType } from '../../../utils/videoUtils';
 import { isNaddrString, resolveNostrVideo } from '../../../utils/nostrVideoConverter';
-import { isBlossomMediaUrl } from '../../../utils/blossom';
+import { isBlossomMediaUrl, uploadMediaToBlossom } from '../../../utils/blossom';
 import { BlossomFileUpload } from '../../BlossomFileUpload';
 import { InfoIcon } from '../../InfoIcon';
 import { Section } from '../../Section';
@@ -19,13 +19,45 @@ interface TrackListProps {
   album: Album;
   dispatch: React.Dispatch<FeedAction>;
   isEnabled: (flag: FeatureId) => boolean;
+  /** Show a multi-file "upload several audio files at once" control (wizard). */
+  allowBulkAdd?: boolean;
+  /** Show the per-track Override Persons / Override Value toggles (default true;
+      hidden during onboarding to keep it simple). */
+  showOverrides?: boolean;
 }
 
-export function TrackList({ album, dispatch, isEnabled }: TrackListProps) {
+export function TrackList({ album, dispatch, isEnabled, allowBulkAdd = false, showOverrides = true }: TrackListProps) {
   const isVideo = isVideoMedium(album.medium);
   const [collapsedTracks, setCollapsedTracks] = useState<Record<string, boolean>>({});
   const [resolvingNaddr, setResolvingNaddr] = useState<Record<number, boolean>>({});
   const [naddrError, setNaddrError] = useState<Record<number, string>>({});
+
+  // Bulk add: append a track per selected file, then upload each to Blossom and
+  // pull its duration locally. Tracks appear immediately; enclosure/duration fill
+  // in as each upload/probe completes (index-based, matching the editor model).
+  const handleBulkAdd = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = '';
+    if (!files.length) return;
+    const base = album.tracks.length;
+    files.forEach((file, i) => {
+      const title = file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ');
+      const t = createEmptyTrack(base + i + 1, file.type || 'audio/mpeg');
+      dispatch({ type: 'ADD_TRACK', payload: { ...t, title } });
+    });
+    files.forEach((file, i) => {
+      const index = base + i;
+      const durUrl = URL.createObjectURL(file);
+      getMediaDuration(durUrl)
+        .then(secs => { if (secs != null) dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { duration: secondsToHHMMSS(secs) } } }); })
+        .finally(() => URL.revokeObjectURL(durUrl));
+      uploadMediaToBlossom(file).then(res => {
+        if (res.success && res.url) {
+          dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { enclosureUrl: res.url, enclosureType: file.type || 'audio/mpeg', enclosureLength: '33' } } });
+        }
+      });
+    });
+  };
 
   const toggleTrackCollapse = (trackId: string) => {
     setCollapsedTracks(prev => ({ ...prev, [trackId]: !prev[trackId] }));
@@ -390,6 +422,7 @@ export function TrackList({ album, dispatch, isEnabled }: TrackListProps) {
                         labelSuffix={<InfoIcon text={FIELD_INFO.trackExplicit} />}
                       />
                     </div>
+                    {showOverrides && (
                     <div className="form-group">
                       <Toggle
                         checked={track.overridePersons}
@@ -406,7 +439,8 @@ export function TrackList({ album, dispatch, isEnabled }: TrackListProps) {
                         labelSuffix={<InfoIcon text={FIELD_INFO.overridePersons} />}
                       />
                     </div>
-                    {isEnabled('lightning') && (
+                    )}
+                    {showOverrides && isEnabled('lightning') && (
                     <div className="form-group">
                       <Toggle
                         checked={track.overrideValue}
@@ -796,11 +830,19 @@ export function TrackList({ album, dispatch, isEnabled }: TrackListProps) {
                   })()}
                 </div>
               ))}
-              <button className="add-item-btn" onClick={() => {
-                dispatch({ type: 'ADD_TRACK', payload: createEmptyTrack(album.tracks.length + 1, isVideo ? 'video/mp4' : 'audio/mpeg') });
-              }}>
-                + Add {isVideo ? 'Video' : 'Track'}
-              </button>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <button className="add-item-btn" style={{ margin: 0 }} onClick={() => {
+                  dispatch({ type: 'ADD_TRACK', payload: createEmptyTrack(album.tracks.length + 1, isVideo ? 'video/mp4' : 'audio/mpeg') });
+                }}>
+                  + Add {isVideo ? 'Video' : 'Track'}
+                </button>
+                {allowBulkAdd && !isVideo && (
+                  <label className="wizard-upload-btn">
+                    Upload audio files
+                    <input type="file" accept="audio/*" multiple onChange={handleBulkAdd} />
+                  </label>
+                )}
+              </div>
             </div>
           </Section>
   );

@@ -1,29 +1,27 @@
 // src/components/Onboarding/OnboardingWizard.tsx
 //
 // New-artist onboarding wizard (7 steps), wired to useOnboardingDraft.
-// Reuses existing section components (PublisherInfoSection, PublisherArtworkSection,
-// ArtworkFields, RecipientsList, FundingFields) and the multi-track Blossom
-// uploader pattern so every field has a single source of truth in the feed store.
+// Each step renders the SAME real editor sections the main editor uses
+// (AlbumInfoSection, AlbumArtworkSection, TrackList, PersonsSection, plus the
+// publisher sections) so there's one source of truth and full field parity —
+// no parallel simplified fields to drift.
 
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useOnboardingDraft, type StepId } from './useOnboardingDraft';
 import { NostrLoginPanel } from './NostrLoginPanel';
 import { useNostr } from '../../store/nostrStore';
-import { createEmptyTrack, createEmptyPerson, createEmptyPersonRole, LANGUAGES, ITUNES_CATEGORIES, PERSON_GROUPS, PERSON_ROLES } from '../../types/feed';
-import type { Track, Person, PersonGroup } from '../../types/feed';
-import type { FeedAction } from '../../store/feedStore';
+import { createEmptyPersonRole } from '../../types/feed';
 import { Section } from '../Section';
-import { Toggle } from '../Toggle';
-import { InfoIcon } from '../InfoIcon';
 import { ArtworkFields } from '../ArtworkFields';
-import { BlossomFileUpload } from '../BlossomFileUpload';
 import { RecipientsList } from '../RecipientsList';
 import { FundingFields } from '../FundingFields';
 import { PublisherInfoSection } from '../Editor/PublisherEditor/PublisherInfoSection';
+import { AlbumInfoSection } from '../Editor/AlbumEditor/AlbumInfoSection';
+import { AlbumArtworkSection } from '../Editor/AlbumEditor/AlbumArtworkSection';
+import { PersonsSection } from '../Editor/AlbumEditor/PersonsSection';
+import { TrackList } from '../Editor/AlbumEditor/TrackList';
 import { wizardStorage } from '../../utils/storage';
 import { loadPublisherFeedsFromNostr } from '../../utils/nostrSync';
-import { uploadMediaToBlossom } from '../../utils/blossom';
-import { getAudioDuration, secondsToHHMMSS } from '../../utils/audioUtils';
 import { checkSignerConnection } from '../../utils/nostrSigner';
 import type { PublisherFeed } from '../../types/feed';
 
@@ -55,145 +53,9 @@ async function lookupExistingPublishers(): Promise<PublisherFeed[]> {
   return feeds;
 }
 
-interface WizardTrack {
-  id: string;
-  title: string;
-  duration: string;
-  url: string;
-  mimeType: string;
-  uploading: boolean;
-  error: string;
-  file: File | null;
-  // Optional per-track details (collapsed by default in the UI).
-  description: string;
-  explicit: boolean;
-  trackArtUrl: string;
-  transcriptUrl: string;
-}
-
-// Empty optional-detail fields shared by every WizardTrack creation site.
-const EMPTY_TRACK_DETAILS = { description: '', explicit: false, trackArtUrl: '', transcriptUrl: '' };
-
-// Compact either/or media input (Upload a file / Paste a URL), reused for
-// per-track artwork and lyrics. Source state is internal; defaults to URL when
-// a value already exists. useId keeps each instance's radio group independent.
-function MediaPicker({ value, onChange, accept, urlPlaceholder, showPreview }: {
-  value: string;
-  onChange: (url: string) => void;
-  accept: string;
-  urlPlaceholder: string;
-  showPreview?: boolean;
-}) {
-  const [src, setSrc] = useState<'upload' | 'url'>(value ? 'url' : 'upload');
-  const name = useId();
-  return (
-    <>
-      <div className="source-radios" role="radiogroup">
-        <label className="source-radio">
-          <input type="radio" name={name} checked={src === 'upload'} onChange={() => setSrc('upload')} />
-          Upload a file
-        </label>
-        <label className="source-radio">
-          <input type="radio" name={name} checked={src === 'url'} onChange={() => setSrc('url')} />
-          Paste a URL
-        </label>
-      </div>
-      {src === 'url' ? (
-        <input
-          className="form-input"
-          placeholder={urlPlaceholder}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-        />
-      ) : (
-        <BlossomFileUpload accept={accept} onUploaded={({ url }) => onChange(url)} />
-      )}
-      {showPreview && value && (
-        <img
-          src={value}
-          alt="Track art preview"
-          style={{ maxWidth: 120, marginTop: 8, borderRadius: 6, border: '1px solid var(--border-color)' }}
-          onError={(e) => ((e.target as HTMLImageElement).style.display = 'none')}
-        />
-      )}
-    </>
-  );
-}
-
-// Credits / persons editor — emits <podcast:person> tags (one per role).
-function PersonsEditor({ persons, dispatch }: { persons: Person[]; dispatch: React.Dispatch<FeedAction> }) {
-  const patch = (index: number, partial: Partial<Person>) =>
-    dispatch({ type: 'UPDATE_PERSON', payload: { index, person: { ...persons[index], ...partial } } });
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {persons.map((person, i) => (
-        <div key={i} className="wizard-track-card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div className="form-grid">
-            <div className="form-group">
-              <label className="form-label">Name</label>
-              <input className="form-input" placeholder="Person name" value={person.name}
-                onChange={(e) => patch(i, { name: e.target.value })} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Website</label>
-              <input className="form-input" placeholder="https://..." value={person.href || ''}
-                onChange={(e) => patch(i, { href: e.target.value })} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Nostr npub</label>
-              <input className="form-input" placeholder="npub1..." value={person.npub || ''}
-                onChange={(e) => patch(i, { npub: e.target.value })} />
-            </div>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Roles <InfoIcon text="What this person did. Each role becomes its own credit; the first is the primary one apps show." /></label>
-            {person.roles.map((role, ri) => (
-              <div key={ri} style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                <select
-                  className="form-select"
-                  value={role.group}
-                  onChange={(e) => {
-                    const group = e.target.value as PersonGroup;
-                    const newRole = PERSON_ROLES[group]?.[0]?.value || 'band';
-                    patch(i, { roles: person.roles.map((r, idx) => (idx === ri ? { group, role: newRole } : r)) });
-                  }}
-                >
-                  {PERSON_GROUPS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
-                </select>
-                <select
-                  className="form-select"
-                  value={role.role}
-                  onChange={(e) => patch(i, { roles: person.roles.map((r, idx) => (idx === ri ? { ...r, role: e.target.value } : r)) })}
-                >
-                  {(PERSON_ROLES[role.group] || PERSON_ROLES.music).map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-                </select>
-                {person.roles.length > 1 && (
-                  <button type="button" className="btn btn-secondary btn-small" aria-label="Remove role"
-                    onClick={() => patch(i, { roles: person.roles.filter((_, idx) => idx !== ri) })}>×</button>
-                )}
-              </div>
-            ))}
-            <button type="button" className="btn btn-secondary btn-small"
-              onClick={() => patch(i, { roles: [...person.roles, createEmptyPersonRole()] })}>+ Add Role</button>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Photo</label>
-            <MediaPicker value={person.img || ''} onChange={(url) => patch(i, { img: url })}
-              accept="image/*" urlPlaceholder="https://example.com/photo.jpg" showPreview />
-          </div>
-
-          <button type="button" className="btn btn-secondary btn-small" style={{ alignSelf: 'flex-start' }}
-            onClick={() => dispatch({ type: 'REMOVE_PERSON', payload: i })}>Remove person</button>
-        </div>
-      ))}
-      <button type="button" className="btn btn-secondary" style={{ alignSelf: 'flex-start' }}
-        onClick={() => dispatch({ type: 'ADD_PERSON', payload: createEmptyPerson() })}>+ Add Person</button>
-    </div>
-  );
-}
+// Per-track value/persons overrides are hidden during onboarding; the wizard
+// never gates on the lightning feature flag, so a constant false suffices.
+const wizardIsEnabled = () => false;
 
 export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   const w = useOnboardingDraft(lookupExistingPublishers);
@@ -204,25 +66,8 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
   const steps = visibleSteps(w.isReturningArtist);
 
   const closeRef = useRef<HTMLButtonElement>(null);
+  const strippedSeedTrack = useRef(false);
 
-  // Local track-upload state (transient uploading/file/error don't belong in the
-  // store Track model; keyed by stable id to avoid index races with remove).
-  const [tracks, setTracks] = useState<WizardTrack[]>([]);
-  // Either/or track source: upload audio files vs paste an audio URL.
-  const [trackSource, setTrackSource] = useState<'upload' | 'url'>('upload');
-  const [trackUrlDraft, setTrackUrlDraft] = useState('');
-  // Track details are expanded by default; we track which rows are COLLAPSED.
-  // Adding new tracks collapses the existing ones so the list stays manageable
-  // while the just-added track(s) stay open for editing.
-  const [collapsedTracks, setCollapsedTracks] = useState<Set<string>>(new Set());
-  const toggleTrackDetails = (id: string) =>
-    setCollapsedTracks((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  const collapseExistingTracks = () =>
-    setCollapsedTracks((prev) => new Set([...prev, ...tracks.map((t) => t.id)]));
   // Publish result / status (review step).
   const [publishError, setPublishError] = useState('');
   const [publisherWarning, setPublisherWarning] = useState('');
@@ -258,6 +103,19 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
     }
   }, [nostrState.user?.npub, state.album.artistNpub, dispatch]);
 
+  // ── Strip the seeded empty placeholder track once the Tracks step opens ──────
+  // createEmptyAlbum seeds album.tracks with one blank track. Now that tracks are
+  // store-driven, clear that placeholder on first entry so bulk-upload/add start
+  // from a clean slate. Runs once — later manual "+ Add Track" blanks are kept.
+  useEffect(() => {
+    if (step !== 'tracks' || strippedSeedTrack.current) return;
+    strippedSeedTrack.current = true;
+    const real = state.album.tracks.filter((t) => t.enclosureUrl || t.title.trim());
+    if (real.length !== state.album.tracks.length) {
+      dispatch({ type: 'UPDATE_ALBUM', payload: { tracks: real } });
+    }
+  }, [step, state.album.tracks, dispatch]);
+
   // ── Auto-balance the artist's V4V split as the remainder ─────────────────────
   // The primary recipient (the artist, with their lightning address) always gets
   // 100 − (everyone else's splits): two 1% community splits → 98%, and any
@@ -273,130 +131,6 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
       dispatch({ type: 'UPDATE_RECIPIENT', payload: { index: 0, recipient: { ...primary, split: computed } } });
     }
   }, [step, state.album.value.recipients, dispatch]);
-
-  // ── Hydrate local tracks from the store on first entry into the tracks step ──
-  useEffect(() => {
-    if (step !== 'tracks' || tracks.length > 0) return;
-    const stored = state.album.tracks.filter((t) => t.enclosureUrl);
-    if (stored.length > 0) {
-      const hydrated = stored.map((t) => ({
-        id: crypto.randomUUID(),
-        title: t.title,
-        duration: t.duration || '',
-        url: t.enclosureUrl,
-        mimeType: t.enclosureType || 'audio/mpeg',
-        uploading: false,
-        error: '',
-        file: null,
-        description: t.description || '',
-        explicit: t.explicit || false,
-        trackArtUrl: t.trackArtUrl || '',
-        transcriptUrl: t.transcriptUrl || '',
-      }));
-      setTracks(hydrated);
-      // Pre-filled tracks start collapsed.
-      setCollapsedTracks(new Set(hydrated.map((t) => t.id)));
-    }
-    // Only hydrate once when the step opens
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step]);
-
-  // ── Track upload handlers ────────────────────────────────────────────────────
-  const updateTrack = (id: string, patch: Partial<WizardTrack>) =>
-    setTracks((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
-  const removeTrack = (id: string) => setTracks((prev) => prev.filter((t) => t.id !== id));
-
-  const uploadTrackFile = async (id: string, file: File) => {
-    updateTrack(id, { uploading: true, error: '', file });
-    const durationUrl = URL.createObjectURL(file);
-    getAudioDuration(durationUrl)
-      .then((secs) => { if (secs !== null) updateTrack(id, { duration: secondsToHHMMSS(secs) }); })
-      .finally(() => URL.revokeObjectURL(durationUrl));
-    try {
-      const result = await uploadMediaToBlossom(file);
-      if (result.success && result.url) {
-        updateTrack(id, { url: result.url, mimeType: file.type || 'audio/mpeg' });
-      } else {
-        updateTrack(id, { error: result.message });
-      }
-    } finally {
-      updateTrack(id, { uploading: false });
-    }
-  };
-
-  const handleAddAudioFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    e.target.value = '';
-    if (!files.length) return;
-    collapseExistingTracks();
-    const newTracks: WizardTrack[] = files.map((file) => ({
-      id: crypto.randomUUID(),
-      title: file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' '),
-      duration: '',
-      url: '',
-      mimeType: file.type || 'audio/mpeg',
-      uploading: true,
-      error: '',
-      file,
-      ...EMPTY_TRACK_DETAILS,
-    }));
-    setTracks((prev) => [...prev, ...newTracks]);
-    newTracks.forEach((t) => uploadTrackFile(t.id, t.file!));
-  };
-
-  const handleRetryTrack = (id: string) => {
-    const track = tracks.find((t) => t.id === id);
-    if (track?.file) uploadTrackFile(id, track.file);
-  };
-
-  // Add a track from a pasted audio URL (no upload). Title is derived from the
-  // filename; duration is pulled from the URL when the host allows it (CORS).
-  const AUDIO_MIME: Record<string, string> = {
-    mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg',
-    opus: 'audio/opus', wav: 'audio/wav', flac: 'audio/flac', aiff: 'audio/aiff',
-  };
-  const handleAddUrlTrack = () => {
-    const url = trackUrlDraft.trim();
-    if (!url) return;
-    collapseExistingTracks();
-    const id = crypto.randomUUID();
-    const ext = url.split('?')[0].split('.').pop()?.toLowerCase() || '';
-    const name = url.split('?')[0].split('/').pop()?.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ') || '';
-    setTracks((prev) => [...prev, {
-      id, title: name, duration: '', url,
-      mimeType: AUDIO_MIME[ext] || 'audio/mpeg', uploading: false, error: '', file: null,
-      ...EMPTY_TRACK_DETAILS,
-    }]);
-    getAudioDuration(url)
-      .then((secs) => { if (secs !== null) updateTrack(id, { duration: secondsToHHMMSS(secs) }); })
-      .catch(() => { /* CORS or unreachable — user can type the duration */ });
-    setTrackUrlDraft('');
-  };
-
-  // Commit local tracks into the store (replaces the seeded empty track).
-  const commitTracks = () => {
-    const mapped: Track[] = tracks.map((t, i) => ({
-      ...createEmptyTrack(i + 1),
-      title: t.title || state.album.title,
-      enclosureUrl: t.url,
-      enclosureType: t.mimeType,
-      duration: t.duration,
-      guid: crypto.randomUUID(),
-      description: t.description,
-      explicit: t.explicit,
-      trackArtUrl: t.trackArtUrl || undefined,
-      transcriptUrl: t.transcriptUrl || undefined,
-    }));
-    dispatch({ type: 'UPDATE_ALBUM', payload: { tracks: mapped } });
-  };
-
-  const anyTrackExpanded = tracks.some((t) => !collapsedTracks.has(t.id));
-  const collapseAllTracks = () => setCollapsedTracks(new Set(tracks.map((t) => t.id)));
-  const expandAllTracks = () => setCollapsedTracks(new Set());
-
-  const tracksValid =
-    tracks.length > 0 &&
-    tracks.every((t) => t.url && !t.uploading && t.title.trim() && /[1-9]/.test(t.duration));
 
   // ── Publish (review step) ────────────────────────────────────────────────────
   const handlePublish = async () => {
@@ -422,6 +156,12 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
       setPublishError(e instanceof Error ? e.message : 'Publishing failed');
     }
   };
+
+  // Tracks are store-driven; a track is incomplete until it has an enclosure URL,
+  // a title, and a non-zero duration (uploads in flight have no URL yet).
+  const tracksInvalid =
+    state.album.tracks.length === 0 ||
+    state.album.tracks.some((t) => !t.enclosureUrl || !t.title.trim() || !/[1-9]/.test(t.duration || ''));
 
   // Required-field gate for publish.
   const reviewValid =
@@ -502,256 +242,29 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
         </>
       )}
 
-      {/* Step: Album basics */}
+      {/* Step: Album basics — the real album info + artwork sections */}
       {step === 'album' && (
-        <Section title="Album basics" icon="💿" defaultOpen>
-          <div className="form-group">
-            <label className="form-label">
-              Album / Single title <span style={{ color: 'var(--error, #dc2626)' }}>*</span>
-            </label>
-            <input
-              className="form-input"
-              placeholder="e.g. Monsters"
-              value={state.album.title}
-              onChange={(e) => dispatch({ type: 'UPDATE_ALBUM', payload: { title: e.target.value } })}
-              autoFocus
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Description</label>
-            <textarea
-              className="form-input"
-              rows={3}
-              style={{ resize: 'vertical' }}
-              placeholder="What is this release about?"
-              value={state.album.description}
-              onChange={(e) => dispatch({ type: 'UPDATE_ALBUM', payload: { description: e.target.value } })}
-            />
-          </div>
-
-          <div style={{ display: 'flex', gap: 12 }}>
-            <div className="form-group" style={{ flex: '0 0 160px' }}>
-              <label className="form-label">Language</label>
-              <select
-                className="form-select"
-                value={state.album.language || 'en'}
-                onChange={(e) => dispatch({ type: 'UPDATE_ALBUM', payload: { language: e.target.value } })}
-              >
-                {LANGUAGES.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
-              </select>
-            </div>
-            <div className="form-group" style={{ flex: 1 }}>
-              <label className="form-label">Category</label>
-              <select
-                className="form-select"
-                value={state.album.categories?.[0] || 'Music'}
-                onChange={(e) => dispatch({ type: 'UPDATE_ALBUM', payload: { categories: [e.target.value] } })}
-              >
-                {ITUNES_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-          </div>
-
-          <div className="form-group">
-            <Toggle
-              checked={state.album.explicit}
-              onChange={(v) => dispatch({ type: 'UPDATE_ALBUM', payload: { explicit: v } })}
-              label="Explicit content"
-            />
-          </div>
-
-          <ArtworkFields
-            toggleSource
-            imageUrl={state.album.imageUrl}
-            imageTitle={state.album.imageTitle}
-            imageDescription={state.album.imageDescription}
-            onUpdate={(field, value) => dispatch({ type: 'UPDATE_ALBUM', payload: { [field]: value } })}
-            urlLabel="Album Art URL"
-            urlPlaceholder="https://example.com/album-art.jpg"
+        <>
+          <AlbumInfoSection
+            album={state.album}
+            dispatch={dispatch}
+            isArtistMode
+            isLoggedIn={nostrState.isLoggedIn}
+            userNpub={nostrState.user?.npub}
           />
-        </Section>
+          <AlbumArtworkSection album={state.album} dispatch={dispatch} toggleSource />
+        </>
       )}
 
-      {/* Step: Tracks */}
+      {/* Step: Tracks — the real track list (store-driven, bulk upload on) */}
       {step === 'tracks' && (
-        <Section title="Tracks" icon="🎵" defaultOpen>
-          <div className="source-radios" role="radiogroup" aria-label="Track source">
-            <label className="source-radio">
-              <input
-                type="radio"
-                name="track-source"
-                checked={trackSource === 'upload'}
-                onChange={() => setTrackSource('upload')}
-              />
-              Upload a file
-            </label>
-            <label className="source-radio">
-              <input
-                type="radio"
-                name="track-source"
-                checked={trackSource === 'url'}
-                onChange={() => setTrackSource('url')}
-              />
-              Paste a URL
-            </label>
-          </div>
-
-          {trackSource === 'upload' ? (
-            <>
-              <label className="wizard-upload-btn">
-                {tracks.length > 0 ? '+ Add more tracks' : 'Choose audio files'}
-                <input type="file" accept="audio/*" multiple onChange={handleAddAudioFiles} />
-              </label>
-              <div style={{ color: 'var(--text-secondary)', fontSize: '0.8em', marginTop: 4 }}>
-                Select one or more audio files. Title and duration are filled in automatically.
-              </div>
-            </>
-          ) : (
-            <>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input
-                  className="form-input"
-                  style={{ flex: 1 }}
-                  placeholder="https://example.com/track.mp3"
-                  value={trackUrlDraft}
-                  onChange={(e) => setTrackUrlDraft(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddUrlTrack(); }}
-                />
-                <button type="button" className="btn btn-primary" onClick={handleAddUrlTrack} disabled={!trackUrlDraft.trim()}>
-                  Add track
-                </button>
-              </div>
-              <div style={{ color: 'var(--text-secondary)', fontSize: '0.8em', marginTop: 4 }}>
-                Paste a direct link to an audio file. Duration is pulled automatically when the host allows it — otherwise type it in below.
-              </div>
-            </>
-          )}
-
-          {tracks.length > 0 && (
-            <>
-              {tracks.length > 1 && (
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={anyTrackExpanded ? collapseAllTracks : expandAllTracks}
-                  >
-                    {anyTrackExpanded ? 'Collapse All' : 'Expand All'}
-                  </button>
-                </div>
-              )}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 8 }}>
-                {tracks.map((t, i) => {
-                  const expanded = !collapsedTracks.has(t.id);
-                  return (
-                    <div key={t.id} className="wizard-track-card">
-                      <div
-                        className="wizard-track-header"
-                        onClick={() => toggleTrackDetails(t.id)}
-                        role="button"
-                        aria-expanded={expanded}
-                      >
-                        <span className="wizard-track-chevron">{expanded ? '▾' : '▸'}</span>
-                        <span className="wizard-track-num">{i + 1}</span>
-                        <span className="wizard-track-title">{t.title || 'Untitled track'}</span>
-                        {t.uploading && <span className="wizard-track-status">Uploading…</span>}
-                        {t.error && <span className="wizard-track-status error">Upload failed</span>}
-                        {t.duration && <span className="wizard-track-dur">{t.duration}</span>}
-                        <button
-                          type="button"
-                          className="wizard-track-remove"
-                          onClick={(e) => { e.stopPropagation(); removeTrack(t.id); }}
-                          aria-label={`Remove track ${i + 1}`}
-                        >
-                          ×
-                        </button>
-                      </div>
-
-                      {expanded && (
-                        <div className="wizard-track-body">
-                          {t.error && (
-                            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                              <span style={{ color: 'var(--error, #dc2626)', fontSize: '0.85em' }}>{t.error}</span>
-                              {t.file && <button type="button" className="btn btn-secondary btn-small" onClick={() => handleRetryTrack(t.id)}>Retry</button>}
-                            </div>
-                          )}
-
-                          <div className="form-grid">
-                            <div className="form-group">
-                              <label className="form-label">Track Title <span className="required">*</span></label>
-                              <input
-                                className="form-input"
-                                placeholder="Track title"
-                                value={t.title}
-                                onChange={(e) => updateTrack(t.id, { title: e.target.value })}
-                              />
-                            </div>
-                            <div className="form-group">
-                              <label className="form-label">Duration <span className="required">*</span></label>
-                              <input
-                                className="form-input"
-                                placeholder="0:00:00"
-                                value={t.duration}
-                                onChange={(e) => updateTrack(t.id, { duration: e.target.value })}
-                              />
-                            </div>
-                          </div>
-
-                          {t.url && !t.uploading && (
-                            <audio controls src={t.url} style={{ width: '100%' }}>Your browser does not support audio playback.</audio>
-                          )}
-
-                          <div className="form-group">
-                            <label className="form-label">Description</label>
-                            <textarea
-                              className="form-input"
-                              rows={2}
-                              style={{ resize: 'vertical' }}
-                              placeholder="Notes about this track (optional)"
-                              value={t.description}
-                              onChange={(e) => updateTrack(t.id, { description: e.target.value })}
-                            />
-                          </div>
-
-                          <div className="form-grid">
-                            <div className="form-group">
-                              <label className="form-label">Track artwork <InfoIcon text="Cover image for this track. If left empty, the album art is used." /></label>
-                              <MediaPicker
-                                value={t.trackArtUrl}
-                                onChange={(url) => updateTrack(t.id, { trackArtUrl: url })}
-                                accept="image/*"
-                                urlPlaceholder="https://example.com/track-art.jpg"
-                                showPreview
-                              />
-                            </div>
-                            <div className="form-group">
-                              <label className="form-label">Lyrics / transcript <InfoIcon text="A link to an SRT or VTT lyrics/transcript file shown during playback." /></label>
-                              <MediaPicker
-                                value={t.transcriptUrl}
-                                onChange={(url) => updateTrack(t.id, { transcriptUrl: url })}
-                                accept=".srt,.vtt"
-                                urlPlaceholder="https://example.com/lyrics.srt"
-                              />
-                            </div>
-                          </div>
-
-                          <div className="form-group">
-                            <Toggle
-                              checked={t.explicit}
-                              onChange={(v) => updateTrack(t.id, { explicit: v })}
-                              label="Explicit"
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
-        </Section>
+        <TrackList
+          album={state.album}
+          dispatch={dispatch}
+          isEnabled={wizardIsEnabled}
+          allowBulkAdd
+          showOverrides={false}
+        />
       )}
 
       {/* Step: Value / V4V */}
@@ -791,32 +304,32 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
         </Section>
       )}
 
-      {/* Step: Credits & extras */}
+      {/* Step: Credits & extras — real persons section + funding */}
       {step === 'extras' && (
         <Section title="Credits & extras" icon="✨" defaultOpen>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9em', marginTop: 0 }}>
             All optional. Publisher link: confirmed ✓
           </p>
 
-          <div className="form-group">
-            <label className="form-label">Credits / Persons <InfoIcon text="People who contributed (band, producer, etc.). Shown as credits in podcast apps; each becomes a <podcast:person> tag." /></label>
-            <PersonsEditor persons={state.album.persons} dispatch={dispatch} />
-          </div>
+          <label className="form-label">Credits / Persons</label>
+          <PersonsSection
+            persons={state.album.persons}
+            onUpdatePerson={(index, person) => dispatch({ type: 'UPDATE_PERSON', payload: { index, person } })}
+            onAddPerson={() => dispatch({ type: 'ADD_PERSON' })}
+            onRemovePerson={(index) => dispatch({ type: 'REMOVE_PERSON', payload: index })}
+            onUpdateRole={(personIndex, roleIndex, role) => dispatch({ type: 'UPDATE_PERSON_ROLE', payload: { personIndex, roleIndex, role } })}
+            onAddRole={(personIndex) => dispatch({ type: 'ADD_PERSON_ROLE', payload: { personIndex, role: createEmptyPersonRole() } })}
+            onRemoveRole={(personIndex, roleIndex) => dispatch({ type: 'REMOVE_PERSON_ROLE', payload: { personIndex, roleIndex } })}
+            showThumbnailPreview
+            showRolesModalButton
+          />
 
-          <div className="form-group">
-            <label className="form-label">Keywords <InfoIcon text="Comma-separated tags for search (e.g. rock, indie, guitar)." /></label>
-            <input
-              className="form-input"
-              placeholder="rock, indie, guitar"
-              value={state.album.keywords}
-              onChange={(e) => dispatch({ type: 'UPDATE_ALBUM', payload: { keywords: e.target.value } })}
+          <div style={{ marginTop: 16 }}>
+            <FundingFields
+              funding={state.album.funding}
+              onUpdate={(funding) => dispatch({ type: 'UPDATE_ALBUM', payload: { funding } })}
             />
           </div>
-
-          <FundingFields
-            funding={state.album.funding}
-            onUpdate={(funding) => dispatch({ type: 'UPDATE_ALBUM', payload: { funding } })}
-          />
         </Section>
       )}
 
@@ -831,7 +344,7 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
                 )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                   <strong>{state.album.title || 'Untitled album'}</strong>
-                  <span style={{ color: 'var(--text-secondary)' }}>by {state.publisherFeed?.title || state.album.author || 'Unknown artist'}</span>
+                  <span style={{ color: 'var(--text-secondary)' }}>by {state.album.author || state.publisherFeed?.title || 'Unknown artist'}</span>
                   <span style={{ color: 'var(--text-secondary)', fontSize: '0.9em' }}>{state.album.tracks.length} track{state.album.tracks.length === 1 ? '' : 's'}</span>
                 </div>
               </div>
@@ -866,14 +379,13 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
   // ── Footer nav ───────────────────────────────────────────────────────────────
   const onNextFromStep = () => {
     if (step === 'album') w.linkAlbumToPublisher();
-    if (step === 'tracks') commitTracks();
     w.next();
   };
 
   const nextDisabled =
     (step === 'publisher' && !state.publisherFeed?.title?.trim()) ||
     (step === 'album' && !state.album.title.trim()) ||
-    (step === 'tracks' && !tracksValid);
+    (step === 'tracks' && tracksInvalid);
 
   // Hide Back when the previous visible step is the auth gate — going back there
   // just bounces forward again (you can't un-sign-in via navigation).

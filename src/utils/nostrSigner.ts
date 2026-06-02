@@ -231,6 +231,13 @@ export async function reconnectNip46(timeoutMs: number = 10000): Promise<string 
   const clientSk = getClientSecretKey();
   const pool = new SimplePool();
 
+  // Close the existing signer before creating a new one to avoid leaking pool connections
+  if (currentSigner?.close) {
+    try { currentSigner.close(); } catch { /* ignore close errors */ }
+  }
+  currentSigner = null;
+  currentMethod = null;
+
   try {
     // Create bunker pointer with proper format
     const bunkerPointer: BunkerPointer = {
@@ -290,7 +297,7 @@ export async function signEventWithTimeout(
     new Promise<never>((_, reject) =>
       setTimeout(
         () => reject(new Error(
-          'Signer request timed out. If you use a remote signer app (like Amber or nsecBunker), please open it and approve the pending request, then try again.'
+          'Signer request timed out. If you use a remote signer app (Primal, Amber, nsecBunker), please open it and approve the pending request, then try again.'
         )),
         effectiveTimeout
       )
@@ -309,7 +316,7 @@ export async function getPublicKeyWithTimeout(timeoutMs?: number): Promise<strin
     new Promise<never>((_, reject) =>
       setTimeout(
         () => reject(new Error(
-          'Signer request timed out. If you use a remote signer app (like Amber or nsecBunker), please open it and approve the pending request, then try again.'
+          'Signer request timed out. If you use a remote signer app (Primal, Amber, nsecBunker), please open it and approve the pending request, then try again.'
         )),
         effectiveTimeout
       )
@@ -320,19 +327,29 @@ export async function getPublicKeyWithTimeout(timeoutMs?: number): Promise<strin
 // Check whether the signer is reachable before starting a Nostr operation.
 // Returns { connected: true } quickly or { connected: false, error } without throwing.
 export async function checkSignerConnection(timeoutMs?: number): Promise<{ connected: boolean; error?: string }> {
+  const method = currentMethod ?? loadConnectionMethod();
+
   if (!hasSigner()) {
+    // If credentials are stored but the signer isn't initialized (e.g. reconnect timed out
+    // on page load), try to reconnect now so the user doesn't have to log in again.
+    if (method === 'nip46' && loadBunkerPointer()) {
+      const pubkey = await reconnectNip46(timeoutMs ?? 10_000);
+      if (pubkey) return { connected: true };
+      return {
+        connected: false,
+        error: 'Could not reach your remote signer. Open your signer app (Primal, Amber, nsecBunker) and try again.'
+      };
+    }
     return { connected: false, error: 'Not logged in to Nostr. Please log in and try again.' };
   }
 
-  const method = currentMethod;
-
   try {
     if (method === 'nip46') {
-      const pubkey = await reconnectNip46(timeoutMs ?? 5_000);
+      const pubkey = await reconnectNip46(timeoutMs ?? 10_000);
       if (!pubkey) {
         return {
           connected: false,
-          error: 'Could not reach your remote signer. Make sure the signer app is open and connected, then try again.'
+          error: 'Could not reach your remote signer. Open your signer app (Primal, Amber, nsecBunker) and try again.'
         };
       }
       return { connected: true };

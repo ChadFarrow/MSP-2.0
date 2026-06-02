@@ -9,8 +9,9 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { useOnboardingDraft, type StepId } from './useOnboardingDraft';
 import { NostrLoginPanel } from './NostrLoginPanel';
 import { useNostr } from '../../store/nostrStore';
-import { createEmptyTrack, LANGUAGES, ITUNES_CATEGORIES } from '../../types/feed';
-import type { Track } from '../../types/feed';
+import { createEmptyTrack, createEmptyPerson, createEmptyPersonRole, LANGUAGES, ITUNES_CATEGORIES, PERSON_GROUPS, PERSON_ROLES } from '../../types/feed';
+import type { Track, Person, PersonGroup } from '../../types/feed';
+import type { FeedAction } from '../../store/feedStore';
 import { Section } from '../Section';
 import { Toggle } from '../Toggle';
 import { InfoIcon } from '../InfoIcon';
@@ -116,6 +117,81 @@ function MediaPicker({ value, onChange, accept, urlPlaceholder, showPreview }: {
         />
       )}
     </>
+  );
+}
+
+// Credits / persons editor — emits <podcast:person> tags (one per role).
+function PersonsEditor({ persons, dispatch }: { persons: Person[]; dispatch: React.Dispatch<FeedAction> }) {
+  const patch = (index: number, partial: Partial<Person>) =>
+    dispatch({ type: 'UPDATE_PERSON', payload: { index, person: { ...persons[index], ...partial } } });
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {persons.map((person, i) => (
+        <div key={i} className="wizard-track-card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div className="form-grid">
+            <div className="form-group">
+              <label className="form-label">Name</label>
+              <input className="form-input" placeholder="Person name" value={person.name}
+                onChange={(e) => patch(i, { name: e.target.value })} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Website</label>
+              <input className="form-input" placeholder="https://..." value={person.href || ''}
+                onChange={(e) => patch(i, { href: e.target.value })} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Nostr npub</label>
+              <input className="form-input" placeholder="npub1..." value={person.npub || ''}
+                onChange={(e) => patch(i, { npub: e.target.value })} />
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Roles <InfoIcon text="What this person did. Each role becomes its own credit; the first is the primary one apps show." /></label>
+            {person.roles.map((role, ri) => (
+              <div key={ri} style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                <select
+                  className="form-select"
+                  value={role.group}
+                  onChange={(e) => {
+                    const group = e.target.value as PersonGroup;
+                    const newRole = PERSON_ROLES[group]?.[0]?.value || 'band';
+                    patch(i, { roles: person.roles.map((r, idx) => (idx === ri ? { group, role: newRole } : r)) });
+                  }}
+                >
+                  {PERSON_GROUPS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
+                </select>
+                <select
+                  className="form-select"
+                  value={role.role}
+                  onChange={(e) => patch(i, { roles: person.roles.map((r, idx) => (idx === ri ? { ...r, role: e.target.value } : r)) })}
+                >
+                  {(PERSON_ROLES[role.group] || PERSON_ROLES.music).map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                </select>
+                {person.roles.length > 1 && (
+                  <button type="button" className="btn btn-secondary btn-small" aria-label="Remove role"
+                    onClick={() => patch(i, { roles: person.roles.filter((_, idx) => idx !== ri) })}>×</button>
+                )}
+              </div>
+            ))}
+            <button type="button" className="btn btn-secondary btn-small"
+              onClick={() => patch(i, { roles: [...person.roles, createEmptyPersonRole()] })}>+ Add Role</button>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Photo</label>
+            <MediaPicker value={person.img || ''} onChange={(url) => patch(i, { img: url })}
+              accept="image/*" urlPlaceholder="https://example.com/photo.jpg" showPreview />
+          </div>
+
+          <button type="button" className="btn btn-secondary btn-small" style={{ alignSelf: 'flex-start' }}
+            onClick={() => dispatch({ type: 'REMOVE_PERSON', payload: i })}>Remove person</button>
+        </div>
+      ))}
+      <button type="button" className="btn btn-secondary" style={{ alignSelf: 'flex-start' }}
+        onClick={() => dispatch({ type: 'ADD_PERSON', payload: createEmptyPerson() })}>+ Add Person</button>
+    </div>
   );
 }
 
@@ -717,10 +793,16 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
 
       {/* Step: Credits & extras */}
       {step === 'extras' && (
-        <Section title="Credits & extras" icon="✨" defaultOpen={false}>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9em' }}>
-            Optional. Publisher link: confirmed ✓
+        <Section title="Credits & extras" icon="✨" defaultOpen>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9em', marginTop: 0 }}>
+            All optional. Publisher link: confirmed ✓
           </p>
+
+          <div className="form-group">
+            <label className="form-label">Credits / Persons <InfoIcon text="People who contributed (band, producer, etc.). Shown as credits in podcast apps; each becomes a <podcast:person> tag." /></label>
+            <PersonsEditor persons={state.album.persons} dispatch={dispatch} />
+          </div>
+
           <div className="form-group">
             <label className="form-label">Keywords <InfoIcon text="Comma-separated tags for search (e.g. rock, indie, guitar)." /></label>
             <input
@@ -730,6 +812,7 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
               onChange={(e) => dispatch({ type: 'UPDATE_ALBUM', payload: { keywords: e.target.value } })}
             />
           </div>
+
           <FundingFields
             funding={state.album.funding}
             onUpdate={(funding) => dispatch({ type: 'UPDATE_ALBUM', payload: { funding } })}

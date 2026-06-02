@@ -135,14 +135,18 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
   // Either/or track source: upload audio files vs paste an audio URL.
   const [trackSource, setTrackSource] = useState<'upload' | 'url'>('upload');
   const [trackUrlDraft, setTrackUrlDraft] = useState('');
-  // Which track rows have their optional details panel expanded.
-  const [expandedTracks, setExpandedTracks] = useState<Set<string>>(new Set());
+  // Track details are expanded by default; we track which rows are COLLAPSED.
+  // Adding new tracks collapses the existing ones so the list stays manageable
+  // while the just-added track(s) stay open for editing.
+  const [collapsedTracks, setCollapsedTracks] = useState<Set<string>>(new Set());
   const toggleTrackDetails = (id: string) =>
-    setExpandedTracks((prev) => {
+    setCollapsedTracks((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
+  const collapseExistingTracks = () =>
+    setCollapsedTracks((prev) => new Set([...prev, ...tracks.map((t) => t.id)]));
   // Publish result / status (review step).
   const [publishError, setPublishError] = useState('');
   const [publisherWarning, setPublisherWarning] = useState('');
@@ -183,7 +187,7 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
     if (step !== 'tracks' || tracks.length > 0) return;
     const stored = state.album.tracks.filter((t) => t.enclosureUrl);
     if (stored.length > 0) {
-      setTracks(stored.map((t) => ({
+      const hydrated = stored.map((t) => ({
         id: crypto.randomUUID(),
         title: t.title,
         duration: t.duration || '',
@@ -196,7 +200,10 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
         explicit: t.explicit || false,
         trackArtUrl: t.trackArtUrl || '',
         transcriptUrl: t.transcriptUrl || '',
-      })));
+      }));
+      setTracks(hydrated);
+      // Pre-filled tracks start collapsed.
+      setCollapsedTracks(new Set(hydrated.map((t) => t.id)));
     }
     // Only hydrate once when the step opens
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -229,6 +236,7 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
     const files = Array.from(e.target.files ?? []);
     e.target.value = '';
     if (!files.length) return;
+    collapseExistingTracks();
     const newTracks: WizardTrack[] = files.map((file) => ({
       id: crypto.randomUUID(),
       title: file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' '),
@@ -258,6 +266,7 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
   const handleAddUrlTrack = () => {
     const url = trackUrlDraft.trim();
     if (!url) return;
+    collapseExistingTracks();
     const id = crypto.randomUUID();
     const ext = url.split('?')[0].split('.').pop()?.toLowerCase() || '';
     const name = url.split('?')[0].split('/').pop()?.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ') || '';
@@ -288,6 +297,10 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
     }));
     dispatch({ type: 'UPDATE_ALBUM', payload: { tracks: mapped } });
   };
+
+  const anyTrackExpanded = tracks.some((t) => !collapsedTracks.has(t.id));
+  const collapseAllTracks = () => setCollapsedTracks(new Set(tracks.map((t) => t.id)));
+  const expandAllTracks = () => setCollapsedTracks(new Set());
 
   const tracksValid =
     tracks.length > 0 &&
@@ -524,91 +537,127 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
           )}
 
           {tracks.length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
-              {tracks.map((t, i) => (
-                <div key={t.id} style={{ border: '1px solid var(--border-color, #ccc)', borderRadius: 8, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.85em', minWidth: 16 }}>{i + 1}.</span>
-                    <input
-                      className="form-input"
-                      style={{ flex: 1, minWidth: 140 }}
-                      placeholder="Track title"
-                      value={t.title}
-                      onChange={(e) => updateTrack(t.id, { title: e.target.value })}
-                    />
-                    <input
-                      className="form-input"
-                      style={{ width: 90 }}
-                      placeholder="0:00:00"
-                      value={t.duration}
-                      onChange={(e) => updateTrack(t.id, { duration: e.target.value })}
-                    />
-                    <button type="button" className="btn btn-secondary btn-small" onClick={() => removeTrack(t.id)} aria-label={`Remove track ${i + 1}`}>×</button>
-                  </div>
-                  {t.uploading && <div style={{ color: 'var(--text-secondary)', fontSize: '0.85em' }}>Uploading to Blossom servers…</div>}
-                  {t.error && (
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <span style={{ color: 'var(--error, #dc2626)', fontSize: '0.85em' }}>{t.error}</span>
-                      <button type="button" className="btn btn-secondary btn-small" onClick={() => handleRetryTrack(t.id)}>Retry</button>
-                    </div>
-                  )}
-                  {t.url && !t.uploading && (
-                    <audio controls src={t.url} style={{ width: '100%' }}>Your browser does not support audio playback.</audio>
-                  )}
-
+            <>
+              {tracks.length > 1 && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
                   <button
                     type="button"
-                    className="track-details-toggle"
-                    onClick={() => toggleTrackDetails(t.id)}
-                    aria-expanded={expandedTracks.has(t.id)}
+                    className="btn btn-secondary"
+                    onClick={anyTrackExpanded ? collapseAllTracks : expandAllTracks}
                   >
-                    {expandedTracks.has(t.id) ? '▾' : '▸'} Details (optional)
+                    {anyTrackExpanded ? 'Collapse All' : 'Expand All'}
                   </button>
-
-                  {expandedTracks.has(t.id) && (
-                    <div className="track-details">
-                      <div className="form-group">
-                        <label className="form-label">Description</label>
-                        <textarea
-                          className="form-input"
-                          rows={2}
-                          style={{ resize: 'vertical' }}
-                          placeholder="Notes about this track (optional)"
-                          value={t.description}
-                          onChange={(e) => updateTrack(t.id, { description: e.target.value })}
-                        />
-                      </div>
-                      <div className="form-group">
-                        <Toggle
-                          checked={t.explicit}
-                          onChange={(v) => updateTrack(t.id, { explicit: v })}
-                          label="Explicit"
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label">Track artwork <InfoIcon text="Cover image for this track. If left empty, the album art is used." /></label>
-                        <MediaPicker
-                          value={t.trackArtUrl}
-                          onChange={(url) => updateTrack(t.id, { trackArtUrl: url })}
-                          accept="image/*"
-                          urlPlaceholder="https://example.com/track-art.jpg"
-                          showPreview
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label">Lyrics / transcript <InfoIcon text="A link to an SRT or VTT lyrics/transcript file shown during playback." /></label>
-                        <MediaPicker
-                          value={t.transcriptUrl}
-                          onChange={(url) => updateTrack(t.id, { transcriptUrl: url })}
-                          accept=".srt,.vtt"
-                          urlPlaceholder="https://example.com/lyrics.srt"
-                        />
-                      </div>
-                    </div>
-                  )}
                 </div>
-              ))}
-            </div>
+              )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 8 }}>
+                {tracks.map((t, i) => {
+                  const expanded = !collapsedTracks.has(t.id);
+                  return (
+                    <div key={t.id} className="wizard-track-card">
+                      <div
+                        className="wizard-track-header"
+                        onClick={() => toggleTrackDetails(t.id)}
+                        role="button"
+                        aria-expanded={expanded}
+                      >
+                        <span className="wizard-track-chevron">{expanded ? '▾' : '▸'}</span>
+                        <span className="wizard-track-num">{i + 1}</span>
+                        <span className="wizard-track-title">{t.title || 'Untitled track'}</span>
+                        {t.uploading && <span className="wizard-track-status">Uploading…</span>}
+                        {t.error && <span className="wizard-track-status error">Upload failed</span>}
+                        {t.duration && <span className="wizard-track-dur">{t.duration}</span>}
+                        <button
+                          type="button"
+                          className="wizard-track-remove"
+                          onClick={(e) => { e.stopPropagation(); removeTrack(t.id); }}
+                          aria-label={`Remove track ${i + 1}`}
+                        >
+                          ×
+                        </button>
+                      </div>
+
+                      {expanded && (
+                        <div className="wizard-track-body">
+                          {t.error && (
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                              <span style={{ color: 'var(--error, #dc2626)', fontSize: '0.85em' }}>{t.error}</span>
+                              {t.file && <button type="button" className="btn btn-secondary btn-small" onClick={() => handleRetryTrack(t.id)}>Retry</button>}
+                            </div>
+                          )}
+
+                          <div className="form-grid">
+                            <div className="form-group">
+                              <label className="form-label">Track Title <span className="required">*</span></label>
+                              <input
+                                className="form-input"
+                                placeholder="Track title"
+                                value={t.title}
+                                onChange={(e) => updateTrack(t.id, { title: e.target.value })}
+                              />
+                            </div>
+                            <div className="form-group">
+                              <label className="form-label">Duration <span className="required">*</span></label>
+                              <input
+                                className="form-input"
+                                placeholder="0:00:00"
+                                value={t.duration}
+                                onChange={(e) => updateTrack(t.id, { duration: e.target.value })}
+                              />
+                            </div>
+                          </div>
+
+                          {t.url && !t.uploading && (
+                            <audio controls src={t.url} style={{ width: '100%' }}>Your browser does not support audio playback.</audio>
+                          )}
+
+                          <div className="form-group">
+                            <label className="form-label">Description</label>
+                            <textarea
+                              className="form-input"
+                              rows={2}
+                              style={{ resize: 'vertical' }}
+                              placeholder="Notes about this track (optional)"
+                              value={t.description}
+                              onChange={(e) => updateTrack(t.id, { description: e.target.value })}
+                            />
+                          </div>
+
+                          <div className="form-grid">
+                            <div className="form-group">
+                              <label className="form-label">Track artwork <InfoIcon text="Cover image for this track. If left empty, the album art is used." /></label>
+                              <MediaPicker
+                                value={t.trackArtUrl}
+                                onChange={(url) => updateTrack(t.id, { trackArtUrl: url })}
+                                accept="image/*"
+                                urlPlaceholder="https://example.com/track-art.jpg"
+                                showPreview
+                              />
+                            </div>
+                            <div className="form-group">
+                              <label className="form-label">Lyrics / transcript <InfoIcon text="A link to an SRT or VTT lyrics/transcript file shown during playback." /></label>
+                              <MediaPicker
+                                value={t.transcriptUrl}
+                                onChange={(url) => updateTrack(t.id, { transcriptUrl: url })}
+                                accept=".srt,.vtt"
+                                urlPlaceholder="https://example.com/lyrics.srt"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="form-group">
+                            <Toggle
+                              checked={t.explicit}
+                              onChange={(v) => updateTrack(t.id, { explicit: v })}
+                              label="Explicit"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
           )}
         </Section>
       )}

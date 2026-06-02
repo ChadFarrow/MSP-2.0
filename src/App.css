@@ -1043,26 +1043,108 @@ body {
   gap: 8px;
 }
 
-/* Per-track optional details (wizard track rows) */
-.track-details-toggle {
-  align-self: flex-start;
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  font-size: 0.82rem;
-  cursor: pointer;
-  padding: 2px 0;
+/* Wizard track cards (collapsible, modeled on the main editor) */
+.wizard-track-card {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-secondary);
+  overflow: hidden;
 }
 
-.track-details-toggle:hover {
+.wizard-track-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.wizard-track-header:hover {
+  background: var(--accent-bg-subtle, rgba(124, 58, 237, 0.08));
+}
+
+.wizard-track-num {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent-primary, #7c3aed);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.wizard-track-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wizard-track-status {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.wizard-track-status.error {
+  color: var(--error, #dc2626);
+}
+
+.wizard-track-dur {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.wizard-track-chevron {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: var(--text-secondary);
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.wizard-track-header:hover .wizard-track-chevron {
+  background: var(--bg-tertiary);
   color: var(--text-primary);
 }
 
-.track-details {
+.wizard-track-remove {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--error, #dc2626);
+  color: #fff;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.wizard-track-remove:hover {
+  filter: brightness(1.1);
+}
+
+.wizard-track-body {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 12px;
+  gap: 14px;
+  padding: 14px;
   border-top: 1px solid var(--border-color);
 }
 

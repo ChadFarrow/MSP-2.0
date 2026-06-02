@@ -11,6 +11,9 @@ export function InfoIcon({ text }: InfoIconProps) {
   const [show, setShow] = useState(false);
   const [pinned, setPinned] = useState(false);
   const [side, setSide] = useState<'left' | 'right'>('right');
+  // Desktop: fixed viewport coords computed from the icon's rect so the portaled
+  // tooltip never clips against ancestor overflow (e.g. .section's overflow:hidden).
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
   const [isMobile, setIsMobile] = useState(
     typeof window !== 'undefined' && window.matchMedia(MOBILE_QUERY).matches
   );
@@ -30,8 +33,15 @@ export function InfoIcon({ text }: InfoIconProps) {
   useEffect(() => {
     if (!show || !wrapperRef.current) return;
     const rect = wrapperRef.current.getBoundingClientRect();
+    const goLeft = rect.right + 300 > window.innerWidth;
+    const TOOLTIP_WIDTH = 280;
+    const GAP = 10;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- positions tooltip from a live DOM measurement; can't be derived during render
-    setSide(rect.right + 300 > window.innerWidth ? 'left' : 'right');
+    setSide(goLeft ? 'left' : 'right');
+    setCoords({
+      top: rect.top - 8,
+      left: goLeft ? rect.left - TOOLTIP_WIDTH - GAP : rect.right + GAP,
+    });
   }, [show]);
 
   // Close when clicking outside
@@ -94,9 +104,11 @@ export function InfoIcon({ text }: InfoIconProps) {
     setShow(false);
   };
 
-  const tooltip = show ? (
+  // Desktop waits for measured coords so it doesn't flash at the page origin.
+  const tooltip = show && (isMobile || coords) ? (
     <div
       className={`info-tooltip${side === 'left' ? ' info-tooltip-left' : ''}`}
+      style={!isMobile && coords ? { position: 'fixed', top: coords.top, left: coords.left, right: 'auto' } : undefined}
       onClick={handleClose}
       onTouchEnd={handleClose}
     >
@@ -116,10 +128,10 @@ export function InfoIcon({ text }: InfoIconProps) {
       >
         i
       </span>
-      {/* On mobile the tooltip uses position: fixed to pin to the viewport.
-          Ancestors that establish a containing block (e.g. .section's
-          backdrop-filter) would otherwise trap it, so portal it to <body>. */}
-      {isMobile ? tooltip && createPortal(tooltip, document.body) : tooltip}
+      {/* Always portal to <body>: on desktop with fixed coords, on mobile with
+          CSS viewport anchoring. Ancestors with overflow:hidden (e.g. .section)
+          or a containing block (backdrop-filter) would otherwise clip/trap it. */}
+      {tooltip && createPortal(tooltip, document.body)}
     </span>
   );
 }

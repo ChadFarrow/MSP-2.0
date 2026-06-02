@@ -5,7 +5,7 @@
 // ArtworkFields, RecipientsList, FundingFields) and the multi-track Blossom
 // uploader pattern so every field has a single source of truth in the feed store.
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useOnboardingDraft, type StepId } from './useOnboardingDraft';
 import { NostrLoginPanel } from './NostrLoginPanel';
 import { useNostr } from '../../store/nostrStore';
@@ -15,10 +15,10 @@ import { Section } from '../Section';
 import { Toggle } from '../Toggle';
 import { InfoIcon } from '../InfoIcon';
 import { ArtworkFields } from '../ArtworkFields';
+import { BlossomFileUpload } from '../BlossomFileUpload';
 import { RecipientsList } from '../RecipientsList';
 import { FundingFields } from '../FundingFields';
 import { PublisherInfoSection } from '../Editor/PublisherEditor/PublisherInfoSection';
-import { PublisherArtworkSection } from '../Editor/PublisherEditor/PublisherArtworkSection';
 import { wizardStorage } from '../../utils/storage';
 import { loadPublisherFeedsFromNostr } from '../../utils/nostrSync';
 import { uploadMediaToBlossom } from '../../utils/blossom';
@@ -63,6 +63,60 @@ interface WizardTrack {
   uploading: boolean;
   error: string;
   file: File | null;
+  // Optional per-track details (collapsed by default in the UI).
+  description: string;
+  explicit: boolean;
+  trackArtUrl: string;
+  transcriptUrl: string;
+}
+
+// Empty optional-detail fields shared by every WizardTrack creation site.
+const EMPTY_TRACK_DETAILS = { description: '', explicit: false, trackArtUrl: '', transcriptUrl: '' };
+
+// Compact either/or media input (Upload a file / Paste a URL), reused for
+// per-track artwork and lyrics. Source state is internal; defaults to URL when
+// a value already exists. useId keeps each instance's radio group independent.
+function MediaPicker({ value, onChange, accept, urlPlaceholder, showPreview }: {
+  value: string;
+  onChange: (url: string) => void;
+  accept: string;
+  urlPlaceholder: string;
+  showPreview?: boolean;
+}) {
+  const [src, setSrc] = useState<'upload' | 'url'>(value ? 'url' : 'upload');
+  const name = useId();
+  return (
+    <>
+      <div className="source-radios" role="radiogroup">
+        <label className="source-radio">
+          <input type="radio" name={name} checked={src === 'upload'} onChange={() => setSrc('upload')} />
+          Upload a file
+        </label>
+        <label className="source-radio">
+          <input type="radio" name={name} checked={src === 'url'} onChange={() => setSrc('url')} />
+          Paste a URL
+        </label>
+      </div>
+      {src === 'url' ? (
+        <input
+          className="form-input"
+          placeholder={urlPlaceholder}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      ) : (
+        <BlossomFileUpload accept={accept} onUploaded={({ url }) => onChange(url)} />
+      )}
+      {showPreview && value && (
+        <img
+          src={value}
+          alt="Track art preview"
+          style={{ maxWidth: 120, marginTop: 8, borderRadius: 6, border: '1px solid var(--border-color)' }}
+          onError={(e) => ((e.target as HTMLImageElement).style.display = 'none')}
+        />
+      )}
+    </>
+  );
 }
 
 export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
@@ -78,6 +132,17 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
   // Local track-upload state (transient uploading/file/error don't belong in the
   // store Track model; keyed by stable id to avoid index races with remove).
   const [tracks, setTracks] = useState<WizardTrack[]>([]);
+  // Either/or track source: upload audio files vs paste an audio URL.
+  const [trackSource, setTrackSource] = useState<'upload' | 'url'>('upload');
+  const [trackUrlDraft, setTrackUrlDraft] = useState('');
+  // Which track rows have their optional details panel expanded.
+  const [expandedTracks, setExpandedTracks] = useState<Set<string>>(new Set());
+  const toggleTrackDetails = (id: string) =>
+    setExpandedTracks((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
   // Publish result / status (review step).
   const [publishError, setPublishError] = useState('');
   const [publisherWarning, setPublisherWarning] = useState('');
@@ -127,6 +192,10 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
         uploading: false,
         error: '',
         file: null,
+        description: t.description || '',
+        explicit: t.explicit || false,
+        trackArtUrl: t.trackArtUrl || '',
+        transcriptUrl: t.transcriptUrl || '',
       })));
     }
     // Only hydrate once when the step opens
@@ -169,6 +238,7 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
       uploading: true,
       error: '',
       file,
+      ...EMPTY_TRACK_DETAILS,
     }));
     setTracks((prev) => [...prev, ...newTracks]);
     newTracks.forEach((t) => uploadTrackFile(t.id, t.file!));
@@ -177,6 +247,29 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
   const handleRetryTrack = (id: string) => {
     const track = tracks.find((t) => t.id === id);
     if (track?.file) uploadTrackFile(id, track.file);
+  };
+
+  // Add a track from a pasted audio URL (no upload). Title is derived from the
+  // filename; duration is pulled from the URL when the host allows it (CORS).
+  const AUDIO_MIME: Record<string, string> = {
+    mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg',
+    opus: 'audio/opus', wav: 'audio/wav', flac: 'audio/flac', aiff: 'audio/aiff',
+  };
+  const handleAddUrlTrack = () => {
+    const url = trackUrlDraft.trim();
+    if (!url) return;
+    const id = crypto.randomUUID();
+    const ext = url.split('?')[0].split('.').pop()?.toLowerCase() || '';
+    const name = url.split('?')[0].split('/').pop()?.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ') || '';
+    setTracks((prev) => [...prev, {
+      id, title: name, duration: '', url,
+      mimeType: AUDIO_MIME[ext] || 'audio/mpeg', uploading: false, error: '', file: null,
+      ...EMPTY_TRACK_DETAILS,
+    }]);
+    getAudioDuration(url)
+      .then((secs) => { if (secs !== null) updateTrack(id, { duration: secondsToHHMMSS(secs) }); })
+      .catch(() => { /* CORS or unreachable — user can type the duration */ });
+    setTrackUrlDraft('');
   };
 
   // Commit local tracks into the store (replaces the seeded empty track).
@@ -188,6 +281,10 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
       enclosureType: t.mimeType,
       duration: t.duration,
       guid: crypto.randomUUID(),
+      description: t.description,
+      explicit: t.explicit,
+      trackArtUrl: t.trackArtUrl || undefined,
+      transcriptUrl: t.transcriptUrl || undefined,
     }));
     dispatch({ type: 'UPDATE_ALBUM', payload: { tracks: mapped } });
   };
@@ -284,7 +381,19 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
             </button>
             <PublisherInfoSection publisherFeed={state.publisherFeed} dispatch={dispatch} isArtistMode />
           </Section>
-          <PublisherArtworkSection publisherFeed={state.publisherFeed} dispatch={dispatch} />
+          <Section title="Publisher Artwork" icon="🎨" defaultOpen>
+            <ArtworkFields
+              toggleSource
+              imageUrl={state.publisherFeed.imageUrl}
+              imageTitle={state.publisherFeed.imageTitle}
+              imageDescription={state.publisherFeed.imageDescription}
+              onUpdate={(field, value) => dispatch({ type: 'UPDATE_PUBLISHER_FEED', payload: { [field]: value } })}
+              urlLabel="Logo URL"
+              urlPlaceholder="https://example.com/logo.jpg"
+              titlePlaceholder="Publisher logo description"
+              previewAlt="Publisher logo preview"
+            />
+          </Section>
         </>
       )}
 
@@ -348,6 +457,7 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
           </div>
 
           <ArtworkFields
+            toggleSource
             imageUrl={state.album.imageUrl}
             imageTitle={state.album.imageTitle}
             imageDescription={state.album.imageDescription}
@@ -361,13 +471,57 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
       {/* Step: Tracks */}
       {step === 'tracks' && (
         <Section title="Tracks" icon="🎵" defaultOpen>
-          <label className="wizard-upload-btn">
-            {tracks.length > 0 ? '+ Add more tracks' : 'Choose audio files'}
-            <input type="file" accept="audio/*" multiple onChange={handleAddAudioFiles} />
-          </label>
-          <div style={{ color: 'var(--text-secondary)', fontSize: '0.8em', marginTop: 4 }}>
-            Select one or more audio files. Title and duration are filled in automatically.
+          <div className="source-radios" role="radiogroup" aria-label="Track source">
+            <label className="source-radio">
+              <input
+                type="radio"
+                name="track-source"
+                checked={trackSource === 'upload'}
+                onChange={() => setTrackSource('upload')}
+              />
+              Upload a file
+            </label>
+            <label className="source-radio">
+              <input
+                type="radio"
+                name="track-source"
+                checked={trackSource === 'url'}
+                onChange={() => setTrackSource('url')}
+              />
+              Paste a URL
+            </label>
           </div>
+
+          {trackSource === 'upload' ? (
+            <>
+              <label className="wizard-upload-btn">
+                {tracks.length > 0 ? '+ Add more tracks' : 'Choose audio files'}
+                <input type="file" accept="audio/*" multiple onChange={handleAddAudioFiles} />
+              </label>
+              <div style={{ color: 'var(--text-secondary)', fontSize: '0.8em', marginTop: 4 }}>
+                Select one or more audio files. Title and duration are filled in automatically.
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  className="form-input"
+                  style={{ flex: 1 }}
+                  placeholder="https://example.com/track.mp3"
+                  value={trackUrlDraft}
+                  onChange={(e) => setTrackUrlDraft(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddUrlTrack(); }}
+                />
+                <button type="button" className="btn btn-primary" onClick={handleAddUrlTrack} disabled={!trackUrlDraft.trim()}>
+                  Add track
+                </button>
+              </div>
+              <div style={{ color: 'var(--text-secondary)', fontSize: '0.8em', marginTop: 4 }}>
+                Paste a direct link to an audio file. Duration is pulled automatically when the host allows it — otherwise type it in below.
+              </div>
+            </>
+          )}
 
           {tracks.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
@@ -400,6 +554,57 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
                   )}
                   {t.url && !t.uploading && (
                     <audio controls src={t.url} style={{ width: '100%' }}>Your browser does not support audio playback.</audio>
+                  )}
+
+                  <button
+                    type="button"
+                    className="track-details-toggle"
+                    onClick={() => toggleTrackDetails(t.id)}
+                    aria-expanded={expandedTracks.has(t.id)}
+                  >
+                    {expandedTracks.has(t.id) ? '▾' : '▸'} Details (optional)
+                  </button>
+
+                  {expandedTracks.has(t.id) && (
+                    <div className="track-details">
+                      <div className="form-group">
+                        <label className="form-label">Description</label>
+                        <textarea
+                          className="form-input"
+                          rows={2}
+                          style={{ resize: 'vertical' }}
+                          placeholder="Notes about this track (optional)"
+                          value={t.description}
+                          onChange={(e) => updateTrack(t.id, { description: e.target.value })}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <Toggle
+                          checked={t.explicit}
+                          onChange={(v) => updateTrack(t.id, { explicit: v })}
+                          label="Explicit"
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Track artwork <InfoIcon text="Cover image for this track. If left empty, the album art is used." /></label>
+                        <MediaPicker
+                          value={t.trackArtUrl}
+                          onChange={(url) => updateTrack(t.id, { trackArtUrl: url })}
+                          accept="image/*"
+                          urlPlaceholder="https://example.com/track-art.jpg"
+                          showPreview
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Lyrics / transcript <InfoIcon text="A link to an SRT or VTT lyrics/transcript file shown during playback." /></label>
+                        <MediaPicker
+                          value={t.transcriptUrl}
+                          onChange={(url) => updateTrack(t.id, { transcriptUrl: url })}
+                          accept=".srt,.vtt"
+                          urlPlaceholder="https://example.com/lyrics.srt"
+                        />
+                      </div>
+                    </div>
                   )}
                 </div>
               ))}

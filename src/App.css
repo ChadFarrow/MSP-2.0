@@ -965,12 +965,12 @@ body {
   align-items: flex-start;
 }
 
-/* Body container (used instead of .onboarding-step by OnboardingWizard). A wide,
-   centered column — roomy enough that the multi-field section rows lay out nicely
-   without stretching single inputs across the whole screen. */
+/* Body container (used instead of .onboarding-step by OnboardingWizard). Spans
+   the full page width; the section rows use form-grid so fields wrap into columns
+   rather than stretching individually. */
 .onboarding-page-content > .onboarding-body {
   width: 100%;
-  max-width: 960px;
+  max-width: none;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -1041,6 +1041,51 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* Per-track optional details (wizard track rows) */
+.track-details-toggle {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.track-details-toggle:hover {
+  color: var(--text-primary);
+}
+
+.track-details {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border-top: 1px solid var(--border-color);
+}
+
+/* Either/or source choice (URL vs Blossom upload) — opt-in via ArtworkFields */
+.source-radios {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 10px;
+}
+
+.source-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-weight: normal;
+}
+
+.source-radio input {
+  cursor: pointer;
+  accent-color: var(--accent-primary, #7c3aed);
 }
 
 /* Signed-in identity card (auth step) */

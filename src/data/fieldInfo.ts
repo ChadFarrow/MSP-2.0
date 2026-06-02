@@ -4,7 +4,7 @@
 export const FIELD_INFO = {
   // Album Section
   title: "The name of your album.",
-  author: "The artist or band name. This appears in the <itunes:author> tag.",
+  author: "The artist or band name.",
   artistNpub: "Nostr public key (npub1...) for the primary artist. Enables Nostr-based identity and discovery.",
   description: "A brief description of the album, band members, recording info, etc.",
   link: "The main website you want listeners to visit (usually a band website).",
@@ -17,7 +17,7 @@ export const FIELD_INFO = {
   op3: "Enable OP3 (Open Podcast Prefix Project) analytics. Adds a transparent prefix to track URLs for open, privacy-respecting download stats. Free, no signup required. Save/update your hosted feed after toggling for changes to take effect.",
 
   // Artwork
-  imageUrl: "Direct link to your album art image. Ensure CORS policy allows all origins and headers.",
+  imageUrl: "Direct link to your cover art image (JPG or PNG). Make sure it's publicly accessible.",
   imageTitle: "Title/alt text for the album artwork.",
   imageDescription: "Optional description of the artwork or album.",
 
@@ -46,7 +46,7 @@ export const FIELD_INFO = {
 
   // Publisher Feed
   catalogTitle: "The name of this catalog feed. A publisher can have multiple catalogs (e.g., 'Jazz Collection', 'New Releases 2024').",
-  publisherName: "The artist, publisher, label, or entity name. This appears in the <itunes:author> tag.",
+  publisherName: "The artist, publisher, label, or entity name.",
 
   // Tracks
   trackTitle: "The song title.",

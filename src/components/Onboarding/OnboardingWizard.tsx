@@ -23,6 +23,7 @@ import { TrackList } from '../Editor/AlbumEditor/TrackList';
 import { wizardStorage } from '../../utils/storage';
 import { loadPublisherFeedsFromNostr } from '../../utils/nostrSync';
 import { checkSignerConnection } from '../../utils/nostrSigner';
+import { buildHostedUrl } from '../../utils/hostedFeed';
 import type { Album, PublisherFeed } from '../../types/feed';
 
 interface OnboardingWizardProps {
@@ -30,6 +31,7 @@ interface OnboardingWizardProps {
 }
 
 const STEP_LABELS: Record<StepId, string> = {
+  intro: 'Start',
   auth: 'Sign in',
   publisher: 'Artist',
   album: 'Album',
@@ -39,11 +41,9 @@ const STEP_LABELS: Record<StepId, string> = {
   review: 'Review',
 };
 
-// Returning artists skip the publisher-shell step.
-function visibleSteps(isReturning: boolean): StepId[] {
-  const all: StepId[] = ['auth', 'publisher', 'album', 'tracks', 'value', 'extras', 'review'];
-  return isReturning ? all.filter((s) => s !== 'publisher') : all;
-}
+// Every artist walks the full order, including the Artist/Publisher step — for
+// returning artists it's pre-filled with their chosen publisher feed.
+const WIZARD_STEPS: StepId[] = ['intro', 'auth', 'publisher', 'album', 'tracks', 'value', 'extras', 'review'];
 
 // Wire the returning-artist lookup to the npub's saved publisher feeds on Nostr.
 // The signer pubkey drives the query, so no npub arg is needed (a zero-arg fn is
@@ -106,7 +106,8 @@ function ReviewSummary({ album, publisher }: { album: Album; publisher: Publishe
 
       {publisher && (
         <ReviewBlock title="Artist / Publisher">
-          <ReviewRow label="Name" value={publisher.title} />
+          <ReviewRow label="Artist Name" value={publisher.author} />
+          <ReviewRow label="Catalog Title" value={publisher.title} />
           <ReviewRow label="Website" value={publisher.link} />
           <ReviewRow label="Description" value={publisher.description} />
         </ReviewBlock>
@@ -180,7 +181,7 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
   const { step, index, state, dispatch } = w;
 
   const isLoggedIn = !!nostrState.user?.npub;
-  const steps = visibleSteps(w.isReturningArtist);
+  const steps = WIZARD_STEPS;
 
   const closeRef = useRef<HTMLButtonElement>(null);
   const strippedSeedTrack = useRef(false);
@@ -189,6 +190,10 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
   const [publishError, setPublishError] = useState('');
   const [publisherWarning, setPublisherWarning] = useState('');
   const [feedUrl, setFeedUrl] = useState('');
+  // Numeric Podcast Index page URL for the album, resolved after publish. PI's web
+  // UI only resolves numeric feed IDs (not podcastguid:…), and add/byfeedurl returns
+  // the ID on submission — so we look it up once the album is hosted.
+  const [piUrl, setPiUrl] = useState('');
 
   // ── Dialog chrome: Escape-to-close + mount focus ─────────────────────────────
   const handleDismiss = () => {
@@ -269,6 +274,19 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
         setPublisherWarning(result.error);
       }
       wizardStorage.markComplete();
+      // Resolve the album's numeric Podcast Index page URL (add/byfeedurl returns
+      // the ID on submission). Best-effort — leaves piUrl empty if PI hasn't
+      // registered it yet, in which case the link falls back to a search.
+      try {
+        const albumUrl = buildHostedUrl(state.album.podcastGuid);
+        const params = new URLSearchParams({ url: albumUrl, guid: state.album.podcastGuid });
+        if (state.album.medium) params.set('medium', state.album.medium);
+        const piRes = await fetch(`/api/pubnotify?${params}`);
+        const piData = await piRes.json();
+        if (piData?.podcastIndexUrl) setPiUrl(piData.podcastIndexUrl);
+      } catch {
+        // ignore — link falls back to a Podcast Index search
+      }
     } catch (e) {
       setPublishError(e instanceof Error ? e.message : 'Publishing failed');
     }
@@ -289,6 +307,57 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
   // ── Step bodies ──────────────────────────────────────────────────────────────
   const body = (
     <>
+      {/* Step: Intro — short overview of what MSP does + the flow ahead */}
+      {step === 'intro' && (
+        <div className="onboarding-step">
+          <div className="onboarding-welcome-icon">🎵</div>
+          <h2 className="onboarding-heading">Welcome — let's publish your music</h2>
+          <p className="onboarding-text">
+            MSP 2.0 turns your release into a <strong>Podcasting 2.0 RSS feed</strong> so it
+            can be found in podcast apps, accept Lightning payments, and stay fully under
+            your control. Here's how it works:
+          </p>
+          <div className="onboarding-workflow">
+            <div className="onboarding-workflow-step">
+              <div className="onboarding-workflow-num">1</div>
+              <div>
+                <div className="onboarding-workflow-label">🔑 Sign in</div>
+                <div className="onboarding-workflow-desc">
+                  Connect your Nostr identity so your feed is tied to you and syncs across devices.
+                </div>
+              </div>
+            </div>
+            <div className="onboarding-workflow-step">
+              <div className="onboarding-workflow-num">2</div>
+              <div>
+                <div className="onboarding-workflow-label">✏️ Build your feed</div>
+                <div className="onboarding-workflow-desc">
+                  Add your album details, tracks, artwork, and Lightning payment splits.
+                </div>
+              </div>
+            </div>
+            <div className="onboarding-workflow-step">
+              <div className="onboarding-workflow-num">3</div>
+              <div>
+                <div className="onboarding-workflow-label">🚀 Publish</div>
+                <div className="onboarding-workflow-desc">
+                  Host your feed and submit it to Podcast Index so apps can discover your music.
+                </div>
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: 28 }}>
+            <button
+              className="btn btn-primary"
+              style={{ minWidth: 200, fontSize: '1.05rem', padding: '12px 28px' }}
+              onClick={w.next}
+            >
+              Get started →
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Step: Auth (+ returning-artist publisher chooser) */}
       {step === 'auth' && (
         <Section title="Sign in with Nostr" icon="🔑" defaultOpen>
@@ -464,21 +533,49 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
             </>
           )}
 
-          {feedUrl && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ color: 'var(--success, #16a34a)', fontWeight: 600, fontSize: '1.05em' }}>🎉 Your feed is live!</div>
-              {publisherWarning && (
-                <div style={{ padding: '8px 12px', borderRadius: 6, background: 'var(--bg-secondary, #f5f5f5)', color: 'var(--text-secondary)', fontSize: '0.85em' }}>⚠️ {publisherWarning}</div>
-              )}
-              <div>
-                <label className="form-label">Feed URL (for podcast apps)</label>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input className="form-input" readOnly value={feedUrl} style={{ flex: 1, fontSize: '0.85em' }} onFocus={(e) => e.target.select()} />
-                  <button className="btn btn-secondary btn-small" onClick={() => navigator.clipboard.writeText(feedUrl)}>Copy</button>
+          {feedUrl && (() => {
+            // The album feed is the subscribable one (apps can't subscribe to a
+            // publisher/catalog feed). feedId === podcastGuid for MSP-hosted feeds,
+            // so the album URL is deterministic from the album's GUID.
+            const albumFeedUrl = buildHostedUrl(state.album.podcastGuid);
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ color: 'var(--success, #16a34a)', fontWeight: 600, fontSize: '1.05em' }}>🎉 Your feed is live!</div>
+                {publisherWarning && (
+                  <div style={{ padding: '8px 12px', borderRadius: 6, background: 'var(--bg-secondary, #f5f5f5)', color: 'var(--text-secondary)', fontSize: '0.85em' }}>⚠️ {publisherWarning}</div>
+                )}
+                <div>
+                  <label className="form-label">Album feed — subscribe & submit to podcast apps</label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input className="form-input" readOnly value={albumFeedUrl} style={{ flex: 1, fontSize: '0.85em' }} onFocus={(e) => e.target.select()} />
+                    <button className="btn btn-secondary btn-small" onClick={() => navigator.clipboard.writeText(albumFeedUrl)}>Copy</button>
+                  </div>
+                  <p style={{ margin: '4px 0 0', color: 'var(--text-secondary)', fontSize: '0.8em' }}>
+                    This is the feed listeners subscribe to — it's already been submitted to Podcast Index.{' '}
+                    <a
+                      href={piUrl || `https://podcastindex.org/search?q=${encodeURIComponent(state.album.podcastGuid)}&type=all`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: 'var(--accent-primary, #7c3aed)' }}
+                    >
+                      View on Podcast Index →
+                    </a>{' '}
+                    (may take a few minutes to appear after publishing)
+                  </p>
+                </div>
+                <div>
+                  <label className="form-label">Publisher catalog — links all your releases</label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input className="form-input" readOnly value={feedUrl} style={{ flex: 1, fontSize: '0.85em' }} onFocus={(e) => e.target.select()} />
+                    <button className="btn btn-secondary btn-small" onClick={() => navigator.clipboard.writeText(feedUrl)}>Copy</button>
+                  </div>
+                  <p style={{ margin: '4px 0 0', color: 'var(--text-secondary)', fontSize: '0.8em' }}>
+                    An index that ties your releases together — apps use it for discovery, but it isn't directly subscribable.
+                  </p>
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </Section>
       )}
     </>
@@ -522,7 +619,7 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
             {w.publishing ? 'Publishing…' : publishError ? 'Retry' : 'Publish'}
           </button>
         )
-      ) : step !== 'auth' ? (
+      ) : step !== 'auth' && step !== 'intro' ? (
         <button className="btn btn-primary" onClick={onNextFromStep} disabled={nextDisabled}>Next</button>
       ) : null}
     </div>
@@ -536,14 +633,17 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
           <nav className="onboarding-rail">
             {steps.map((id, i) => {
               const stepIndex = steps.indexOf(id);
-              const done = stepIndex < index;
               const current = id === step;
+              // "Done" = any step you've reached (high-water mark), behind or
+              // ahead of the current one — so completed tabs stay green when you
+              // jump back. Steps beyond the mark are locked (disabled/dimmed).
+              const done = !current && stepIndex <= w.maxIndex;
               return (
                 <button
                   key={id}
                   type="button"
                   className={`rail-step${current ? ' current' : ''}${done ? ' done' : ''}`}
-                  disabled={stepIndex > index}
+                  disabled={stepIndex > w.maxIndex}
                   onClick={() => w.setStep(id)}
                 >
                   <span className="rail-num">{i + 1}</span> {STEP_LABELS[id]}

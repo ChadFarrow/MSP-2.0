@@ -37,13 +37,17 @@ import {
 } from '../../utils/publisherPublish';
 
 export type StepId =
-  | 'auth' | 'publisher' | 'album' | 'tracks' | 'value' | 'extras' | 'review';
+  | 'intro' | 'auth' | 'publisher' | 'album' | 'tracks' | 'value' | 'extras' | 'review';
 
 export const STEP_ORDER: StepId[] = [
-  'auth', 'publisher', 'album', 'tracks', 'value', 'extras', 'review',
+  'intro', 'auth', 'publisher', 'album', 'tracks', 'value', 'extras', 'review',
 ];
 
 const STEP_PERSIST_KEY = 'msp:onboarding:step';
+// High-water mark: the furthest step index reached. Lets the rail enable jumping
+// to any already-completed step (forward or back), not just steps before the
+// current one.
+const MAX_STEP_PERSIST_KEY = 'msp:onboarding:maxstep';
 
 export type ExistingPublisherLookup = (npub: string) => Promise<PublisherFeed[]>;
 
@@ -78,7 +82,14 @@ export function useOnboardingDraft(lookupExistingPublishers?: ExistingPublisherL
 
   const [step, setStepState] = useState<StepId>(() => {
     const saved = localStorage.getItem(STEP_PERSIST_KEY) as StepId | null;
-    return saved && STEP_ORDER.includes(saved) ? saved : 'auth';
+    return saved && STEP_ORDER.includes(saved) ? saved : 'intro';
+  });
+  // Furthest step index reached so far (never decreases until reset). Seeded from
+  // the persisted high-water mark, floored at the restored step's own index.
+  const [maxIndex, setMaxIndex] = useState<number>(() => {
+    const savedMax = Number(localStorage.getItem(MAX_STEP_PERSIST_KEY));
+    const stepIdx = STEP_ORDER.indexOf(step);
+    return Math.max(Number.isFinite(savedMax) ? savedMax : 0, stepIdx < 0 ? 0 : stepIdx);
   });
   const [isReturningArtist, setIsReturningArtist] = useState(false);
   const [publisherChoices, setPublisherChoices] = useState<PublisherFeed[]>([]);
@@ -87,54 +98,76 @@ export function useOnboardingDraft(lookupExistingPublishers?: ExistingPublisherL
   const [progress, setProgress] = useState<PublishProgress | null>(null);
   const [lightningPromptHandled, setLightningPromptHandled] = useState(false);
 
-  // Guard so the auth-step auto-advance effect can't fire the lookup repeatedly.
-  const lookedUpRef = useRef(false);
+  // Concurrency guard: prevents two overlapping lookups, but (unlike a one-shot
+  // "already looked up" flag) still lets the lookup re-run on every entry to the
+  // auth step — re-sign-in after sign-out, or navigating Back to it.
+  const lookingUpRef = useRef(false);
+  // Tracks the account the choices belong to, so switching accounts (or signing
+  // out) drops the previous account's feeds instead of showing them stale.
+  const prevNpubRef = useRef<string | undefined>(undefined);
 
   const setStep = useCallback((next: StepId) => {
     setStepState(next);
     localStorage.setItem(STEP_PERSIST_KEY, next);
+    setMaxIndex((m) => {
+      const ni = STEP_ORDER.indexOf(next);
+      const nm = ni > m ? ni : m;
+      localStorage.setItem(MAX_STEP_PERSIST_KEY, String(nm));
+      return nm;
+    });
   }, []);
 
-  // Returning artists skip the publisher-shell step, so next/back must walk the
-  // effective order (not the raw STEP_ORDER) to avoid landing on a hidden step.
-  const visibleOrder = isReturningArtist
-    ? STEP_ORDER.filter((s) => s !== 'publisher')
-    : STEP_ORDER;
-  const index = visibleOrder.indexOf(step);
+  // Every artist walks the full STEP_ORDER — returning artists also see the
+  // Artist/Publisher step, pre-filled with their chosen publisher, so they can
+  // review/edit it before the album.
+  const index = STEP_ORDER.indexOf(step);
   const next = useCallback(() => {
-    const ord = isReturningArtist ? STEP_ORDER.filter((s) => s !== 'publisher') : STEP_ORDER;
-    const i = ord.indexOf(step);
-    if (i >= 0 && i < ord.length - 1) setStep(ord[i + 1]);
-  }, [step, setStep, isReturningArtist]);
+    const i = STEP_ORDER.indexOf(step);
+    if (i >= 0 && i < STEP_ORDER.length - 1) setStep(STEP_ORDER[i + 1]);
+  }, [step, setStep]);
   const back = useCallback(() => {
-    const ord = isReturningArtist ? STEP_ORDER.filter((s) => s !== 'publisher') : STEP_ORDER;
-    const i = ord.indexOf(step);
-    if (i > 0) setStep(ord[i - 1]);
-  }, [step, setStep, isReturningArtist]);
+    const i = STEP_ORDER.indexOf(step);
+    if (i > 0) setStep(STEP_ORDER[i - 1]);
+  }, [step, setStep]);
 
   // --- Step 0: auth + branch ---------------------------------------------
-  // Runs the existing-publisher lookup once on sign-in but does NOT auto-advance,
-  // so the auth step can confirm the user's identity (name + pfp) and present
-  // either a "Continue" (new artist) or the publisher chooser (returning artist).
-  // The lookedUpRef guard prevents a duplicate network lookup on re-entry.
+  // Runs the existing-publisher lookup on sign-in but does NOT auto-advance, so
+  // the auth step can confirm the user's identity (name + pfp) and present either
+  // a "Continue" (new artist) or the publisher chooser (returning artist). Re-runs
+  // on every entry (re-sign-in, Back to auth); lookingUpRef just blocks overlap.
   const onSignedIn = useCallback(async () => {
     const npub = nostr.state?.user?.npub;
-    if (!npub || lookedUpRef.current) return;
-    lookedUpRef.current = true;
+    if (!npub || lookingUpRef.current) return;
+    lookingUpRef.current = true;
     setLookingUp(true);
     try {
       const found = lookupExistingPublishers ? await lookupExistingPublishers(npub) : [];
       setPublisherChoices(found);
     } finally {
+      lookingUpRef.current = false;
       setLookingUp(false);
     }
   }, [nostr.state, lookupExistingPublishers]);
+
+  // Drop the previous account's choices the moment the signed-in npub changes
+  // (including sign-out → undefined), so a new sign-in never shows stale feeds
+  // while its own lookup is in flight.
+  useEffect(() => {
+    const npub = nostr.state?.user?.npub;
+    if (prevNpubRef.current !== undefined && prevNpubRef.current !== npub) {
+      setPublisherChoices([]);
+      setIsReturningArtist(false);
+    }
+    prevNpubRef.current = npub;
+  }, [nostr.state?.user?.npub]);
 
   const choosePublisher = useCallback((feed: PublisherFeed) => {
     dispatch({ type: 'SET_PUBLISHER_FEED', payload: feed });
     setIsReturningArtist(true);
     setPublisherChoices([]);
-    setStep('album');
+    // Land on the Artist/Publisher step (pre-filled with the chosen feed) so the
+    // returning artist can review/edit it before moving on to the album.
+    setStep('publisher');
   }, [dispatch, setStep]);
 
   const startNewPublisher = useCallback(() => {
@@ -290,9 +323,11 @@ export function useOnboardingDraft(lookupExistingPublishers?: ExistingPublisherL
 
   const reset = useCallback(() => {
     localStorage.removeItem(STEP_PERSIST_KEY);
-    lookedUpRef.current = false;
+    localStorage.removeItem(MAX_STEP_PERSIST_KEY);
+    lookingUpRef.current = false;
     setLightningPromptHandled(false);
-    setStepState('auth');
+    setStepState('intro');
+    setMaxIndex(0);
   }, []);
 
   useEffect(() => {
@@ -309,7 +344,7 @@ export function useOnboardingDraft(lookupExistingPublishers?: ExistingPublisherL
   ]);
 
   return {
-    step, index, total: STEP_ORDER.length, setStep, next, back,
+    step, index, maxIndex, total: STEP_ORDER.length, setStep, next, back,
     isReturningArtist, publisherChoices, lookingUp, publishing, progress,
     onSignedIn, choosePublisher, startNewPublisher,
     ensurePublisherShell, pullProfileFromNostr, linkAlbumToPublisher,

@@ -11,7 +11,7 @@ import { useNostr } from '../../store/nostrStore';
 import { truncateNpub } from '../../utils/nostr';
 
 export function NostrLoginPanel() {
-  const { state: nostrState, login, loginWithNip46 } = useNostr();
+  const { state: nostrState, login, loginWithNip46, logout } = useNostr();
 
   const [bunkerUri, setBunkerUri] = useState('');
   const [loginError, setLoginError] = useState('');
@@ -96,6 +96,15 @@ export function NostrLoginPanel() {
           </span>
           <span className="onboarding-identity-sub">Signed in with Nostr</span>
         </div>
+        <div style={{ flex: 1 }} />
+        <button
+          type="button"
+          className="btn btn-secondary btn-small"
+          onClick={logout}
+          title="Sign out and switch accounts"
+        >
+          Sign out
+        </button>
       </div>
     );
   }

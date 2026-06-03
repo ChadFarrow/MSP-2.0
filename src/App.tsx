@@ -46,13 +46,29 @@ function AppContent() {
   const [pendingNewFeedType, setPendingNewFeedType] = useState<FeedType>('album');
   const [isTemplateMode, setIsTemplateMode] = useState(false);
   // Show onboarding (starting at the "have you used this before?" gate) on first visit.
+  // Testing aid: load `?onboarding=1` ONCE to arm — from then on every load
+  // (including plain hard refreshes with no query param, new tabs, and restarts)
+  // shows the gate regardless of saved completion, so the onboarding flow can be
+  // re-tested without clearing localStorage. The flag persists in localStorage
+  // until you disarm it with `?onboarding=0`. No-op in normal use.
+  const forceOnboarding = (() => {
+    const FLAG = 'msp:force-onboarding';
+    const v = new URLSearchParams(window.location.search).get('onboarding');
+    if (v !== null) {
+      if (v === '0') { localStorage.removeItem(FLAG); return false; }
+      localStorage.setItem(FLAG, '1');
+      return true;
+    }
+    return localStorage.getItem(FLAG) === '1';
+  })();
+
   // A returning user — onboarding marked complete, or the dead-simple wizard already
   // finished — skips the gate.
   const [showOnboarding, setShowOnboarding] = useState(
-    () => !onboardingStorage.isComplete() && !wizardStorage.isComplete()
+    () => forceOnboarding || (!onboardingStorage.isComplete() && !wizardStorage.isComplete())
   );
   const [onboardingStartAtGate, setOnboardingStartAtGate] = useState(
-    () => !onboardingStorage.isComplete() && !wizardStorage.isComplete()
+    () => forceOnboarding || (!onboardingStorage.isComplete() && !wizardStorage.isComplete())
   );
   // The dead-simple artist wizard (#67) — opened from the onboarding gate's
   // first-time branch and from the "New Artist (Guided)" choice in NewFeedChoiceModal.

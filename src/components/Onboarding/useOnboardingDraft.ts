@@ -344,7 +344,7 @@ export function useOnboardingDraft(lookupExistingPublishers?: ExistingPublisherL
   ]);
 
   return {
-    step, index, maxIndex, total: STEP_ORDER.length, setStep, next, back,
+    step, index, maxIndex, setStep, next, back,
     isReturningArtist, publisherChoices, lookingUp, publishing, progress,
     onSignedIn, choosePublisher, startNewPublisher,
     ensurePublisherShell, pullProfileFromNostr, linkAlbumToPublisher,
@@ -353,3 +353,8 @@ export function useOnboardingDraft(lookupExistingPublishers?: ExistingPublisherL
     publish, reset, state, dispatch, createSupportRecipients,
   };
 }
+
+// The wizard's shared state/actions bag. Step components receive this as their
+// `w` prop, so they can read `w.state` / `w.dispatch` and call the action
+// callbacks without re-threading every field individually.
+export type OnboardingDraft = ReturnType<typeof useOnboardingDraft>;

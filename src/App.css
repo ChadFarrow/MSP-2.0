@@ -1256,6 +1256,108 @@ body {
   font-size: 0.85em;
 }
 
+/* Intro step call-to-action */
+.onboarding-intro-cta {
+  display: flex;
+  justify-content: center;
+  margin-top: 28px;
+}
+.onboarding-intro-cta-btn {
+  min-width: 200px;
+  font-size: 1.05rem;
+  padding: 12px 28px;
+}
+
+/* Post-publish result (review step) — feed URL rows + status */
+.onboarding-publish-result {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.onboarding-publish-live {
+  color: var(--success, #16a34a);
+  font-weight: 600;
+  font-size: 1.05em;
+}
+.onboarding-publish-warning {
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--bg-secondary, #f5f5f5);
+  color: var(--text-secondary);
+  font-size: 0.85em;
+}
+.onboarding-url-row {
+  display: flex;
+  gap: 8px;
+}
+.onboarding-url-row .form-input {
+  flex: 1;
+  font-size: 0.85em;
+}
+.onboarding-help-text {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.8em;
+}
+.onboarding-link {
+  color: var(--accent-primary, #7c3aed);
+}
+
+/* Review summary (review step) */
+.review-header-card {
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.review-header-art {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.review-header-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.review-header-title { font-size: 1.1em; }
+.review-header-sub { color: var(--text-secondary); }
+.review-header-stats { color: var(--text-secondary); font-size: 0.85em; }
+.review-block { margin-top: 16px; }
+.review-block-title {
+  margin: 0 0 6px;
+  font-size: 0.95em;
+  color: var(--text-primary);
+}
+.review-block-body {
+  border-top: 1px solid var(--border-color);
+  padding-top: 6px;
+}
+.review-row {
+  display: flex;
+  gap: 12px;
+  padding: 4px 0;
+  font-size: 0.9em;
+}
+.review-row-label { flex: 0 0 130px; color: var(--text-secondary); }
+.review-row-value { flex: 1; word-break: break-word; }
+.review-empty { font-size: 0.9em; color: var(--text-secondary); }
+.review-track-list { margin: 0; padding-left: 20px; }
+.review-track-item { padding: 3px 0; font-size: 0.9em; }
+.review-muted { color: var(--text-secondary); }
+.review-split-row {
+  display: flex;
+  gap: 12px;
+  padding: 3px 0;
+  font-size: 0.9em;
+}
+.review-split-name { flex: 1; }
+.review-split-pct { flex: 0 0 50px; text-align: right; }
+
 /* Lightning-address suggestion banner (value step) */
 .ln-suggestion {
   border: 1px solid var(--accent-primary, #7c3aed);

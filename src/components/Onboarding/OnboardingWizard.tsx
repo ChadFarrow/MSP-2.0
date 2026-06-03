@@ -1,30 +1,28 @@
 // src/components/Onboarding/OnboardingWizard.tsx
 //
-// New-artist onboarding wizard (7 steps), wired to useOnboardingDraft.
-// Each step renders the SAME real editor sections the main editor uses
-// (AlbumInfoSection, AlbumArtworkSection, TrackList, PersonsSection, plus the
-// publisher sections) so there's one source of truth and full field parity —
-// no parallel simplified fields to drift.
+// New-artist onboarding wizard (8 steps), wired to useOnboardingDraft. This
+// component owns the dialog chrome (header/rail/footer), the step-gated effects,
+// and the publish handler; each step's body lives in its own presentational
+// component under ./steps/ and receives the shared `w` (useOnboardingDraft) bag.
+// The steps render the SAME real editor sections the main editor uses, so
+// there's one source of truth and full field parity.
 
 import { useEffect, useRef, useState } from 'react';
 import { useOnboardingDraft, type StepId } from './useOnboardingDraft';
-import { NostrLoginPanel } from './NostrLoginPanel';
 import { useNostr } from '../../store/nostrStore';
-import { createEmptyPersonRole } from '../../types/feed';
-import { Section } from '../Section';
-import { ArtworkFields } from '../ArtworkFields';
-import { RecipientsList } from '../RecipientsList';
-import { FundingFields } from '../FundingFields';
-import { PublisherInfoSection } from '../Editor/PublisherEditor/PublisherInfoSection';
-import { AlbumInfoSection } from '../Editor/AlbumEditor/AlbumInfoSection';
-import { AlbumArtworkSection } from '../Editor/AlbumEditor/AlbumArtworkSection';
-import { PersonsSection } from '../Editor/AlbumEditor/PersonsSection';
-import { TrackList } from '../Editor/AlbumEditor/TrackList';
 import { wizardStorage } from '../../utils/storage';
 import { loadPublisherFeedsFromNostr } from '../../utils/nostrSync';
 import { checkSignerConnection } from '../../utils/nostrSigner';
 import { buildHostedUrl } from '../../utils/hostedFeed';
-import type { Album, PublisherFeed } from '../../types/feed';
+import type { PublisherFeed } from '../../types/feed';
+import { IntroStep } from './steps/IntroStep';
+import { AuthStep } from './steps/AuthStep';
+import { PublisherStep } from './steps/PublisherStep';
+import { AlbumStep } from './steps/AlbumStep';
+import { TracksStep } from './steps/TracksStep';
+import { ValueStep } from './steps/ValueStep';
+import { ExtrasStep } from './steps/ExtrasStep';
+import { ReviewStep } from './steps/ReviewStep';
 
 interface OnboardingWizardProps {
   onComplete: () => void;
@@ -51,128 +49,6 @@ const WIZARD_STEPS: StepId[] = ['intro', 'auth', 'publisher', 'album', 'tracks',
 async function lookupExistingPublishers(): Promise<PublisherFeed[]> {
   const { feeds } = await loadPublisherFeedsFromNostr();
   return feeds;
-}
-
-// Per-track value/persons overrides are hidden during onboarding; the wizard
-// never gates on the lightning feature flag, so a constant false suffices.
-const wizardIsEnabled = () => false;
-
-// ── Review summary ───────────────────────────────────────────────────────────
-function ReviewRow({ label, value }: { label: string; value?: string }) {
-  if (!value || !value.trim()) return null;
-  return (
-    <div style={{ display: 'flex', gap: 12, padding: '4px 0', fontSize: '0.9em' }}>
-      <span style={{ flex: '0 0 130px', color: 'var(--text-secondary)' }}>{label}</span>
-      <span style={{ flex: 1, wordBreak: 'break-word' }}>{value}</span>
-    </div>
-  );
-}
-
-function ReviewBlock({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div style={{ marginTop: 16 }}>
-      <h4 style={{ margin: '0 0 6px', fontSize: '0.95em', color: 'var(--text-primary)' }}>{title}</h4>
-      <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: 6 }}>{children}</div>
-    </div>
-  );
-}
-
-const truncate = (s: string, n = 28) => (s.length > n ? `${s.slice(0, n)}…` : s);
-
-function ReviewSummary({ album, publisher }: { album: Album; publisher: PublisherFeed | null }) {
-  const recipients = album.value?.recipients?.filter((r) => r.address) ?? [];
-  const persons = album.persons?.filter((p) => p.name?.trim()) ?? [];
-  const funding = album.funding?.filter((f) => f.url?.trim()) ?? [];
-  const owner = [album.ownerName, album.ownerEmail].filter(Boolean).join(' · ');
-
-  return (
-    <div>
-      {/* Header card */}
-      <div style={{ padding: '12px 16px', borderRadius: 8, background: 'var(--bg-secondary)', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-        {album.imageUrl && (
-          <img src={album.imageUrl} alt="Album art" style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />
-        )}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <strong style={{ fontSize: '1.1em' }}>{album.title || 'Untitled album'}</strong>
-          <span style={{ color: 'var(--text-secondary)' }}>by {album.author || publisher?.title || 'Unknown artist'}</span>
-          <span style={{ color: 'var(--text-secondary)', fontSize: '0.85em' }}>
-            {album.tracks.length} track{album.tracks.length === 1 ? '' : 's'}
-            {album.language ? ` · ${album.language.toUpperCase()}` : ''}
-            {album.categories?.[0] ? ` · ${album.categories[0]}` : ''}
-            {album.explicit ? ' · Explicit' : ''}
-          </span>
-        </div>
-      </div>
-
-      {publisher && (
-        <ReviewBlock title="Artist / Publisher">
-          <ReviewRow label="Artist Name" value={publisher.author} />
-          <ReviewRow label="Catalog Title" value={publisher.title} />
-          <ReviewRow label="Website" value={publisher.link} />
-          <ReviewRow label="Description" value={publisher.description} />
-        </ReviewBlock>
-      )}
-
-      <ReviewBlock title="Album">
-        <ReviewRow label="Title" value={album.title} />
-        <ReviewRow label="Artist" value={album.author} />
-        <ReviewRow label="Description" value={album.description} />
-        <ReviewRow label="Website" value={album.link} />
-        <ReviewRow label="Keywords" value={album.keywords} />
-        <ReviewRow label="Owner" value={owner} />
-      </ReviewBlock>
-
-      <ReviewBlock title={`Tracks (${album.tracks.length})`}>
-        {album.tracks.length === 0 ? (
-          <div style={{ fontSize: '0.9em', color: 'var(--text-secondary)' }}>No tracks added.</div>
-        ) : (
-          <ol style={{ margin: 0, paddingLeft: 20 }}>
-            {album.tracks.map((t, i) => (
-              <li key={t.id || i} style={{ padding: '3px 0', fontSize: '0.9em' }}>
-                <span>{t.title || 'Untitled track'}</span>
-                {t.duration && t.duration !== '00:00:00' && (
-                  <span style={{ color: 'var(--text-secondary)' }}> · {t.duration}</span>
-                )}
-                {t.explicit && <span style={{ color: 'var(--text-secondary)' }}> · Explicit</span>}
-              </li>
-            ))}
-          </ol>
-        )}
-      </ReviewBlock>
-
-      {recipients.length > 0 && (
-        <ReviewBlock title="Value / V4V splits">
-          {recipients.map((r, i) => (
-            <div key={i} style={{ display: 'flex', gap: 12, padding: '3px 0', fontSize: '0.9em' }}>
-              <span style={{ flex: 1 }}>{r.name || 'Recipient'} <span style={{ color: 'var(--text-secondary)' }}>· {truncate(r.address)}</span></span>
-              <span style={{ flex: '0 0 50px', textAlign: 'right' }}>{r.split}%</span>
-            </div>
-          ))}
-        </ReviewBlock>
-      )}
-
-      {persons.length > 0 && (
-        <ReviewBlock title="Credits">
-          {persons.map((p, i) => (
-            <div key={i} style={{ padding: '3px 0', fontSize: '0.9em' }}>
-              <span>{p.name}</span>
-              {p.roles?.length > 0 && (
-                <span style={{ color: 'var(--text-secondary)' }}> · {p.roles.map((r) => r.role).join(', ')}</span>
-              )}
-            </div>
-          ))}
-        </ReviewBlock>
-      )}
-
-      {funding.length > 0 && (
-        <ReviewBlock title="Funding">
-          {funding.map((f, i) => (
-            <ReviewRow key={i} label={f.text || 'Support'} value={f.url} />
-          ))}
-        </ReviewBlock>
-      )}
-    </div>
-  );
 }
 
 export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
@@ -304,279 +180,24 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
     !!state.album.title.trim() &&
     state.album.tracks.length > 0;
 
-  // ── Step bodies ──────────────────────────────────────────────────────────────
+  // ── Step bodies (each step's UI lives in its own component) ──────────────────
   const body = (
     <>
-      {/* Step: Intro — short overview of what MSP does + the flow ahead */}
-      {step === 'intro' && (
-        <div className="onboarding-step">
-          <div className="onboarding-welcome-icon">🎵</div>
-          <h2 className="onboarding-heading">Welcome — let's publish your music</h2>
-          <p className="onboarding-text">
-            MSP 2.0 turns your release into a <strong>Podcasting 2.0 RSS feed</strong> so it
-            can be found in podcast apps, accept Lightning payments, and stay fully under
-            your control. Here's how it works:
-          </p>
-          <div className="onboarding-workflow">
-            <div className="onboarding-workflow-step">
-              <div className="onboarding-workflow-num">1</div>
-              <div>
-                <div className="onboarding-workflow-label">🔑 Sign in</div>
-                <div className="onboarding-workflow-desc">
-                  Connect your Nostr identity so your feed is tied to you and syncs across devices.
-                </div>
-              </div>
-            </div>
-            <div className="onboarding-workflow-step">
-              <div className="onboarding-workflow-num">2</div>
-              <div>
-                <div className="onboarding-workflow-label">✏️ Build your feed</div>
-                <div className="onboarding-workflow-desc">
-                  Add your album details, tracks, artwork, and Lightning payment splits.
-                </div>
-              </div>
-            </div>
-            <div className="onboarding-workflow-step">
-              <div className="onboarding-workflow-num">3</div>
-              <div>
-                <div className="onboarding-workflow-label">🚀 Publish</div>
-                <div className="onboarding-workflow-desc">
-                  Host your feed and submit it to Podcast Index so apps can discover your music.
-                </div>
-              </div>
-            </div>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'center', marginTop: 28 }}>
-            <button
-              className="btn btn-primary"
-              style={{ minWidth: 200, fontSize: '1.05rem', padding: '12px 28px' }}
-              onClick={w.next}
-            >
-              Get started →
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Step: Auth (+ returning-artist publisher chooser) */}
-      {step === 'auth' && (
-        <Section title="Sign in with Nostr" icon="🔑" defaultOpen>
-          <NostrLoginPanel />
-
-          {isLoggedIn && w.lookingUp && (
-            <p style={{ marginTop: 12, color: 'var(--text-secondary)', fontSize: '0.9em' }}>
-              Checking for your existing feeds…
-            </p>
-          )}
-
-          {isLoggedIn && !w.lookingUp && w.publisherChoices.length === 0 && (
-            <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={w.startNewPublisher}>
-              Continue
-            </button>
-          )}
-
-          {isLoggedIn && !w.lookingUp && w.publisherChoices.length > 0 && (
-            <div className="publisher-chooser">
-              <p>You already own {w.publisherChoices.length} publisher feed
-                {w.publisherChoices.length > 1 ? 's' : ''}. Add this release to one,
-                or start a new project:</p>
-              <ul>
-                {w.publisherChoices.map((feed) => (
-                  <li key={feed.podcastGuid}>
-                    <button className="chooser-item" onClick={() => w.choosePublisher(feed)}>
-                      <strong>{feed.title || 'Untitled publisher'}</strong>
-                      <span> · {(feed.remoteItems || []).length} release
-                        {(feed.remoteItems || []).length === 1 ? '' : 's'}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              <button className="btn btn-secondary btn-small" onClick={w.startNewPublisher}>
-                + Start a new publisher
-              </button>
-            </div>
-          )}
-        </Section>
-      )}
-
-      {/* Step: Artist identity (publisher shell) */}
-      {step === 'publisher' && state.publisherFeed && (
-        <>
-          <Section title="Your artist identity" icon="🎤" defaultOpen>
-            <button
-              className="btn btn-secondary btn-small"
-              style={{ marginBottom: 12 }}
-              onClick={() => w.pullProfileFromNostr(true)}
-            >
-              Use my Nostr name &amp; photo
-            </button>
-            <PublisherInfoSection publisherFeed={state.publisherFeed} dispatch={dispatch} isArtistMode />
-          </Section>
-          <Section title="Publisher Artwork" icon="🎨" defaultOpen>
-            <ArtworkFields
-              toggleSource
-              imageUrl={state.publisherFeed.imageUrl}
-              imageTitle={state.publisherFeed.imageTitle}
-              imageDescription={state.publisherFeed.imageDescription}
-              onUpdate={(field, value) => dispatch({ type: 'UPDATE_PUBLISHER_FEED', payload: { [field]: value } })}
-              urlLabel="Logo URL"
-              urlPlaceholder="https://example.com/logo.jpg"
-              titlePlaceholder="Publisher logo description"
-              previewAlt="Publisher logo preview"
-            />
-          </Section>
-        </>
-      )}
-
-      {/* Step: Album basics — the real album info + artwork sections */}
-      {step === 'album' && (
-        <>
-          <AlbumInfoSection
-            album={state.album}
-            dispatch={dispatch}
-            isArtistMode
-            isLoggedIn={nostrState.isLoggedIn}
-            userNpub={nostrState.user?.npub}
-          />
-          <AlbumArtworkSection album={state.album} dispatch={dispatch} toggleSource />
-        </>
-      )}
-
-      {/* Step: Tracks — the real track list (store-driven, bulk upload on) */}
-      {step === 'tracks' && (
-        <TrackList
-          album={state.album}
-          dispatch={dispatch}
-          isEnabled={wizardIsEnabled}
-          allowBulkAdd
-          showOverrides={false}
-        />
-      )}
-
-      {/* Step: Value / V4V */}
-      {step === 'value' && (
-        <Section title="Value / V4V" icon="⚡" defaultOpen>
-          {w.suggestedLightningAddress && !w.lightningPromptHandled && (
-            <div className="ln-suggestion">
-              <p>Found a lightning address on your Nostr profile:
-                <strong> {w.suggestedLightningAddress}</strong></p>
-              <p>Use it to receive V4V payments for this release?</p>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn btn-primary btn-small" onClick={() => w.confirmLightningAddress()}>
-                  Use this address
-                </button>
-                <button className="btn btn-secondary btn-small" onClick={w.dismissLightningAddress}>
-                  I&apos;ll enter a different one
-                </button>
-              </div>
-            </div>
-          )}
-          {w.suggestedLightningAddress && w.lightningPromptHandled && (
-            <button className="btn btn-secondary btn-small" style={{ marginBottom: 12 }} onClick={() => w.confirmLightningAddress()}>
-              Use my Nostr lightning address ({w.suggestedLightningAddress})
-            </button>
-          )}
-          {state.album.value.recipients[0]?.address && (
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85em', margin: '0 0 8px' }}>
-              Your share is calculated automatically — you get whatever's left after the other recipients ({state.album.value.recipients[0].split}% right now).
-            </p>
-          )}
-          <RecipientsList
-            recipients={state.album.value.recipients}
-            onUpdate={(idx, recipient) => dispatch({ type: 'UPDATE_RECIPIENT', payload: { index: idx, recipient } })}
-            onRemove={(idx) => dispatch({ type: 'REMOVE_RECIPIENT', payload: idx })}
-            onAdd={(recipient) => dispatch({ type: 'ADD_RECIPIENT', payload: recipient })}
-          />
-        </Section>
-      )}
-
-      {/* Step: Credits & extras — real persons section + funding */}
-      {step === 'extras' && (
-        <Section title="Credits & extras" icon="✨" defaultOpen>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9em', marginTop: 0 }}>
-            All optional. Publisher link: confirmed ✓
-          </p>
-
-          <label className="form-label">Credits / Persons</label>
-          <PersonsSection
-            persons={state.album.persons}
-            onUpdatePerson={(index, person) => dispatch({ type: 'UPDATE_PERSON', payload: { index, person } })}
-            onAddPerson={() => dispatch({ type: 'ADD_PERSON' })}
-            onRemovePerson={(index) => dispatch({ type: 'REMOVE_PERSON', payload: index })}
-            onUpdateRole={(personIndex, roleIndex, role) => dispatch({ type: 'UPDATE_PERSON_ROLE', payload: { personIndex, roleIndex, role } })}
-            onAddRole={(personIndex) => dispatch({ type: 'ADD_PERSON_ROLE', payload: { personIndex, role: createEmptyPersonRole() } })}
-            onRemoveRole={(personIndex, roleIndex) => dispatch({ type: 'REMOVE_PERSON_ROLE', payload: { personIndex, roleIndex } })}
-            showThumbnailPreview
-            showRolesModalButton
-          />
-
-          <div style={{ marginTop: 16 }}>
-            <FundingFields
-              funding={state.album.funding}
-              onUpdate={(funding) => dispatch({ type: 'UPDATE_ALBUM', payload: { funding } })}
-            />
-          </div>
-        </Section>
-      )}
-
-      {/* Step: Review & publish */}
+      {step === 'intro' && <IntroStep w={w} />}
+      {step === 'auth' && <AuthStep w={w} />}
+      {step === 'publisher' && <PublisherStep w={w} />}
+      {step === 'album' && <AlbumStep w={w} />}
+      {step === 'tracks' && <TracksStep w={w} />}
+      {step === 'value' && <ValueStep w={w} />}
+      {step === 'extras' && <ExtrasStep w={w} />}
       {step === 'review' && (
-        <Section title="Review & publish" icon="🚀" defaultOpen>
-          {!feedUrl && (
-            <>
-              <ReviewSummary album={state.album} publisher={state.publisherFeed} />
-              <p style={{ color: 'var(--text-secondary)', margin: '16px 0 0', fontSize: '0.9em' }}>
-                MSP will host your album feed and {w.isReturningArtist ? 'add it to your existing publisher catalog' : 'a publisher catalog'} — cross-linked and submitted to Podcast Index automatically.
-              </p>
-              {w.progress && <p style={{ fontSize: '0.9em' }}>{w.progress.step}: {w.progress.message}</p>}
-              {publishError && <div style={{ color: 'var(--error, #dc2626)', fontSize: '0.85em' }}>{publishError}</div>}
-            </>
-          )}
-
-          {feedUrl && (() => {
-            // The album feed is the subscribable one (apps can't subscribe to a
-            // publisher/catalog feed). feedId === podcastGuid for MSP-hosted feeds,
-            // so the album URL is deterministic from the album's GUID.
-            const albumFeedUrl = buildHostedUrl(state.album.podcastGuid);
-            return (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div style={{ color: 'var(--success, #16a34a)', fontWeight: 600, fontSize: '1.05em' }}>🎉 Your feed is live!</div>
-                {publisherWarning && (
-                  <div style={{ padding: '8px 12px', borderRadius: 6, background: 'var(--bg-secondary, #f5f5f5)', color: 'var(--text-secondary)', fontSize: '0.85em' }}>⚠️ {publisherWarning}</div>
-                )}
-                <div>
-                  <label className="form-label">Album feed — subscribe & submit to podcast apps</label>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <input className="form-input" readOnly value={albumFeedUrl} style={{ flex: 1, fontSize: '0.85em' }} onFocus={(e) => e.target.select()} />
-                    <button className="btn btn-secondary btn-small" onClick={() => navigator.clipboard.writeText(albumFeedUrl)}>Copy</button>
-                  </div>
-                  <p style={{ margin: '4px 0 0', color: 'var(--text-secondary)', fontSize: '0.8em' }}>
-                    This is the feed listeners subscribe to — it's already been submitted to Podcast Index.{' '}
-                    <a
-                      href={piUrl || `https://podcastindex.org/search?q=${encodeURIComponent(state.album.podcastGuid)}&type=all`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ color: 'var(--accent-primary, #7c3aed)' }}
-                    >
-                      View on Podcast Index →
-                    </a>{' '}
-                    (may take a few minutes to appear after publishing)
-                  </p>
-                </div>
-                <div>
-                  <label className="form-label">Publisher catalog — links all your releases</label>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <input className="form-input" readOnly value={feedUrl} style={{ flex: 1, fontSize: '0.85em' }} onFocus={(e) => e.target.select()} />
-                    <button className="btn btn-secondary btn-small" onClick={() => navigator.clipboard.writeText(feedUrl)}>Copy</button>
-                  </div>
-                  <p style={{ margin: '4px 0 0', color: 'var(--text-secondary)', fontSize: '0.8em' }}>
-                    An index that ties your releases together — apps use it for discovery, but it isn't directly subscribable.
-                  </p>
-                </div>
-              </div>
-            );
-          })()}
-        </Section>
+        <ReviewStep
+          w={w}
+          publishError={publishError}
+          publisherWarning={publisherWarning}
+          feedUrl={feedUrl}
+          piUrl={piUrl}
+        />
       )}
     </>
   );

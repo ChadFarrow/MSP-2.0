@@ -152,16 +152,25 @@ export function NostrProvider({ children }: { children: ReactNode }) {
               console.log('[Nostr] reconnectNip46 returned:', pubkey);
               if (pubkey && pubkey === storedUser.pubkey) {
                 dispatch({ type: 'RESTORE_SESSION', payload: { user: storedUser, method: 'nip46' } });
-
                 refreshProfile(pubkey);
                 return;
               }
             } catch (e) {
               console.error('[Nostr] Failed to reconnect NIP-46:', e);
             }
+            // Reconnect failed — if credentials are still stored it was a timeout
+            // (reconnectNip46 only clears credentials for auth errors, not timeouts).
+            // Restore the UI session so the user appears logged in; read-only operations
+            // use the stored pubkey directly, and the signer will re-connect on the next
+            // signing operation via checkSignerConnection().
+            if (loadBunkerPointer()) {
+              console.log('[Nostr] Reconnect timed out, restoring session from stored data');
+              dispatch({ type: 'RESTORE_SESSION', payload: { user: storedUser, method: 'nip46' } });
+              return;
+            }
           }
-          // Failed to reconnect, clear stored session
-          console.log('[Nostr] Reconnection failed, clearing stored session');
+          // Credentials were cleared (auth error) — fully log out
+          console.log('[Nostr] Reconnection failed (auth error), clearing stored session');
           clearStoredUser();
           clearSigner();
           dispatch({ type: 'SET_LOADING', payload: false });

@@ -65,6 +65,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
   const [hostedUrl, setHostedUrl] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
   const [podcastIndexPending, setPodcastIndexPending] = useState(false); // True when PI notified but not yet indexed
+  const [isDraft, setIsDraft] = useState(false);
   const nsiteSiteId = defaultSiteId(currentFeedGuid);
   const [nsiteUrl, setNsiteUrl] = useState<string | null>(null);
   const [nsiteBlossomUrl, setNsiteBlossomUrl] = useState<string | null>(null);
@@ -124,6 +125,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
     const info = getHostedFeedInfo(currentFeedGuid);
     if (info) {
       setHostedInfo(info);
+      setIsDraft(info.isDraft === true);
       setHostedUrl(buildHostedUrl(info.feedId));
     }
   }, [currentFeedGuid]);
@@ -175,10 +177,14 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
       }
     }
 
-    // Pre-flight: verify signer is reachable before any Nostr operation
+    // Pre-flight: verify signer is reachable before any Nostr operation.
+    // For NIP-46 remote signers (Primal, Amber) this may require the user to approve
+    // in their signer app — show a hint so they know to switch apps.
     const nostrSignModes = ['nostr', 'nostrMusic', 'blossom', 'nsite'] as const;
     if ((nostrSignModes as readonly string[]).includes(mode)) {
+      setMessage({ type: 'success', text: 'Connecting to signer — if using a remote signer (Primal, Amber), open the app and approve now.' });
       const health = await checkSignerConnection();
+      setMessage(null);
       if (!health.connected) {
         setMessage({ type: 'error', text: health.error ?? 'Nostr signer is not connected.' });
         setLoading(false);
@@ -312,36 +318,43 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
           const hostedXml = generateCurrentFeedXml();
 
           if (hostedInfo) {
-            const updateResult = await updateHostedFeedWithNostr(hostedInfo.feedId, hostedXml, currentFeedTitle);
-            const updatedInfo = { ...hostedInfo, lastUpdated: Date.now() };
+            const updateResult = await updateHostedFeedWithNostr(hostedInfo.feedId, hostedXml, currentFeedTitle, isDraft);
+            const updatedInfo = { ...hostedInfo, lastUpdated: Date.now(), isDraft: updateResult.isDraft || undefined };
             saveHostedFeedInfo(currentFeedGuid, updatedInfo);
             setHostedInfo(updatedInfo);
 
-            if (updateResult.podcastIndexId) {
+            if (isDraft) {
+              showSuccessAndClose('Feed updated as draft!');
+            } else if (updateResult.podcastIndexId) {
               setPodcastIndexPending(true);
               setMessage({ type: 'success', text: 'Feed updated! Podcast Index notified.' });
             } else {
               showSuccessAndClose('Feed updated!');
             }
           } else {
-            const hostedResult = await createHostedFeedWithNostr(hostedXml, currentFeedTitle, currentFeedGuid);
+            const hostedResult = await createHostedFeedWithNostr(hostedXml, currentFeedTitle, currentFeedGuid, isDraft);
             const newInfo: HostedFeedInfo = {
               feedId: hostedResult.feedId,
               createdAt: Date.now(),
               lastUpdated: Date.now(),
               ownerPubkey: nostrState.user!.pubkey,
-              linkedAt: Date.now()
+              linkedAt: Date.now(),
+              ...(hostedResult.isDraft && { isDraft: true })
             };
             saveHostedFeedInfo(currentFeedGuid, newInfo);
             setHostedInfo(newInfo);
             setHostedUrl(buildHostedUrl(hostedResult.feedId));
 
-            let successMsg = 'Feed created and linked to your Nostr identity!';
-            if (hostedResult.podcastIndexId) {
-              setPodcastIndexPending(true);
-              successMsg += ' Podcast Index notified.';
+            if (isDraft) {
+              setMessage({ type: 'success', text: 'Feed saved as draft! Podcast Index not notified.' });
+            } else {
+              let successMsg = 'Feed created and linked to your Nostr identity!';
+              if (hostedResult.podcastIndexId) {
+                setPodcastIndexPending(true);
+                successMsg += ' Podcast Index notified.';
+              }
+              setMessage({ type: 'success', text: successMsg });
             }
-            setMessage({ type: 'success', text: successMsg });
           }
           break;
         }
@@ -701,8 +714,17 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                     ? 'Host your RSS feed on MSP. Managed with your Nostr identity — no token needed.'
                     : 'Nostr login required to host a feed.'}
               </p>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.875rem', marginTop: '12px' }}>
+                <input
+                  type="checkbox"
+                  checked={isDraft}
+                  onChange={(e) => setIsDraft(e.target.checked)}
+                  style={{ width: '16px', height: '16px' }}
+                />
+                <span>Draft mode — host feed without notifying Podcast Index or sending podping</span>
+              </label>
               {!isLoggedIn && (
-                <p style={{ color: 'var(--warning, #f59e0b)', fontSize: '0.75rem', padding: '8px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '4px' }}>
+                <p style={{ color: 'var(--warning, #f59e0b)', fontSize: '0.75rem', padding: '8px', marginTop: '8px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '4px' }}>
                   Sign in with Nostr to host and manage your feed from any device.
                 </p>
               )}
@@ -713,6 +735,11 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                     {isNostrOwner && (
                       <span style={{ fontSize: '0.7rem', padding: '2px 6px', backgroundColor: 'rgba(139, 92, 246, 0.2)', color: '#a78bfa', borderRadius: '4px' }}>
                         Linked to Nostr
+                      </span>
+                    )}
+                    {hostedInfo?.isDraft && (
+                      <span style={{ fontSize: '0.7rem', padding: '2px 6px', backgroundColor: 'rgba(245, 158, 11, 0.2)', color: '#f59e0b', borderRadius: '4px' }}>
+                        DRAFT
                       </span>
                     )}
                   </label>
@@ -878,7 +905,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                 <li><strong>Local Storage</strong> - Save to your browser's local storage. Data persists until you clear browser data.</li>
                 <li><strong>Download XML</strong> - Download the RSS feed as an XML file to your computer.</li>
                 <li><strong>Copy to Clipboard</strong> - Copy the RSS XML to your clipboard for pasting elsewhere.</li>
-                <li><strong>Host on MSP</strong> - Host your feed on MSP servers. Get a permanent URL for your RSS feed to use in any app. Managed with your Nostr identity — edit from any device.</li>
+                <li><strong>Host on MSP</strong> - Host your feed on MSP servers. Get a permanent URL for your RSS feed to use in any app. Managed with your Nostr identity — edit from any device. Enable &quot;Draft mode&quot; to host without notifying Podcast Index or sending a podping.</li>
                 <li><strong>Submit to PodcastIndex</strong> - Submit a feed URL to Podcast Index so it gets indexed and becomes discoverable in apps like Fountain, Castamatic, and others.</li>
                 <li><strong>Publish to Nostr Music</strong> - Publishes each track (kind 36787) and the playlist (kind 34139) as Nostr events for Nostr-native music clients like Wavlake and Fountain. Audio files must already be hosted somewhere - these events just point to them. Not a podcast RSS feed.</li>
                 {showExperimental && <li><strong>Save RSS feed to Nostr 🧪</strong> - Stores the entire RSS XML inside a Nostr event (kind 30054) on your relays. Personal cross-device backup tied to your Nostr key. Not readable by podcast apps.</li>}

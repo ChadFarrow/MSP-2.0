@@ -32,11 +32,15 @@ interface CreateFeedResponse {
   url: string;
   blobUrl: string;
   podcastIndexId?: number;
+  isDraft?: boolean;
 }
+
+
 
 interface UpdateFeedResponse {
   success: boolean;
   podcastIndexId?: number;
+  isDraft?: boolean;
 }
 
 /**
@@ -57,7 +61,8 @@ export function buildHostedUrl(feedId: string): string {
 export async function createHostedFeedWithNostr(
   xml: string,
   title: string,
-  podcastGuid: string
+  podcastGuid: string,
+  isDraft?: boolean
 ): Promise<CreateFeedResponse> {
   if (!hasSigner()) {
     throw new Error('Nostr login required to host a feed');
@@ -72,7 +77,7 @@ export async function createHostedFeedWithNostr(
       'Content-Type': 'application/json',
       'Authorization': authHeader
     },
-    body: JSON.stringify({ xml, title, podcastGuid })
+    body: JSON.stringify({ xml, title, podcastGuid, isDraft })
   });
 
   if (!response.ok) {
@@ -89,7 +94,8 @@ export async function createHostedFeedWithNostr(
 export async function updateHostedFeedWithNostr(
   feedId: string,
   xml: string,
-  title: string
+  title: string,
+  isDraft?: boolean
 ): Promise<UpdateFeedResponse> {
   if (!hasSigner()) {
     throw new Error('Nostr login required to update a feed');
@@ -104,7 +110,7 @@ export async function updateHostedFeedWithNostr(
       'Content-Type': 'application/json',
       'Authorization': authHeader
     },
-    body: JSON.stringify({ xml, title })
+    body: JSON.stringify({ xml, title, isDraft })
   });
 
   if (!response.ok) {

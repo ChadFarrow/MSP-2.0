@@ -209,14 +209,14 @@ export async function saveFeedToNostr(
 
 // Load saved albums from Nostr relays
 export async function loadAlbumsFromNostr(
+  pubkey: string,
   relays = DEFAULT_RELAYS
 ): Promise<{ success: boolean; albums: SavedAlbumInfo[]; message: string }> {
-  if (!hasSigner()) {
+  if (!pubkey) {
     return { success: false, albums: [], message: 'Not logged in' };
   }
 
   try {
-    const pubkey = await getPublicKeyWithTimeout();
     const allEvents: NostrEvent[] = [];
 
     // Query each relay
@@ -368,14 +368,14 @@ export async function loadPublisherFeedsFromNostr(
 // Load a specific album by d tag
 export async function loadAlbumByDTag(
   dTag: string,
+  pubkey: string,
   relays = DEFAULT_RELAYS
 ): Promise<{ success: boolean; album: Album | null; message: string }> {
-  if (!hasSigner()) {
+  if (!pubkey) {
     return { success: false, album: null, message: 'Not logged in' };
   }
 
   try {
-    const pubkey = await getPublicKeyWithTimeout();
     let latestEvent: NostrEvent | null = null;
 
     // Query each relay
@@ -460,14 +460,14 @@ export function groupTracksByAlbum(tracks: NostrMusicTrackInfo[]): NostrMusicAlb
 
 // Fetch music track events (kind 36787) for logged-in user
 export async function fetchNostrMusicTracks(
+  pubkey: string,
   relays = MUSIC_RELAYS
 ): Promise<{ success: boolean; tracks: NostrMusicTrackInfo[]; message: string }> {
-  if (!hasSigner()) {
+  if (!pubkey) {
     return { success: false, tracks: [], message: 'Not logged in' };
   }
 
   try {
-    const pubkey = await getPublicKeyWithTimeout();
     const allEvents: NostrEvent[] = [];
 
     // Query each relay

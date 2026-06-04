@@ -17,6 +17,7 @@ interface FeedMetadata {
   ownerPubkey?: string;
   linkedAt?: string;
   podcastIndexId?: number;
+  isDraft?: boolean;     // True when hosted without PI/podping notification
 }
 
 // Helper to fetch metadata from .meta.json blob
@@ -207,6 +208,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const existingTitle = metadata?.title;
         const existingPodcastIndexId = metadata?.podcastIndexId;
 
+        const existingIsDraft = metadata?.isDraft;
+
         // Validate auth: Nostr owner or admin
         if (!isAdmin) {
           if (!ownerPubkey) {
@@ -221,7 +224,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         // Parse request body
-        const { xml, title } = req.body;
+        const { xml, title, isDraft } = req.body;
 
         if (!xml || typeof xml !== 'string') {
           return res.status(400).json({ error: 'Missing XML content' });
@@ -253,11 +256,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           await del(existingMeta.url);
         }
 
+        // Determine effective draft status:
+        // If the request explicitly sets isDraft, use that; otherwise fall back to existing value
+        const effectiveIsDraft = isDraft !== undefined ? (isDraft === true) : (existingIsDraft === true);
+
         // Notify Podcast Index and get PI ID (may update existing ID)
+        // Skip PI/podping when in draft mode
         const stableUrl = `${getBaseUrl(req)}/api/hosted/${feedId}.xml`;
         const medium = extractPodcastMedium(xml);
-        const newPodcastIndexId = await notifyPodcastIndex(stableUrl, { medium });
-        const podcastIndexId = newPodcastIndexId || existingPodcastIndexId;
+        let podcastIndexId: number | undefined;
+        if (!effectiveIsDraft) {
+          const newPodcastIndexId = await notifyPodcastIndex(stableUrl, { medium });
+          podcastIndexId = newPodcastIndexId || existingPodcastIndexId;
+        } else {
+          podcastIndexId = existingPodcastIndexId;
+        }
 
         await put(metaPath, JSON.stringify({
           createdAt,
@@ -265,14 +278,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           title: (typeof title === 'string' ? title : existingTitle || 'Untitled Feed').slice(0, 200),
           ownerPubkey,
           linkedAt: metadata?.linkedAt,
-          podcastIndexId
+          podcastIndexId,
+          ...(effectiveIsDraft && { isDraft: true })
         }), {
           access: 'public',
           contentType: 'application/json',
           addRandomSuffix: false
         });
 
-        return res.status(200).json({ success: true, podcastIndexId });
+        return res.status(200).json({ success: true, podcastIndexId, isDraft: effectiveIsDraft });
       }
 
       case 'DELETE': {

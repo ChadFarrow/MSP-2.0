@@ -1,5 +1,6 @@
 // Test data generator for development mode
-import type { Album, Track, Person, ValueRecipient } from '../types/feed';
+import type { Album, Track, Person, ValueRecipient, PublisherFeed } from '../types/feed';
+import { createEmptyRemoteItem } from '../types/feed';
 
 /**
  * Generate a fully populated test album for development testing
@@ -138,5 +139,86 @@ export function generateTestAlbum(): Album {
     ],
     op3: false,
     tracks: testTracks
+  };
+}
+
+/**
+ * Generate a fully populated test publisher feed.
+ * Caller is responsible for filling `remoteItems` with cross-links to the
+ * album(s) this publisher catalogs.
+ */
+export function generateTestPublisher(): PublisherFeed {
+  const now = new Date().toUTCString();
+  return {
+    title: 'Test Records',
+    author: 'Test Artist',
+    description: 'A test publisher catalog feed generated for development. It aggregates one or more music feeds under a single label/artist identity.',
+    link: 'https://example.com/test-records',
+    language: 'en',
+    generator: 'MSP 2.0 - Music Side Project Studio',
+    pubDate: now,
+    lastBuildDate: now,
+    podcastGuid: crypto.randomUUID(),
+    medium: 'publisher',
+    locked: false,
+    lockedOwner: 'test@example.com',
+    categories: ['Music'],
+    keywords: 'test, label, publisher, demo',
+    explicit: false,
+    ownerName: 'Test Owner',
+    ownerEmail: 'owner@example.com',
+    imageUrl: 'https://picsum.photos/seed/publisher/1400/1400',
+    imageTitle: 'Test Records logo',
+    imageLink: 'https://example.com/test-records',
+    imageDescription: 'Publisher artwork for Test Records',
+    managingEditor: 'editor@example.com',
+    webMaster: 'webmaster@example.com',
+    persons: [],
+    value: {
+      type: 'lightning',
+      method: 'keysend',
+      suggested: '0.000033333',
+      recipients: [
+        {
+          name: 'Label Wallet',
+          address: '03abc123def456789abcdef0123456789abcdef0123456789abcdef0123456789ab',
+          split: 95,
+          type: 'node'
+        },
+        {
+          name: 'Podcast Index',
+          address: '03ae9f91a0cb8ff43840e3c322c4c61f019d8c1c3cea15a25cfc425ac605e61a4a',
+          split: 1,
+          type: 'node'
+        },
+        {
+          name: 'MSP',
+          address: 'msp@getalby.com',
+          split: 4,
+          type: 'lnaddress'
+        }
+      ]
+    },
+    funding: [
+      { url: 'https://example.com/label-support', text: 'Support the label' }
+    ],
+    remoteItems: []
+  };
+}
+
+/**
+ * Generate a cross-linked album + publisher pair for Artist mode test data.
+ * The album's publisher.feedGuid points at the publisher's podcastGuid, and
+ * the publisher carries the album in its remoteItems — ready to host or ship.
+ */
+export function generateLinkedTestArtistFeeds(): { album: Album; publisher: PublisherFeed } {
+  const album = generateTestAlbum();
+  const publisher = generateTestPublisher();
+  return {
+    album: { ...album, publisher: { feedGuid: publisher.podcastGuid } },
+    publisher: {
+      ...publisher,
+      remoteItems: [{ ...createEmptyRemoteItem(), feedGuid: album.podcastGuid, title: album.title }],
+    },
   };
 }

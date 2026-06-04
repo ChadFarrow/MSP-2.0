@@ -1,20 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { put, list } from '@vercel/blob';
-import { randomBytes } from 'crypto';
 import { parseAuthHeader, parseFeedAuthHeader } from '../_utils/adminAuth.js';
 import {
   notifyPodcastIndex,
   lookupPodcastIndexId,
   getBaseUrl,
-  hashToken,
   isValidFeedId
 } from '../_utils/feedUtils.js';
 import { extractPodcastMedium } from '../_utils/xmlUtils.js';
-
-// Generate a secure edit token
-function generateEditToken(): string {
-  return randomBytes(32).toString('base64url');
-}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // GET - List feeds (admin sees all, regular users see their own)
@@ -109,7 +102,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { xml, title, podcastGuid, editToken: clientToken, isDraft } = req.body;
+    const { xml, title, podcastGuid, isDraft } = req.body;
 
     // Validate input
     if (!xml || typeof xml !== 'string') {
@@ -135,37 +128,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: 'XML content too large (max 1MB)' });
     }
 
+    // Require Nostr authentication — it's the only way to manage the feed later
+    const authHeader = req.headers['authorization'] as string | undefined;
+    const nostrAuth = await parseFeedAuthHeader(authHeader);
+    if (!nostrAuth.valid || !nostrAuth.pubkey) {
+      return res.status(401).json({ error: 'Nostr authentication required to host a feed' });
+    }
+    const ownerPubkey = nostrAuth.pubkey;
+
     // Use podcast GUID as feed ID (one feed per podcast)
     const feedId = podcastGuid;
 
-    // Check if feed already exists by looking for metadata file
-    // (metadata is what defines a "managed" feed with credentials)
+    // Check if feed already exists
     const { blobs } = await list({ prefix: `feeds/${feedId}.meta.json` });
     const existingMeta = blobs.find(b => b.pathname === `feeds/${feedId}.meta.json`);
     if (existingMeta) {
       return res.status(409).json({
-        error: 'Feed already exists for this podcast. Use your edit token to update it, or use the Restore flow.',
+        error: 'A feed already exists for this podcast. Sign in with the original Nostr key to update it.',
         feedId
       });
-    }
-
-    // Use client-provided token or generate one
-    const editToken = (typeof clientToken === 'string' && clientToken.length >= 32)
-      ? clientToken
-      : generateEditToken();
-    const editTokenHash = hashToken(editToken);
-
-    // Check for Nostr auth - if provided, set owner immediately
-    const authHeader = req.headers['authorization'] as string | undefined;
-    let ownerPubkey: string | undefined;
-    let linkedAt: string | undefined;
-
-    if (authHeader?.startsWith('Nostr ')) {
-      const nostrAuth = await parseFeedAuthHeader(authHeader);
-      if (nostrAuth.valid && nostrAuth.pubkey) {
-        ownerPubkey = nostrAuth.pubkey;
-        linkedAt = Date.now().toString();
-      }
     }
 
     // Store feed XML in Vercel Blob
@@ -186,13 +167,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Only notify Podcast Index if not a draft
     const podcastIndexId = (isDraft === true) ? undefined : await notifyPodcastIndex(stableUrl, { medium });
 
-    // Store metadata separately (Vercel Blob doesn't support custom metadata)
+    // Store metadata
     await put(`feeds/${feedId}.meta.json`, JSON.stringify({
-      editTokenHash,
       createdAt: Date.now().toString(),
       title: (typeof title === 'string' ? title : 'Untitled Feed').slice(0, 200),
       ownerPubkey,
-      linkedAt,
+      linkedAt: Date.now().toString(),
       podcastIndexId,
       ...(isDraft === true && { isDraft: true })
     }), {
@@ -204,7 +184,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(201).json({
       feedId,
-      editToken, // Only returned once at creation!
       url: stableUrl,
       blobUrl: blob.url,
       podcastIndexId,

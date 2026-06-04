@@ -27,7 +27,7 @@ type NostrAction =
   | { type: 'SET_HAS_EXTENSION'; payload: boolean }
   | { type: 'SET_CONNECTION_METHOD'; payload: 'nip07' | 'nip46' | null }
   | { type: 'LOGIN_SUCCESS'; payload: { user: NostrUser; method: 'nip07' | 'nip46' } }
-  | { type: 'UPDATE_PROFILE'; payload: { displayName?: string; picture?: string; nip05?: string } }
+  | { type: 'UPDATE_PROFILE'; payload: { displayName?: string; picture?: string; nip05?: string; lud16?: string } }
   | { type: 'LOGOUT' }
   | { type: 'RESTORE_SESSION'; payload: { user: NostrUser; method: 'nip07' | 'nip46' } };
 
@@ -61,16 +61,18 @@ function nostrReducer(state: NostrAuthState, action: NostrAction): NostrAuthStat
         isLoading: false,
         error: null
       };
-    case 'UPDATE_PROFILE':
+    case 'UPDATE_PROFILE': {
       if (!state.user) return state;
       const updatedUser = {
         ...state.user,
         displayName: action.payload.displayName || state.user.displayName,
         picture: action.payload.picture || state.user.picture,
-        nip05: action.payload.nip05 || state.user.nip05
+        nip05: action.payload.nip05 || state.user.nip05,
+        lud16: action.payload.lud16 || state.user.lud16
       };
       saveUser(updatedUser);
       return { ...state, user: updatedUser };
+    }
     case 'LOGOUT':
       return {
         ...state,
@@ -115,7 +117,8 @@ export function NostrProvider({ children }: { children: ReactNode }) {
           payload: {
             displayName: profile.display_name || profile.name,
             picture: profile.picture,
-            nip05: profile.nip05
+            nip05: profile.nip05,
+            lud16: profile.lud16
           }
         });
       }
@@ -186,7 +189,8 @@ export function NostrProvider({ children }: { children: ReactNode }) {
                     payload: {
                       displayName: profile.display_name || profile.name,
                       picture: profile.picture,
-                      nip05: profile.nip05
+                      nip05: profile.nip05,
+                      lud16: profile.lud16
                     }
                   });
                 }

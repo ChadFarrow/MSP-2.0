@@ -1,4 +1,6 @@
 import { useFeed } from '../../../store/feedStore';
+import { EditorChrome } from '../EditorChrome';
+import { useFeaturePrefs } from '../../../store/featurePrefsStore';
 import { PublisherInfoSection } from './PublisherInfoSection';
 import { PublisherArtworkSection } from './PublisherArtworkSection';
 import { CatalogFeedsSection } from './CatalogFeedsSection';
@@ -9,19 +11,22 @@ import { DownloadCatalogSection } from './DownloadCatalogSection';
 import { PublishSection } from './PublishSection';
 import { getCatalogFeedsStatus } from '../../../utils/publisherPublish';
 
-export function PublisherEditor() {
+interface PublisherEditorProps {
+  chromeless?: boolean;
+}
+
+export function PublisherEditor({ chromeless = false }: PublisherEditorProps = {}) {
   const { state, dispatch } = useFeed();
+  const { isEnabled } = useFeaturePrefs();
   const { publisherFeed } = state;
 
   if (!publisherFeed) {
     return (
-      <div className="main-content">
-        <div className="editor-panel">
-          <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-            No publisher feed loaded. Create a new publisher feed or import an existing one.
-          </div>
+      <EditorChrome chromeless={chromeless}>
+        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+          No publisher feed loaded. Create a new publisher feed or import an existing one.
         </div>
-      </div>
+      </EditorChrome>
     );
   }
 
@@ -29,18 +34,20 @@ export function PublisherEditor() {
   const catalogStatus = getCatalogFeedsStatus(publisherFeed.remoteItems);
   const allFeedsHosted = catalogStatus.items.length > 0 && catalogStatus.items.every(item => item.isHosted);
 
+  // Artist mode renders this publisher inline alongside its album; first-time setup
+  // shouldn't surface catalog management, redundant download/host UI, or publish flows.
+  const isArtistMode = state.feedType === 'artist';
+
   return (
-    <div className="main-content">
-      <div className="editor-panel">
-        <PublisherInfoSection publisherFeed={publisherFeed} dispatch={dispatch} />
-        <PublisherArtworkSection publisherFeed={publisherFeed} dispatch={dispatch} />
-        <CatalogFeedsSection publisherFeed={publisherFeed} dispatch={dispatch} />
-        <PublisherValueSection publisherFeed={publisherFeed} dispatch={dispatch} />
-        <PublisherFundingSection publisherFeed={publisherFeed} dispatch={dispatch} />
-        <PublisherFeedReminderSection publisherFeed={publisherFeed} />
-        <DownloadCatalogSection publisherFeed={publisherFeed} />
-        {allFeedsHosted && <PublishSection publisherFeed={publisherFeed} />}
-      </div>
-    </div>
+    <EditorChrome chromeless={chromeless}>
+      <PublisherInfoSection publisherFeed={publisherFeed} dispatch={dispatch} isArtistMode={isArtistMode} />
+      <PublisherArtworkSection publisherFeed={publisherFeed} dispatch={dispatch} />
+      {!isArtistMode && <CatalogFeedsSection publisherFeed={publisherFeed} dispatch={dispatch} />}
+      {isEnabled('lightning') && <PublisherValueSection publisherFeed={publisherFeed} dispatch={dispatch} />}
+      <PublisherFundingSection publisherFeed={publisherFeed} dispatch={dispatch} />
+      {!isArtistMode && <PublisherFeedReminderSection publisherFeed={publisherFeed} />}
+      {!isArtistMode && <DownloadCatalogSection publisherFeed={publisherFeed} />}
+      {!isArtistMode && allFeedsHosted && <PublishSection publisherFeed={publisherFeed} />}
+    </EditorChrome>
   );
 }

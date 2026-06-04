@@ -886,6 +886,779 @@ body {
   border-top: 1px solid var(--border-color);
 }
 
+/* Onboarding Page */
+.onboarding-page {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.onboarding-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.onboarding-page-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.onboarding-page-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1.8rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm, 4px);
+}
+
+.onboarding-page-close:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.onboarding-page-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px 24px;
+  display: flex;
+  justify-content: center;
+}
+
+.onboarding-page-content > .onboarding-step {
+  width: 100%;
+  max-width: 640px;
+}
+
+.onboarding-page-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.onboarding-step {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ── 7-step wizard rail + body ─────────────────────────────────────────────── */
+/* Top-align the body so it grows with its content and the page scrolls. Without
+   this the row flexbox's default align-items:stretch pins the body to the viewport
+   height, clipping tall steps and breaking scroll. */
+.onboarding-page-content:has(> .onboarding-body) {
+  align-items: flex-start;
+}
+
+/* Body container (used instead of .onboarding-step by OnboardingWizard). Spans
+   the full page width; the section rows use form-grid so fields wrap into columns
+   rather than stretching individually. */
+.onboarding-page-content > .onboarding-body {
+  width: 100%;
+  max-width: none;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Horizontal step rail in the header */
+.onboarding-rail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.rail-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.rail-step:hover:not(:disabled) {
+  border-color: var(--accent-primary, #7c3aed);
+}
+
+.rail-step:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rail-step.current {
+  background: var(--accent-primary, #7c3aed);
+  border-color: var(--accent-primary, #7c3aed);
+  color: #fff;
+}
+
+.rail-step.done {
+  color: var(--success, #16a34a);
+  border-color: var(--success, #16a34a);
+}
+
+.rail-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.15);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.rail-progress {
+  margin-left: 4px;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+}
+
+/* Footer step navigation */
+.step-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Wizard track cards (collapsible, modeled on the main editor) */
+.wizard-track-card {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+
+.wizard-track-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.wizard-track-header:hover {
+  background: var(--accent-bg-subtle, rgba(124, 58, 237, 0.08));
+}
+
+.wizard-track-num {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent-primary, #7c3aed);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.wizard-track-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wizard-track-status {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.wizard-track-status.error {
+  color: var(--error, #dc2626);
+}
+
+.wizard-track-dur {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.wizard-track-chevron {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: var(--text-secondary);
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.wizard-track-header:hover .wizard-track-chevron {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.wizard-track-remove {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--error, #dc2626);
+  color: #fff;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.wizard-track-remove:hover {
+  filter: brightness(1.1);
+}
+
+.wizard-track-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  border-top: 1px solid var(--border-color);
+}
+
+/* Either/or source choice (URL vs Blossom upload) — opt-in via ArtworkFields */
+.source-radios {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 10px;
+}
+
+.source-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-weight: normal;
+}
+
+.source-radio input {
+  cursor: pointer;
+  accent-color: var(--accent-primary, #7c3aed);
+}
+
+/* Signed-in identity card (auth step) */
+.onboarding-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg-secondary);
+}
+
+.onboarding-identity-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.onboarding-identity-avatar-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-primary, #7c3aed);
+  color: #fff;
+  font-size: 1.2rem;
+}
+
+.onboarding-identity-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.onboarding-identity-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.onboarding-identity-sub {
+  font-size: 0.8em;
+  color: var(--success, #16a34a);
+}
+
+/* Returning-artist publisher chooser */
+.publisher-chooser {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.publisher-chooser ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chooser-item {
+  width: 100%;
+  text-align: left;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm, 6px);
+  padding: 12px 14px;
+  cursor: pointer;
+  color: var(--text-primary);
+  transition: border-color 0.15s;
+}
+
+.chooser-item:hover {
+  border-color: var(--accent-primary, #7c3aed);
+}
+
+.chooser-item span {
+  color: var(--text-secondary);
+  font-size: 0.85em;
+}
+
+/* Intro step call-to-action */
+.onboarding-intro-cta {
+  display: flex;
+  justify-content: center;
+  margin-top: 28px;
+}
+.onboarding-intro-cta-btn {
+  min-width: 200px;
+  font-size: 1.05rem;
+  padding: 12px 28px;
+}
+
+/* Post-publish result (review step) — feed URL rows + status */
+.onboarding-publish-result {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.onboarding-publish-live {
+  color: var(--success, #16a34a);
+  font-weight: 600;
+  font-size: 1.05em;
+}
+.onboarding-publish-warning {
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--bg-secondary, #f5f5f5);
+  color: var(--text-secondary);
+  font-size: 0.85em;
+}
+.onboarding-url-row {
+  display: flex;
+  gap: 8px;
+}
+.onboarding-url-row .form-input {
+  flex: 1;
+  font-size: 0.85em;
+}
+.onboarding-help-text {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.8em;
+}
+.onboarding-link {
+  color: var(--accent-primary, #7c3aed);
+}
+
+/* Review summary (review step) */
+.review-header-card {
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.review-header-art {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.review-header-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.review-header-title { font-size: 1.1em; }
+.review-header-sub { color: var(--text-secondary); }
+.review-header-stats { color: var(--text-secondary); font-size: 0.85em; }
+.review-block { margin-top: 16px; }
+.review-block-title {
+  margin: 0 0 6px;
+  font-size: 0.95em;
+  color: var(--text-primary);
+}
+.review-block-body {
+  border-top: 1px solid var(--border-color);
+  padding-top: 6px;
+}
+.review-row {
+  display: flex;
+  gap: 12px;
+  padding: 4px 0;
+  font-size: 0.9em;
+}
+.review-row-label { flex: 0 0 130px; color: var(--text-secondary); }
+.review-row-value { flex: 1; word-break: break-word; }
+.review-empty { font-size: 0.9em; color: var(--text-secondary); }
+.review-track-list { margin: 0; padding-left: 20px; }
+.review-track-item { padding: 3px 0; font-size: 0.9em; }
+.review-muted { color: var(--text-secondary); }
+.review-split-row {
+  display: flex;
+  gap: 12px;
+  padding: 3px 0;
+  font-size: 0.9em;
+}
+.review-split-name { flex: 1; }
+.review-split-pct { flex: 0 0 50px; text-align: right; }
+
+/* Lightning-address suggestion banner (value step) */
+.ln-suggestion {
+  border: 1px solid var(--accent-primary, #7c3aed);
+  border-radius: var(--radius-sm, 6px);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  background: var(--bg-secondary);
+}
+
+.ln-suggestion p {
+  margin: 0 0 8px;
+  font-size: 0.9em;
+}
+
+/* Upload control for the onboarding wizard. A styled <label> wrapping a hidden
+   file input — avoids the native "No file selected" text (which is misleading
+   here, since we clear the input value after each successful upload) and the
+   tiny, low-contrast native rendering on the dark theme. */
+.wizard-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.95rem;
+  padding: 10px 18px;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  width: fit-content;
+}
+
+.wizard-upload-btn:hover {
+  background: var(--accent-primary);
+  color: #fff;
+  border-color: var(--accent-primary);
+}
+
+.wizard-upload-btn.is-disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.wizard-upload-btn input {
+  display: none;
+}
+
+.onboarding-gate {
+  text-align: center;
+  align-items: center;
+}
+
+.onboarding-gate .onboarding-welcome-icon {
+  font-size: 3rem;
+}
+
+.onboarding-gate-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+  width: 100%;
+  max-width: 340px;
+}
+
+.onboarding-gate-btn {
+  padding: 12px 18px;
+  font-size: 0.95rem;
+}
+
+.onboarding-welcome-icon {
+  font-size: 2.5rem;
+  text-align: center;
+}
+
+.onboarding-heading {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.onboarding-text {
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.onboarding-highlights {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.onboarding-highlight-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.onboarding-highlight-item span:first-child {
+  flex-shrink: 0;
+  font-size: 1rem;
+}
+
+.onboarding-mode-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.onboarding-mode-card {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.onboarding-mode-icon {
+  font-size: 1.6rem;
+}
+
+.onboarding-mode-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+
+.onboarding-mode-desc {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.onboarding-workflow {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.onboarding-workflow-step {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.onboarding-workflow-num {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  color: white;
+  font-weight: 700;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.onboarding-workflow-label {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  margin-bottom: 3px;
+}
+
+.onboarding-workflow-desc {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.onboarding-tip {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  border-left: 3px solid var(--border-color);
+  padding-left: 10px;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.onboarding-step-indicator {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+/* Tablet: collapse the 3-column feed-type grid to 2 columns */
+@media (max-width: 768px) {
+  .onboarding-mode-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Phone: single column + tighter horizontal padding */
+@media (max-width: 480px) {
+  .onboarding-mode-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .onboarding-page-header {
+    padding: 16px 16px;
+  }
+
+  .onboarding-page-content {
+    padding: 24px 16px;
+  }
+
+  .onboarding-page-footer {
+    padding: 14px 16px;
+    flex-wrap: wrap;
+  }
+}
+
+/* Feature questionnaire (onboarding step 4 + Feature Preferences modal) */
+.feature-questionnaire {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.feature-questionnaire-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.feature-questionnaire-info {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.feature-questionnaire-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+  line-height: 1.2;
+}
+
+.feature-questionnaire-question {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+
+.feature-questionnaire-detail {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-top: 2px;
+}
+
+.feature-questionnaire-toggle {
+  display: inline-flex;
+  flex-shrink: 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm, 6px);
+  overflow: hidden;
+}
+
+.feature-toggle-btn {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: none;
+  padding: 7px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.feature-toggle-btn + .feature-toggle-btn {
+  border-left: 1px solid var(--border-color);
+}
+
+.feature-toggle-btn.active {
+  background: var(--accent-primary);
+  color: white;
+}
+
+@media (max-width: 480px) {
+  .feature-questionnaire-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .feature-questionnaire-toggle {
+    align-self: flex-end;
+  }
+}
+
 /* Info Modal */
 .info-modal {
   max-width: 700px;

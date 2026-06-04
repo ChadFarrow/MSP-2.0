@@ -5,11 +5,14 @@ import type { FeedType } from './store/feedStore.tsx';
 import { NostrProvider, useNostr } from './store/nostrStore.tsx';
 import { ThemeProvider, useTheme } from './store/themeStore.tsx';
 import { ExperimentalProvider, useExperimental } from './store/experimentalStore.tsx';
+import { FeaturePrefsProvider } from './store/featurePrefsStore.tsx';
 import { parseRssFeed, isPublisherFeed, isVideoFeed, parsePublisherRssFeed } from './utils/xmlParser';
 import { createEmptyAlbum, createEmptyPublisherFeed, createEmptyVideoAlbum } from './types/feed';
-import { pendingHostedStorage } from './utils/storage';
-import { generateTestAlbum } from './utils/testData';
+import { pendingHostedStorage, onboardingStorage, wizardStorage } from './utils/storage';
+import { generateTestAlbum, generateLinkedTestArtistFeeds } from './utils/testData';
+import { buildArtistSetupActions } from './utils/artistSetup';
 import { NostrLoginButton } from './components/NostrLoginButton';
+import OnboardingWizard from './components/Onboarding/OnboardingWizard';
 import { ImportModal } from './components/modals/ImportModal';
 import { SaveModal } from './components/modals/SaveModal';
 import { PreviewModal } from './components/modals/PreviewModal';
@@ -17,8 +20,11 @@ import { PodpingModal } from './components/modals/PodpingModal';
 import { InfoModal } from './components/modals/InfoModal';
 import { NostrConnectModal } from './components/modals/NostrConnectModal';
 import { NewFeedChoiceModal } from './components/modals/NewFeedChoiceModal';
+import { OnboardingPage } from './components/OnboardingPage';
+import { FeaturePreferencesModal } from './components/modals/FeaturePreferencesModal';
 import { Editor } from './components/Editor/Editor';
 import { PublisherEditor } from './components/Editor/PublisherEditor';
+import { ArtistEditor } from './components/Editor/ArtistEditor';
 import { AdminPage } from './components/admin/AdminPage';
 import type { Album } from './types/feed';
 import mspLogo from './assets/msp-logo.png';
@@ -34,13 +40,47 @@ function AppContent() {
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showPodpingModal, setShowPodpingModal] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
+  const [showFeaturePrefsModal, setShowFeaturePrefsModal] = useState(false);
   const [showNostrConnectModal, setShowNostrConnectModal] = useState(false);
   const [showNewFeedChoiceModal, setShowNewFeedChoiceModal] = useState(false);
   const [pendingNewFeedType, setPendingNewFeedType] = useState<FeedType>('album');
   const [isTemplateMode, setIsTemplateMode] = useState(false);
+  // Show onboarding (starting at the "have you used this before?" gate) on first visit.
+  // Testing aid: load `?onboarding=1` ONCE to arm — from then on every load
+  // (including plain hard refreshes with no query param, new tabs, and restarts)
+  // shows the gate regardless of saved completion, so the onboarding flow can be
+  // re-tested without clearing localStorage. The flag persists in localStorage
+  // until you disarm it with `?onboarding=0`. No-op in normal use.
+  const forceOnboarding = (() => {
+    const FLAG = 'msp:force-onboarding';
+    const v = new URLSearchParams(window.location.search).get('onboarding');
+    if (v !== null) {
+      if (v === '0') { localStorage.removeItem(FLAG); return false; }
+      localStorage.setItem(FLAG, '1');
+      return true;
+    }
+    return localStorage.getItem(FLAG) === '1';
+  })();
+
+  // A returning user — onboarding marked complete, or the dead-simple wizard already
+  // finished — skips the gate.
+  const [showOnboarding, setShowOnboarding] = useState(
+    () => forceOnboarding || (!onboardingStorage.isComplete() && !wizardStorage.isComplete())
+  );
+  const [onboardingStartAtGate, setOnboardingStartAtGate] = useState(
+    () => forceOnboarding || (!onboardingStorage.isComplete() && !wizardStorage.isComplete())
+  );
+  // The dead-simple artist wizard (#67) — opened from the onboarding gate's
+  // first-time branch and from the "New Artist (Guided)" choice in NewFeedChoiceModal.
+  const [showArtistWizard, setShowArtistWizard] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { state: nostrState, logout: nostrLogout } = useNostr();
+
+  const handleOnboardingClose = () => {
+    onboardingStorage.markComplete();
+    setShowOnboarding(false);
+  };
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -113,9 +153,16 @@ function AppContent() {
       dispatch({ type: 'SET_PUBLISHER_FEED', payload: createEmptyPublisherFeed() });
     } else if (pendingNewFeedType === 'video') {
       dispatch({ type: 'SET_VIDEO_FEED', payload: createEmptyVideoAlbum() });
+    } else if (pendingNewFeedType === 'artist') {
+      buildArtistSetupActions({}, { regenerateGuids: true }).forEach(dispatch);
     } else {
       dispatch({ type: 'SET_ALBUM', payload: createEmptyAlbum() });
     }
+    setShowNewFeedChoiceModal(false);
+  };
+
+  const handleArtistSetup = () => {
+    handleSwitchFeedType('artist');
     setShowNewFeedChoiceModal(false);
   };
 
@@ -146,16 +193,36 @@ function AppContent() {
   };
 
   const handleSwitchFeedType = (feedType: FeedType) => {
+    if (feedType === 'artist') {
+      buildArtistSetupActions(state).forEach(dispatch);
+      return;
+    }
+
     dispatch({ type: 'SET_FEED_TYPE', payload: feedType });
-    // If switching to video and no video feed exists, create one
     if (feedType === 'video' && !state.videoFeed) {
       dispatch({ type: 'CREATE_NEW_VIDEO_FEED' });
     }
-    // If switching to publisher and no publisher feed exists, create one
     if (feedType === 'publisher' && !state.publisherFeed) {
       dispatch({ type: 'CREATE_NEW_PUBLISHER_FEED' });
     }
   };
+
+  if (showOnboarding) {
+    return (
+      <OnboardingPage
+        startAtGate={onboardingStartAtGate}
+        onClose={handleOnboardingClose}
+        onChooseFirstTime={() => {
+          // First-timers flow through the dead-simple wizard. Mark the onboarding
+          // gate complete, drop them into Artist mode, and open the wizard.
+          onboardingStorage.markComplete();
+          setShowOnboarding(false);
+          handleSwitchFeedType('artist');
+          setShowArtistWizard(true);
+        }}
+      />
+    );
+  }
 
   return (
     <>
@@ -175,6 +242,7 @@ function AppContent() {
               <option value="album">Album</option>
               <option value="video">Video</option>
               <option value="publisher">Publisher</option>
+              <option value="artist">New Artist</option>
             </select>
           </div>
           <div className="header-actions">
@@ -190,6 +258,18 @@ function AppContent() {
               </button>
               {showDropdown && (
                 <div className="dropdown-menu">
+                  <button
+                    className="dropdown-item"
+                    onClick={() => { setOnboardingStartAtGate(false); setShowOnboarding(true); setShowDropdown(false); }}
+                  >
+                    🚀 Getting Started
+                  </button>
+                  <button
+                    className="dropdown-item"
+                    onClick={() => { setShowFeaturePrefsModal(true); setShowDropdown(false); }}
+                  >
+                    ⚙️ Feature Preferences
+                  </button>
                   <button
                     className="dropdown-item"
                     onClick={() => { setShowInfoModal(true); setShowDropdown(false); }}
@@ -248,7 +328,15 @@ function AppContent() {
                       <button
                         className="dropdown-item"
                         onClick={() => {
-                          dispatch({ type: 'SET_ALBUM', payload: generateTestAlbum() });
+                          if (state.feedType === 'artist') {
+                            const { album, publisher } = generateLinkedTestArtistFeeds();
+                            dispatch({ type: 'SET_PUBLISHER_FEED', payload: publisher });
+                            dispatch({ type: 'SET_ALBUM', payload: album });
+                            // SET_ALBUM resets feedType to 'album'; restore artist mode last
+                            dispatch({ type: 'SET_FEED_TYPE', payload: 'artist' });
+                          } else {
+                            dispatch({ type: 'SET_ALBUM', payload: generateTestAlbum() });
+                          }
                           setShowDropdown(false);
                         }}
                       >
@@ -273,12 +361,14 @@ function AppContent() {
             </div>
           </div>
         </header>
-        {state.feedType === 'publisher' ? <PublisherEditor /> : <Editor key={`${state.feedType}-${state.album?.podcastGuid}-${state.videoFeed?.podcastGuid}`} />}
+        {state.feedType === 'publisher' ? <PublisherEditor />
+          : state.feedType === 'artist' ? <ArtistEditor />
+          : <Editor key={`${state.feedType}-${state.album?.podcastGuid}-${state.videoFeed?.podcastGuid}`} />}
         <div className="bottom-toolbar">
           <button
             className="bottom-toolbar-btn"
             onClick={() => handleNew(state.feedType)}
-            title={`New ${state.feedType === 'publisher' ? 'Publisher' : state.feedType === 'video' ? 'Video Feed' : 'Album'}`}
+            title={`New ${state.feedType === 'publisher' ? 'Publisher' : state.feedType === 'video' ? 'Video Feed' : state.feedType === 'artist' ? 'Artist' : 'Album'}`}
           >
             <span className="bottom-toolbar-icon">📂</span>
             <span className="bottom-toolbar-label">New</span>
@@ -373,6 +463,10 @@ function AppContent() {
         <InfoModal onClose={() => setShowInfoModal(false)} />
       )}
 
+      {showFeaturePrefsModal && (
+        <FeaturePreferencesModal onClose={() => setShowFeaturePrefsModal(false)} />
+      )}
+
       {showNostrConnectModal && (
         <NostrConnectModal onClose={() => setShowNostrConnectModal(false)} />
       )}
@@ -382,8 +476,16 @@ function AppContent() {
         feedType={pendingNewFeedType}
         onStartBlank={handleStartBlank}
         onUseTemplate={handleUseTemplate}
+        onArtistSetup={pendingNewFeedType === 'album' ? handleArtistSetup : undefined}
         onCancel={() => setShowNewFeedChoiceModal(false)}
+        onNewArtist={() => { setShowNewFeedChoiceModal(false); setShowArtistWizard(true); }}
       />
+
+      {showArtistWizard && (
+        <OnboardingWizard
+          onComplete={() => setShowArtistWizard(false)}
+        />
+      )}
     </>
   );
 }
@@ -396,9 +498,11 @@ function App() {
     return (
       <ThemeProvider>
         <ExperimentalProvider>
-          <NostrProvider>
-            <AdminPage />
-          </NostrProvider>
+          <FeaturePrefsProvider>
+            <NostrProvider>
+              <AdminPage />
+            </NostrProvider>
+          </FeaturePrefsProvider>
         </ExperimentalProvider>
       </ThemeProvider>
     );
@@ -407,11 +511,13 @@ function App() {
   return (
     <ThemeProvider>
       <ExperimentalProvider>
-        <NostrProvider>
-          <FeedProvider>
-            <AppContent />
-          </FeedProvider>
-        </NostrProvider>
+        <FeaturePrefsProvider>
+          <NostrProvider>
+            <FeedProvider>
+              <AppContent />
+            </FeedProvider>
+          </NostrProvider>
+        </FeaturePrefsProvider>
       </ExperimentalProvider>
     </ThemeProvider>
   );

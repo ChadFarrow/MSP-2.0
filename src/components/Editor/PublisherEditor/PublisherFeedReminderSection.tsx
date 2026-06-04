@@ -4,14 +4,12 @@ import { getFeedUrlError } from '../../../utils/urlValidation';
 import { Section } from '../../Section';
 import { generatePublisherRssFeed, downloadXml } from '../../../utils/xmlGenerator';
 import {
-  createHostedFeed,
   createHostedFeedWithNostr,
   buildHostedUrl,
-  generateEditToken,
   saveHostedFeedInfo,
   getHostedFeedInfo
 } from '../../../utils/hostedFeed';
-import { hasSigner, checkSignerConnection } from '../../../utils/nostrSigner';
+import { checkSignerConnection } from '../../../utils/nostrSigner';
 import { useNostr } from '../../../store/nostrStore';
 
 interface PublisherFeedReminderSectionProps {
@@ -41,40 +39,24 @@ export function PublisherFeedReminderSection({ publisherFeed }: PublisherFeedRem
     setResult(null);
 
     try {
+      const health = await checkSignerConnection();
+      if (!health.connected) {
+        setResult({ success: false, message: health.error ?? 'Nostr signer is not connected.' });
+        setIsHosting(false);
+        return;
+      }
+
       const xml = generatePublisherRssFeed({ ...publisherFeed, lastBuildDate: new Date().toUTCString() });
       const title = publisherFeed.title || 'Publisher Feed';
-      const editToken = generateEditToken();
-      const shouldLinkNostr = nostrState.isLoggedIn && nostrState.user?.pubkey && hasSigner();
 
-      if (shouldLinkNostr) {
-        const health = await checkSignerConnection();
-        if (!health.connected) {
-          setResult({ success: false, message: health.error ?? 'Nostr signer is not connected.' });
-          setIsHosting(false);
-          return;
-        }
-      }
-
-      let response;
-      if (shouldLinkNostr) {
-        response = await createHostedFeedWithNostr(xml, title, podcastGuid, editToken);
-        saveHostedFeedInfo(podcastGuid, {
-          feedId: response.feedId,
-          editToken,
-          createdAt: Date.now(),
-          lastUpdated: Date.now(),
-          ownerPubkey: nostrState.user?.pubkey,
-          linkedAt: Date.now()
-        });
-      } else {
-        response = await createHostedFeed(xml, title, podcastGuid, editToken);
-        saveHostedFeedInfo(podcastGuid, {
-          feedId: response.feedId,
-          editToken,
-          createdAt: Date.now(),
-          lastUpdated: Date.now()
-        });
-      }
+      const response = await createHostedFeedWithNostr(xml, title, podcastGuid);
+      saveHostedFeedInfo(podcastGuid, {
+        feedId: response.feedId,
+        createdAt: Date.now(),
+        lastUpdated: Date.now(),
+        ownerPubkey: nostrState.user?.pubkey,
+        linkedAt: Date.now()
+      });
 
       const feedUrl = response.url;
 
@@ -144,43 +126,71 @@ export function PublisherFeedReminderSection({ publisherFeed }: PublisherFeedRem
     }
   };
 
+  const hasTitle = !!publisherFeed.title;
+  const hasArtwork = !!publisherFeed.imageUrl;
+  const hasFeeds = publisherFeed.remoteItems.length > 0;
+
+  const CheckRow = ({ done, label }: { done: boolean; label: string }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 0', fontSize: '13px' }}>
+      <span style={{
+        width: '18px', height: '18px', borderRadius: '50%', display: 'flex', alignItems: 'center',
+        justifyContent: 'center', fontSize: '11px', flexShrink: 0,
+        backgroundColor: done ? 'rgba(34, 197, 94, 0.2)' : 'rgba(139, 92, 246, 0.15)',
+        color: done ? 'var(--success-color, #22c55e)' : 'var(--text-tertiary)',
+        border: `1px solid ${done ? 'rgba(34, 197, 94, 0.4)' : 'rgba(139, 92, 246, 0.3)'}`
+      }}>
+        {done ? '✓' : '○'}
+      </span>
+      <span style={{ color: done ? 'var(--text-secondary)' : 'var(--text-primary)' }}>{label}</span>
+    </div>
+  );
+
   return (
-    <Section title="Before adding the publisher feed to the catalog feeds" icon="&#9888;">
+    <Section title="Publish Your Feeds" icon="&#9745;">
       <div style={{
         backgroundColor: 'rgba(139, 92, 246, 0.1)',
         border: '1px solid rgba(139, 92, 246, 0.3)',
         borderRadius: '8px',
         padding: '16px'
       }}>
-        <p style={{ margin: 0, marginBottom: '16px', fontWeight: 500 }}>
-          Your publisher feed must be hosted and submitted to the Podcast Index before continuing.
+        <p style={{ margin: 0, marginBottom: '12px', fontWeight: 500, fontSize: '13px' }}>
+          Complete these steps to make your feeds discoverable:
         </p>
 
-        <div style={{ display: 'flex', gap: '16px' }}>
-          <div style={{ flex: 1 }}>
-            <p style={{ margin: 0, marginBottom: '8px', fontSize: '13px', color: 'var(--text-secondary)' }}>
-              Host it yourself
-            </p>
-            <button
-              className="btn btn-secondary"
-              onClick={handleDownload}
-              style={{ width: '100%' }}
-            >
-              Download Feed
-            </button>
-          </div>
-          <div style={{ flex: 1 }}>
-            <p style={{ margin: 0, marginBottom: '8px', fontSize: '13px', color: 'var(--text-secondary)' }}>
-              Or let MSP handle it
-            </p>
-            <button
-              className="btn btn-secondary"
-              onClick={handleHostOnMSP}
-              disabled={isHosting || !podcastGuid || isAlreadyHosted}
-              style={{ width: '100%' }}
-            >
-              {isHosting ? 'Hosting...' : isAlreadyHosted ? 'Already Hosted' : 'Host on MSP'}
-            </button>
+        <CheckRow done={hasTitle} label="Publisher feed has a title" />
+        <CheckRow done={hasArtwork} label="Publisher feed has artwork" />
+        <CheckRow done={hasFeeds} label={`At least one album in the catalog (${publisherFeed.remoteItems.length} added)`} />
+
+        <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(139, 92, 246, 0.2)' }}>
+          <p style={{ margin: 0, marginBottom: '10px', fontSize: '13px', fontWeight: 500 }}>
+            Host and submit your publisher feed:
+          </p>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <div style={{ flex: 1 }}>
+              <p style={{ margin: 0, marginBottom: '8px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                Self-host
+              </p>
+              <button
+                className="btn btn-secondary"
+                onClick={handleDownload}
+                style={{ width: '100%' }}
+              >
+                Download Feed
+              </button>
+            </div>
+            <div style={{ flex: 1 }}>
+              <p style={{ margin: 0, marginBottom: '8px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                Let MSP host it
+              </p>
+              <button
+                className="btn btn-secondary"
+                onClick={handleHostOnMSP}
+                disabled={isHosting || !podcastGuid || isAlreadyHosted}
+                style={{ width: '100%' }}
+              >
+                {isHosting ? 'Hosting...' : isAlreadyHosted ? 'Already Hosted' : 'Host on MSP'}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -273,6 +283,10 @@ export function PublisherFeedReminderSection({ publisherFeed }: PublisherFeedRem
             Please set a Publisher GUID in the Publisher Info section first.
           </p>
         )}
+
+        <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid rgba(139, 92, 246, 0.2)', fontSize: '13px', color: 'var(--text-secondary)' }}>
+          Then switch to <strong>Album</strong> view and use <strong>Save &rarr; Submit to PodcastIndex</strong> for your album feed too.
+        </div>
       </div>
     </Section>
   );

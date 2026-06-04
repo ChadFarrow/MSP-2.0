@@ -198,11 +198,17 @@ const generateRecipientXml = (recipient: ValueRecipient, level: number): string 
 
 // Generate value block XML
 const generateValueXml = (value: ValueBlock, level: number): string => {
-  if (!value.recipients.length) return '';
+  // Filter out empty placeholder recipients (no address). MSP's create-empty
+  // factories include a single blank recipient by default to give the editor
+  // something to render; emitting that to XML produces a malformed value
+  // block (address="" split="0") that breaks Podcast Index's parser and
+  // prevents the feed from being indexed.
+  const validRecipients = value.recipients.filter(r => r.address && r.address.trim().length > 0);
+  if (!validRecipients.length) return '';
 
   // Determine method based on recipient types
   // If any recipient uses lnaddress, method should be lnaddress
-  const hasLnAddress = value.recipients.some(r => r.type === 'lnaddress');
+  const hasLnAddress = validRecipients.some(r => r.type === 'lnaddress');
   const method = hasLnAddress ? 'lnaddress' : 'keysend';
 
   const lines: string[] = [];
@@ -213,7 +219,7 @@ const generateValueXml = (value: ValueBlock, level: number): string => {
   if (value.suggested) attrs.push(`suggested="${value.suggested}"`);
 
   lines.push(`${indent(level)}<podcast:value ${attrs.join(' ')}>`);
-  value.recipients.forEach(r => lines.push(generateRecipientXml(r, level + 1)));
+  validRecipients.forEach(r => lines.push(generateRecipientXml(r, level + 1)));
   lines.push(`${indent(level)}</podcast:value>`);
 
   return lines.join('\n');
@@ -548,6 +554,19 @@ export const generatePublisherRssFeed = (publisher: PublisherFeed): string => {
 // Download XML as file
 export const downloadXml = (xml: string, filename: string = 'feed.xml'): void => {
   const blob = new Blob([xml], { type: 'application/xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
+// Download plain text as file
+export const downloadText = (text: string, filename: string): void => {
+  const blob = new Blob([text], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

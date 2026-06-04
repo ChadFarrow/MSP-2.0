@@ -36,7 +36,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       method: 'POST',
       headers: authHeaders
     });
-    const data = await response.json();
+    const text = await response.text();
+
+    // PI sometimes returns an empty body for feeds it silently rejects
+    // (e.g., medium=publisher feeds). Surface the raw HTTP context so the
+    // caller can distinguish "submitted ok" from "submission ignored".
+    if (!text) {
+      return res.status(response.ok ? 200 : response.status).json({
+        success: false,
+        error: 'Podcast Index returned an empty response',
+        details: {
+          httpStatus: response.status,
+          contentType: response.headers.get('content-type') || null,
+          contentLength: response.headers.get('content-length') || null
+        }
+      });
+    }
+
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      return res.status(500).json({
+        error: 'Podcast Index returned a non-JSON response',
+        details: {
+          httpStatus: response.status,
+          contentType: response.headers.get('content-type') || null,
+          body: text.slice(0, 500)
+        }
+      });
+    }
 
     // Podcast Index returns status in the response body
     if (data.status === 'false' || data.status === false) {

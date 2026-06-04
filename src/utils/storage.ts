@@ -10,7 +10,10 @@ export const STORAGE_KEYS = {
   FEED_TYPE: 'msp2-feed-type',
   NOSTR_USER: 'msp2-nostr-user',
   HOSTED_PREFIX: 'msp2-hosted-',
-  PENDING_HOSTED: 'msp2-pending-hosted'
+  PENDING_HOSTED: 'msp2-pending-hosted',
+  ONBOARDING_COMPLETE: 'msp2-onboarding-complete',
+  FEATURE_PREFS: 'msp2-feature-prefs',
+  WIZARD_COMPLETE: 'msp2-wizard-complete',
 } as const;
 
 // Migration helper: convert old person format to new format
@@ -136,9 +139,22 @@ export const publisherStorage = {
 export const feedTypeStorage = {
   load: (): FeedType => {
     const stored = getItem<FeedType>(STORAGE_KEYS.FEED_TYPE);
-    return stored && ['album', 'video', 'publisher'].includes(stored) ? stored : 'album';
+    return stored && ['album', 'video', 'publisher', 'artist'].includes(stored) ? stored : 'album';
   },
   save: (feedType: FeedType): boolean => setItem(STORAGE_KEYS.FEED_TYPE, feedType)
+};
+
+// Onboarding storage operations
+export const onboardingStorage = {
+  isComplete: (): boolean => getItem<boolean>(STORAGE_KEYS.ONBOARDING_COMPLETE) === true,
+  markComplete: (): boolean => setItem(STORAGE_KEYS.ONBOARDING_COMPLETE, true)
+};
+
+// Feature-visibility preferences (which advanced features a user has hidden).
+// Keyed by FeatureId (see featurePrefsStore.tsx); a missing key means "visible".
+export const featurePrefsStorage = {
+  load: (): Record<string, boolean> => getItem<Record<string, boolean>>(STORAGE_KEYS.FEATURE_PREFS) ?? {},
+  save: (prefs: Record<string, boolean>): boolean => setItem(STORAGE_KEYS.FEATURE_PREFS, prefs)
 };
 
 // Nostr user storage operations
@@ -151,7 +167,7 @@ export const nostrUserStorage = {
 // Hosted feed info type (re-exported from hostedFeed)
 export interface HostedFeedInfo {
   feedId: string;
-  editToken: string;
+  editToken?: string;  // Legacy — no longer used for new feeds (Nostr auth only)
   createdAt: number;
   lastUpdated: number;
   ownerPubkey?: string;  // Nostr pubkey if linked
@@ -176,4 +192,10 @@ export const pendingHostedStorage = {
   load: (): HostedFeedInfo | null => getItem<HostedFeedInfo>(STORAGE_KEYS.PENDING_HOSTED),
   save: (info: HostedFeedInfo): boolean => setItem(STORAGE_KEYS.PENDING_HOSTED, info),
   clear: (): boolean => removeItem(STORAGE_KEYS.PENDING_HOSTED)
+};
+
+// New artist onboarding wizard completion flag
+export const wizardStorage = {
+  isComplete: (): boolean => getItem<boolean>(STORAGE_KEYS.WIZARD_COMPLETE) === true,
+  markComplete: (): boolean => setItem(STORAGE_KEYS.WIZARD_COMPLETE, true)
 };

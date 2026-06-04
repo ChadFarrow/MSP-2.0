@@ -4,19 +4,18 @@ import { parseAuthHeader, parseFeedAuthHeader } from '../_utils/adminAuth.js';
 import {
   notifyPodcastIndex,
   getBaseUrl,
-  hashToken,
   isValidFeedId
 } from '../_utils/feedUtils.js';
 import { extractPodcastMedium } from '../_utils/xmlUtils.js';
 
 // Metadata stored in separate .meta.json blob
 interface FeedMetadata {
-  editTokenHash: string;
+  editTokenHash?: string;  // Legacy — no longer generated for new feeds
   createdAt: string;
   lastUpdated?: string;
   title?: string;
-  ownerPubkey?: string;  // Nostr pubkey (hex) - if linked
-  linkedAt?: string;     // When Nostr was linked
+  ownerPubkey?: string;
+  linkedAt?: string;
   podcastIndexId?: number;
   isDraft?: boolean;     // True when hosted without PI/podping notification
 }
@@ -66,8 +65,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Edit-Token, Authorization, X-Admin-Key');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Admin-Key');
     return res.status(204).end();
   }
 
@@ -202,63 +201,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(404).json({ error: 'Feed not found' });
         }
 
-        // Get metadata from .meta.json
+        // Get metadata
         const metadata = await getMetadata(feedId as string);
+        const ownerPubkey = metadata?.ownerPubkey;
+        const createdAt = metadata?.createdAt ?? Date.now().toString();
+        const existingTitle = metadata?.title;
+        const existingPodcastIndexId = metadata?.podcastIndexId;
 
-        // Auto-repair: if metadata is missing, require token to create it
-        let storedHash: string;
-        let createdAt: string;
-        let existingTitle: string | undefined;
-        let ownerPubkey: string | undefined;
-        let linkedAt: string | undefined;
-        let existingPodcastIndexId: number | undefined;
-        let existingIsDraft: boolean | undefined;
+        const existingIsDraft = metadata?.isDraft;
 
-        const editToken = req.headers['x-edit-token'];
-        const authHeader = req.headers['authorization'] as string | undefined;
-
-        if (!metadata) {
-          // Legacy feed without metadata - require token to migrate
-          if (!editToken || typeof editToken !== 'string') {
-            return res.status(401).json({ error: 'Missing edit token' });
+        // Validate auth: Nostr owner or admin
+        if (!isAdmin) {
+          if (!ownerPubkey) {
+            // Feed has no Nostr owner — admin-only management
+            return res.status(403).json({ error: 'This feed has no Nostr owner. Contact an admin to update it.' });
           }
-          storedHash = hashToken(editToken);
-          createdAt = Date.now().toString();
-          existingTitle = undefined;
-          ownerPubkey = undefined;
-          linkedAt = undefined;
-          existingPodcastIndexId = undefined;
-          existingIsDraft = undefined;
-        } else {
-          storedHash = metadata.editTokenHash;
-          createdAt = metadata.createdAt;
-          existingTitle = metadata.title;
-          ownerPubkey = metadata.ownerPubkey;
-          linkedAt = metadata.linkedAt;
-          existingPodcastIndexId = metadata.podcastIndexId;
-          existingIsDraft = metadata.isDraft;
-
-          // Validate auth: accept either token or Nostr (if linked)
-          let isAuthorized = false;
-
-          // Try token auth first
-          if (editToken && typeof editToken === 'string') {
-            const providedHash = hashToken(editToken);
-            if (storedHash === providedHash) {
-              isAuthorized = true;
-            }
-          }
-
-          // Try Nostr auth if token didn't work and feed has owner
-          if (!isAuthorized && ownerPubkey && authHeader?.startsWith('Nostr ')) {
-            const nostrAuth = await parseFeedAuthHeader(authHeader);
-            if (nostrAuth.valid && nostrAuth.pubkey === ownerPubkey) {
-              isAuthorized = true;
-            }
-          }
-
-          if (!isAuthorized) {
-            return res.status(403).json({ error: 'Invalid credentials' });
+          const putAuth = req.headers['authorization'] as string | undefined;
+          const nostrPutAuth = await parseFeedAuthHeader(putAuth);
+          if (!nostrPutAuth.valid || nostrPutAuth.pubkey !== ownerPubkey) {
+            return res.status(403).json({ error: 'Nostr authentication required — sign in with the key that created this feed' });
           }
         }
 
@@ -312,12 +273,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         await put(metaPath, JSON.stringify({
-          editTokenHash: storedHash,
           createdAt,
           lastUpdated: Date.now().toString(),
           title: (typeof title === 'string' ? title : existingTitle || 'Untitled Feed').slice(0, 200),
           ownerPubkey,
-          linkedAt,
+          linkedAt: metadata?.linkedAt,
           podcastIndexId,
           ...(effectiveIsDraft && { isDraft: true })
         }), {
@@ -329,77 +289,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json({ success: true, podcastIndexId, isDraft: effectiveIsDraft });
       }
 
-      case 'PATCH': {
-        // Link Nostr identity to existing feed
-        // Requires BOTH token (proves ownership) AND Nostr auth (identity to link)
-        const editToken = req.headers['x-edit-token'];
-        const authHeader = req.headers['authorization'] as string | undefined;
-
-        if (!editToken || typeof editToken !== 'string') {
-          return res.status(401).json({ error: 'Edit token required to link Nostr identity' });
-        }
-
-        const metadata = await getMetadata(feedId as string);
-        if (!metadata) {
-          return res.status(404).json({ error: 'Feed not found' });
-        }
-
-        // Validate token
-        const providedHash = hashToken(editToken);
-        if (metadata.editTokenHash !== providedHash) {
-          return res.status(403).json({ error: 'Invalid edit token' });
-        }
-
-        // Parse and validate Nostr auth
-        const nostrAuth = await parseFeedAuthHeader(authHeader);
-        if (!nostrAuth.valid || !nostrAuth.pubkey) {
-          return res.status(400).json({ error: nostrAuth.error || 'Invalid Nostr authentication' });
-        }
-
-        // Update metadata with new owner
-        const metaPath = `feeds/${feedId}.meta.json`;
-        const { blobs: metaBlobs } = await list({ prefix: metaPath });
-        const existingMeta = metaBlobs.find(b => b.pathname === metaPath);
-        if (existingMeta) {
-          await del(existingMeta.url);
-        }
-
-        await put(metaPath, JSON.stringify({
-          ...metadata,
-          ownerPubkey: nostrAuth.pubkey,
-          linkedAt: Date.now().toString()
-        }), {
-          access: 'public',
-          contentType: 'application/json',
-          addRandomSuffix: false
-        });
-
-        return res.status(200).json({
-          success: true,
-          message: 'Nostr identity linked successfully',
-          pubkey: nostrAuth.pubkey
-        });
-      }
-
       case 'DELETE': {
-        // Admin can delete without edit token
+        // Validate Nostr auth for non-admin
         if (!isAdmin) {
-          // Validate edit token for non-admin
-          const editToken = req.headers['x-edit-token'];
-          if (!editToken || typeof editToken !== 'string') {
-            return res.status(401).json({ error: 'Missing edit token' });
-          }
-
-          // Get metadata from .meta.json
           const metadata = await getMetadata(feedId as string);
-          const providedHash = hashToken(editToken);
-
-          // For legacy feeds without metadata, allow deletion with any token
-          // (can't verify, but feed is unusable anyway)
-          if (metadata) {
-            if (metadata.editTokenHash !== providedHash) {
-              return res.status(403).json({ error: 'Invalid edit token' });
-            }
+          const ownerPubkey = metadata?.ownerPubkey;
+          if (!ownerPubkey) {
+            return res.status(403).json({ error: 'This feed has no Nostr owner. Contact an admin to delete it.' });
+          }
+          const delAuth = req.headers['authorization'] as string | undefined;
+          const nostrDelAuth = await parseFeedAuthHeader(delAuth);
+          if (!nostrDelAuth.valid || nostrDelAuth.pubkey !== ownerPubkey) {
+            return res.status(403).json({ error: 'Nostr authentication required — sign in with the key that created this feed' });
           }
         }
 

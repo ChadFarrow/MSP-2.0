@@ -154,7 +154,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  let { npub, guid } = req.query;
+  const { npub } = req.query;
+  let { guid } = req.query;
 
   // Validate parameters
   if (typeof npub !== 'string' || typeof guid !== 'string') {

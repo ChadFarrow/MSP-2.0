@@ -230,7 +230,7 @@ All modal footers place action buttons on the left and the Cancel button on the 
 ### New Feed Flow
 The "New" button opens `NewFeedChoiceModal` with two paths:
 - **Start Blank** — creates an empty feed (clears data)
-- **Use Template** — opens `ImportModal` in template mode (`templateMode` prop), which imports a feed with a regenerated GUID and no hosted credentials. Template handlers (`handleTemplateImport`, `handleTemplateLoadAlbum`) in `App.tsx` call `crypto.randomUUID()` for the new GUID and clear `pendingHostedStorage`
+- **Use Template** — opens `ImportModal` in template mode (`templateMode` prop), which imports a feed with regenerated GUIDs and no hosted credentials. Template handlers (`handleTemplateImport`, `handleTemplateLoadAlbum`) in `App.tsx` regenerate GUIDs and clear `pendingHostedStorage`. `handleTemplateImport` calls `handleImport(xml, undefined, true)` — the third `regenerateGuids` arg makes `handleImport` mint **both** a fresh feed `podcastGuid` **and** a fresh `guid` for every track (album/video) via `regenerateAlbumGuids()` in `src/utils/regenerateGuids.ts`. Publisher templates only get a new feed `podcastGuid` — their `remoteItems` reference real external feeds, so those `feedGuid`s are preserved. **Regenerating per-track guids is load-bearing**: without it, duplicating one feed from another clones its track `<guid>`s verbatim, so unrelated tracks across two feeds collide and podcast apps / Podcast Index treat them as the same episode (the Live at Rockpile / Amnesia incident). Any new "duplicate this feed" path must route through `regenerateAlbumGuids()` (or the `regenerateGuids` flag), never copy tracks as-is.
 
 ### Accessing Nostr State
 Use the `useNostr` hook to access logged-in user info:

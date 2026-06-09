@@ -228,9 +228,11 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
     (step === 'album' && !albumValid) ||
     (step === 'tracks' && tracksInvalid);
 
-  // Hide Back when the previous visible step is the auth gate — going back there
-  // just bounces forward again (you can't un-sign-in via navigation).
-  const canGoBack = index > 0 && steps[index - 1] !== 'auth';
+  // Show Back on every step past the first so users always have an explicit way
+  // back from the footer (not just the clickable rail at the top). From the
+  // Artist/publisher step this lands on the Sign-in step — its identity panel +
+  // existing-publisher chooser is the natural place to switch account or feed.
+  const canGoBack = index > 0;
 
   const footer = (
     <div className="step-nav" style={{ width: '100%' }}>

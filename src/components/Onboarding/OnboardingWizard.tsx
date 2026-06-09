@@ -208,9 +208,24 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
     w.next();
   };
 
+  // Required-field gates mirror the SaveModal publish validator so a user who
+  // walks every step lands on Review already publish-ready. Language defaults to
+  // 'en' (a select that can't be blanked) and GUIDs auto-generate, so neither
+  // needs gating. Value/Credits stay always-enabled — optional by design.
+  const publisherValid =
+    !!state.publisherFeed?.author?.trim() &&
+    !!state.publisherFeed?.title?.trim() &&
+    !!state.publisherFeed?.description?.trim();
+
+  const albumValid =
+    !!state.album.author?.trim() &&
+    !!state.album.title.trim() &&
+    !!state.album.description?.trim() &&
+    !!state.album.imageUrl?.trim();
+
   const nextDisabled =
-    (step === 'publisher' && !state.publisherFeed?.title?.trim()) ||
-    (step === 'album' && !state.album.title.trim()) ||
+    (step === 'publisher' && !publisherValid) ||
+    (step === 'album' && !albumValid) ||
     (step === 'tracks' && tracksInvalid);
 
   // Hide Back when the previous visible step is the auth gate — going back there

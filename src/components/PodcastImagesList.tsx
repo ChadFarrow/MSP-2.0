@@ -23,14 +23,22 @@ export function PodcastImagesList({ images, onChange, label = 'Additional Images
   const imagesRef = useRef(images);
   useEffect(() => { imagesRef.current = images; });
 
+  // Per-row URL we last auto-detected, so re-blurring an unchanged URL doesn't refetch.
+  // Index-aligned with images; kept in sync by add()/remove() (append/remove only).
+  const detectedUrls = useRef<string[]>([]);
+
   const update = (index: number, patch: Partial<PodcastImage>) => {
     onChange(imagesRef.current.map((img, i) => (i === index ? { ...img, ...patch } : img)));
   };
 
-  const add = () => onChange([...images, { href: '' }]);
+  const add = () => {
+    detectedUrls.current = [...detectedUrls.current, ''];
+    onChange([...imagesRef.current, { href: '' }]);
+  };
 
   const remove = (index: number) => {
-    onChange(images.filter((_, i) => i !== index));
+    detectedUrls.current = detectedUrls.current.filter((_, i) => i !== index);
+    onChange(imagesRef.current.filter((_, i) => i !== index));
     // customRows indices are valid only because rows are never reordered (append/remove only).
     setCustomRows(prev => {
       const next = new Set<number>();
@@ -42,14 +50,22 @@ export function PodcastImagesList({ images, onChange, label = 'Additional Images
   // On URL entry, auto-detect dimensions/ratio/type and suggest a purpose if none set.
   const handleUrlBlur = async (index: number, url: string) => {
     if (!url) return;
+    // Skip if we already auto-detected this exact URL for this row (e.g. a no-op re-blur).
+    if (detectedUrls.current[index] === url) return;
     const meta = await detectImageMetadata(url);
+    // Bail if the row was removed, or its URL changed, while the image was loading —
+    // otherwise we'd write stale metadata onto the wrong (shifted) row.
     const current = imagesRef.current[index];
-    const patch: Partial<PodcastImage> = {
-      width: meta.width,
-      height: meta.height,
-      aspectRatio: meta.aspectRatio,
-      type: meta.type,
-    };
+    if (!current || current.href !== url) return;
+    detectedUrls.current[index] = url;
+    // Only write fields we actually detected, so a failed/timed-out re-detect (which
+    // yields just `type`) never erases previously detected width/height/aspectRatio
+    // or edits the user made during the load window.
+    const patch: Partial<PodcastImage> = {};
+    if (meta.width !== undefined) patch.width = meta.width;
+    if (meta.height !== undefined) patch.height = meta.height;
+    if (meta.aspectRatio !== undefined) patch.aspectRatio = meta.aspectRatio;
+    if (meta.type !== undefined) patch.type = meta.type;
     if (!current.purpose && meta.aspectRatio) {
       const suggested = suggestPurpose(meta.aspectRatio);
       if (suggested) patch.purpose = suggested;

@@ -11,6 +11,14 @@ describe('reduceRatio', () => {
     expect(reduceRatio(0, 100)).toBe('');
     expect(reduceRatio(100, 0)).toBe('');
   });
+  it('snaps near-common ratios to the clean form', () => {
+    expect(reduceRatio(1376, 768)).toBe('16/9');   // a few px off 16:9 -> exact GCD would give 43/24
+    expect(reduceRatio(1290, 720)).toBe('16/9');
+    expect(reduceRatio(1080, 1349)).toBe('4/5');   // near-portrait
+  });
+  it('keeps the exact ratio for genuinely uncommon shapes', () => {
+    expect(reduceRatio(1850, 1000)).toBe('37/20'); // 1.85:1 cinema flat, not within snap tolerance
+  });
 });
 
 describe('mimeFromUrl', () => {

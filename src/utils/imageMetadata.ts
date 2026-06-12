@@ -1,8 +1,34 @@
 // Helpers for auto-deriving <podcast:image> attributes from an image URL.
 
-// Reduce width/height to a simplified CSS aspect-ratio string, e.g. 1920x1080 -> "16/9".
+// Common aspect ratios (spoken form) to snap near-matches to, so a 1376×768 image
+// reads as "16/9" instead of an ugly exact "43/24". Both orientations included.
+const COMMON_RATIOS: [number, number][] = [
+  [1, 1],
+  [5, 4], [4, 5],
+  [4, 3], [3, 4],
+  [3, 2], [2, 3],
+  [16, 10], [10, 16],
+  [16, 9], [9, 16],
+  [21, 9], [9, 21],
+  [2, 1], [1, 2],
+  [3, 1], [1, 3],
+  [4, 1], [1, 4],
+];
+const RATIO_SNAP_TOLERANCE = 0.02; // 2% relative — close enough that a few off pixels still reads as the intended ratio
+
+// Reduce width/height to a simplified CSS aspect-ratio string. Snaps to a common
+// ratio when within tolerance (e.g. 1376×768 -> "16/9"), else exact GCD reduction.
 export function reduceRatio(width: number, height: number): string {
   if (!width || !height) return '';
+  const target = width / height;
+  let best: { w: number; h: number; err: number } | null = null;
+  for (const [w, h] of COMMON_RATIOS) {
+    const err = Math.abs(target - w / h) / (w / h);
+    if (err <= RATIO_SNAP_TOLERANCE && (!best || err < best.err)) {
+      best = { w, h, err };
+    }
+  }
+  if (best) return `${best.w}/${best.h}`;
   const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
   const g = gcd(width, height);
   return `${width / g}/${height / g}`;

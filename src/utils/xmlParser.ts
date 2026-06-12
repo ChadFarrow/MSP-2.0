@@ -3,6 +3,7 @@ import { XMLParser } from 'fast-xml-parser';
 import type { Album, Track, Person, PersonGroup, ValueRecipient, ValueBlock, Funding, PublisherFeed, RemoteItem, PublisherReference, BaseChannelData } from '../types/feed';
 import { createEmptyTrack } from '../types/feed';
 import { areValueBlocksStrictEqual, arePersonsEqual } from './comparison';
+import { detectAddressType } from './addressUtils';
 
 // OP3 prefix pattern: https://op3.dev/e/ or https://op3.dev/e,pg=GUID/
 export const OP3_PREFIX_RE = /^https:\/\/op3\.dev\/e(?:,[^/]*)?\//;
@@ -321,11 +322,18 @@ function parseFunding(node: unknown): Funding | null {
 function parseRecipient(node: unknown): ValueRecipient | null {
   if (!node) return null;
 
+  // Derive the type from the address rather than trusting the XML's `type`
+  // attribute: older tools (e.g. the original musicsideproject.com) only knew
+  // about Lightning nodes and wrote type="node" even for Lightning addresses.
+  // An address containing "@" is always a Lightning address. This mirrors the
+  // auto-detection the editor UI applies on manual edit (RecipientsList.tsx).
+  const address = getAttr(node, 'address') || '';
+
   return {
     name: getAttr(node, 'name') || '',
-    address: getAttr(node, 'address') || '',
+    address,
     split: parseInt(getAttr(node, 'split')) || 0,
-    type: (getAttr(node, 'type') || 'node') as 'node' | 'lnaddress',
+    type: address ? detectAddressType(address) : 'node',
     customKey: getAttr(node, 'customKey') || undefined,
     customValue: getAttr(node, 'customValue') || undefined
   };

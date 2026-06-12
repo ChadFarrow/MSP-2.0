@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseRssFeed } from './xmlParser';
+import { generateRssFeed } from './xmlGenerator';
 
 // Helper to build minimal RSS XML for testing
 function buildRssXml(enclosureUrl: string, podcastGuid?: string): string {
@@ -136,5 +137,77 @@ describe('Person tag merging with npub', () => {
 
     expect(album.persons).toHaveLength(1);
     expect(album.persons[0].npub).toBeUndefined();
+  });
+});
+
+describe('value recipient type detection on import', () => {
+  // Build a minimal RSS feed with a channel-level value block whose recipients
+  // are provided verbatim. Mirrors feeds produced by the old node-only tool.
+  function buildRssWithValueBlock(recipients: string, method = 'keysend'): string {
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:podcast="https://podcastindex.org/namespace/1.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" version="2.0">
+  <channel>
+    <title>Test Feed</title>
+    <itunes:author>Test Artist</itunes:author>
+    <description>A test feed</description>
+    <language>en</language>
+    <podcast:medium>music</podcast:medium>
+    <podcast:guid>test-guid</podcast:guid>
+    <podcast:value type="lightning" method="${method}" suggested="0.00000005000">
+      ${recipients}
+    </podcast:value>
+    <item>
+      <title>Track 1</title>
+      <guid isPermaLink="false">track-guid-1</guid>
+      <enclosure url="https://example.com/track1.mp3" length="1234" type="audio/mpeg"/>
+      <itunes:duration>03:45</itunes:duration>
+    </item>
+  </channel>
+</rss>`;
+  }
+
+  const NODE_PUBKEY = '035ad2c954e264004986da2d9499e1732e5175e1dcef2453c921c6cdcc3536e9d8';
+
+  it('corrects type="node" to "lnaddress" when the address contains @', () => {
+    const xml = buildRssWithValueBlock(
+      `<podcast:valueRecipient name="gless" type="node" address="gless@coinos.io" split="99"/>`
+    );
+
+    const album = parseRssFeed(xml);
+
+    expect(album.value.recipients[0].type).toBe('lnaddress');
+  });
+
+  it('keeps type="node" for a node pubkey address', () => {
+    const xml = buildRssWithValueBlock(
+      `<podcast:valueRecipient name="Node" type="node" address="${NODE_PUBKEY}" split="1"/>`
+    );
+
+    const album = parseRssFeed(xml);
+
+    expect(album.value.recipients[0].type).toBe('node');
+  });
+
+  it('detects lnaddress when the type attribute is missing entirely', () => {
+    const xml = buildRssWithValueBlock(
+      `<podcast:valueRecipient name="gless" address="gless@coinos.io" split="99"/>`
+    );
+
+    const album = parseRssFeed(xml);
+
+    expect(album.value.recipients[0].type).toBe('lnaddress');
+  });
+
+  it('round-trips a node-only feed into method="lnaddress" output', () => {
+    const xml = buildRssWithValueBlock(
+      `<podcast:valueRecipient name="Node" type="node" address="${NODE_PUBKEY}" split="1"/>
+       <podcast:valueRecipient name="gless" type="node" address="gless@coinos.io" split="99"/>`
+    );
+
+    const album = parseRssFeed(xml);
+    const regenerated = generateRssFeed(album);
+
+    expect(regenerated).toContain('method="lnaddress"');
+    expect(regenerated).toContain('address="gless@coinos.io" split="99" type="lnaddress"');
   });
 });

@@ -21,6 +21,11 @@ export const FIELD_INFO = {
   imageTitle: "Title/alt text for the album artwork.",
   imageDescription: "Optional description of the artwork or album.",
 
+  // Additional Images (podcast:image)
+  podcastImages: "Optional extra artwork beyond your main cover, published as Podcasting 2.0 <podcast:image> tags. Lets apps show different art in different places — e.g. a wide background on Now Playing screens, a banner, or a social share card. Your cover art above is still the default; these are alternatives apps can choose from.",
+  podcastImagePurpose: "Tells apps how to use this image (see each option's description in the dropdown). Auto-suggested from the image's shape — change it, or pick Custom to enter your own token(s).",
+  podcastImageAlt: "Short description of the image for screen readers and for when the image can't load (accessibility). Recommended.",
+
   // Persons/Credits
   personName: "The person's name as it should appear in credits.",
   personHref: "Link to the person's website or social profile.",

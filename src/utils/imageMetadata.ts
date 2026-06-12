@@ -57,9 +57,14 @@ export function detectImageMetadata(url: string): Promise<DetectedImageMeta> {
     const type = mimeFromUrl(url);
     const img = new Image();
     let settled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const done = (meta: DetectedImageMeta) => {
       if (settled) return;
       settled = true;
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
       resolve(meta);
     };
     img.onload = () => {
@@ -69,6 +74,11 @@ export function detectImageMetadata(url: string): Promise<DetectedImageMeta> {
       done({ width, height, aspectRatio, type: type || undefined });
     };
     img.onerror = () => done({ type: type || undefined });
+    // Timeout after 10 seconds — some CDNs stall without firing onerror.
+    // Resolves with best-available partial data rather than leaving the Promise pending.
+    timer = setTimeout(() => {
+      done(type ? { type } : {});
+    }, 10000);
     img.src = url;
   });
 }

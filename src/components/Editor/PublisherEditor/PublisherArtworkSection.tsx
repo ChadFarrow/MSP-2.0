@@ -2,6 +2,7 @@ import type { PublisherFeed } from '../../../types/feed';
 import type { FeedAction } from '../../../store/feedStore';
 import { Section } from '../../Section';
 import { ArtworkFields } from '../../ArtworkFields';
+import { PodcastImagesList } from '../../PodcastImagesList';
 
 interface PublisherArtworkSectionProps {
   publisherFeed: PublisherFeed;
@@ -20,6 +21,10 @@ export function PublisherArtworkSection({ publisherFeed, dispatch }: PublisherAr
         urlPlaceholder="https://example.com/logo.jpg"
         titlePlaceholder="Publisher logo description"
         previewAlt="Publisher logo preview"
+      />
+      <PodcastImagesList
+        images={publisherFeed.podcastImages || []}
+        onChange={images => dispatch({ type: 'UPDATE_PUBLISHER_FEED', payload: { podcastImages: images } })}
       />
     </Section>
   );

@@ -784,6 +784,9 @@ export const parsePublisherRssFeed = (xmlString: string): PublisherFeed => {
     remoteItems: []
   };
 
+  // Podcasting 2.0 additional images
+  feed.podcastImages = parsePodcastImages(channel);
+
   // Remote items (the feeds this publisher owns)
   const remoteItems = channel['podcast:remoteItem'];
   if (remoteItems) {

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { parseRssFeed } from './xmlParser';
-import { generateRssFeed } from './xmlGenerator';
+import { parseRssFeed, parsePublisherRssFeed } from './xmlParser';
+import { generateRssFeed, generatePublisherRssFeed } from './xmlGenerator';
+import { createEmptyPublisherFeed } from '../types/feed';
 
 // Helper to build minimal RSS XML for testing
 function buildRssXml(enclosureUrl: string, podcastGuid?: string): string {
@@ -341,5 +342,17 @@ describe('podcast:image parsing', () => {
     const reparsed = parseRssFeed(generateRssFeed(album));
     expect(reparsed.podcastImages).toEqual(album.podcastImages);
     expect(reparsed.tracks[0].podcastImages).toEqual(album.tracks[0].podcastImages);
+  });
+});
+
+describe('podcast:image on publisher feeds', () => {
+  it('round-trips publisher podcastImages through generate -> parse', () => {
+    const publisher = createEmptyPublisherFeed();
+    publisher.title = 'Test Label';
+    publisher.podcastImages = [
+      { href: 'https://x.com/logo-wide.jpg', purpose: 'banner', aspectRatio: '4/1', width: 2000, height: 500 },
+    ];
+    const reparsed = parsePublisherRssFeed(generatePublisherRssFeed(publisher));
+    expect(reparsed.podcastImages).toEqual(publisher.podcastImages);
   });
 });

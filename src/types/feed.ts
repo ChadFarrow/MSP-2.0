@@ -241,6 +241,7 @@ export interface PublisherFeed {
   imageTitle: string;
   imageLink: string;
   imageDescription: string;
+  podcastImages?: PodcastImage[];
 
   // Contact
   managingEditor: string;
@@ -463,6 +464,7 @@ export const createEmptyPublisherFeed = (): PublisherFeed => ({
   imageTitle: '',
   imageLink: '',
   imageDescription: '',
+  podcastImages: [],
   managingEditor: '',
   webMaster: '',
   persons: [],

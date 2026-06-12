@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { PodcastImage } from '../types/feed';
 import { PODCAST_IMAGE_PURPOSES } from '../types/feed';
 import { detectImageMetadata, suggestPurpose } from '../utils/imageMetadata';
@@ -16,14 +16,20 @@ export function PodcastImagesList({ images, onChange, label = 'Additional Images
   // Track which rows have the custom purpose input open (by index).
   const [customRows, setCustomRows] = useState<Set<number>>(new Set());
 
+  // Always points at the latest images so the async handleUrlBlur (which may resolve
+  // up to ~10s after blur) doesn't clobber edits the user made during image load.
+  const imagesRef = useRef(images);
+  useEffect(() => { imagesRef.current = images; });
+
   const update = (index: number, patch: Partial<PodcastImage>) => {
-    onChange(images.map((img, i) => (i === index ? { ...img, ...patch } : img)));
+    onChange(imagesRef.current.map((img, i) => (i === index ? { ...img, ...patch } : img)));
   };
 
   const add = () => onChange([...images, { href: '' }]);
 
   const remove = (index: number) => {
     onChange(images.filter((_, i) => i !== index));
+    // customRows indices are valid only because rows are never reordered (append/remove only).
     setCustomRows(prev => {
       const next = new Set<number>();
       prev.forEach(i => { if (i < index) next.add(i); else if (i > index) next.add(i - 1); });
@@ -35,7 +41,7 @@ export function PodcastImagesList({ images, onChange, label = 'Additional Images
   const handleUrlBlur = async (index: number, url: string) => {
     if (!url) return;
     const meta = await detectImageMetadata(url);
-    const current = images[index];
+    const current = imagesRef.current[index];
     const patch: Partial<PodcastImage> = {
       width: meta.width,
       height: meta.height,
@@ -124,7 +130,7 @@ export function PodcastImagesList({ images, onChange, label = 'Additional Images
                   <img
                     src={img.href}
                     alt={img.alt || 'preview'}
-                    style={{ maxHeight: '80px', marginTop: '0.5rem', borderRadius: '4px' }}
+                    style={{ maxHeight: '80px', maxWidth: '100%', marginTop: '0.5rem', borderRadius: '4px' }}
                     onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
                   />
                 )}

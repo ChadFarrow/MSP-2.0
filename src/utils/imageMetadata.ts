@@ -54,14 +54,17 @@ export function mimeFromUrl(url: string): string {
 }
 
 // Suggest a default purpose token from an aspect-ratio string like "16/9".
-// Square-ish -> artwork; wider than square -> banner; otherwise '' (let the artist choose).
+//   square-ish (~1:1)        -> artwork  (alternate cover)
+//   very wide (>= ~2.5:1)    -> banner   (wide hero strip, ~3:1 / 4:1)
+//   everything else          -> canvas   (full-screen background: 16:9/landscape desktop or portrait phone)
+// The artist can always override; this just picks the most likely bucket.
 export function suggestPurpose(aspectRatio: string): string {
   const [w, h] = aspectRatio.split('/').map(Number);
   if (!w || !h) return '';
   const ratio = w / h;
   if (ratio >= 0.9 && ratio <= 1.1) return 'artwork';
-  if (ratio > 1.1) return 'banner';
-  return '';
+  if (ratio >= 2.5) return 'banner';
+  return 'canvas';
 }
 
 export interface DetectedImageMeta {

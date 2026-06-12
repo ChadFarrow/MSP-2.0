@@ -38,12 +38,18 @@ describe('suggestPurpose', () => {
   it('suggests artwork for square-ish images', () => {
     expect(suggestPurpose('1/1')).toBe('artwork');
   });
-  it('suggests banner for wide images', () => {
-    expect(suggestPurpose('16/9')).toBe('banner');
+  it('suggests canvas for 16:9/landscape and portrait backgrounds', () => {
+    expect(suggestPurpose('16/9')).toBe('canvas');
+    expect(suggestPurpose('16/10')).toBe('canvas');
+    expect(suggestPurpose('21/9')).toBe('canvas');
+    expect(suggestPurpose('9/16')).toBe('canvas');
+    expect(suggestPurpose('2/3')).toBe('canvas');
+  });
+  it('suggests banner only for very wide hero strips', () => {
+    expect(suggestPurpose('3/1')).toBe('banner');
     expect(suggestPurpose('4/1')).toBe('banner');
   });
-  it('returns empty for tall or invalid ratios', () => {
-    expect(suggestPurpose('2/3')).toBe('');
+  it('returns empty for invalid ratios', () => {
     expect(suggestPurpose('bad')).toBe('');
   });
 });

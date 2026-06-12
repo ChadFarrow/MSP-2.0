@@ -64,6 +64,29 @@ export interface RemoteItem {
   image?: string;
 }
 
+// Podcasting 2.0 additional images (<podcast:image>). These are EXTRA images
+// (banner/canvas/social/etc.) — the primary cover stays in imageUrl/trackArtUrl.
+export interface PodcastImage {
+  href: string;          // required
+  purpose?: string;      // space-separated tokens, e.g. "canvas" or "artwork social"
+  alt?: string;
+  aspectRatio?: string;  // CSS ratio syntax, e.g. "16/9", "1/1"
+  width?: number;
+  height?: number;
+  type?: string;         // MIME, e.g. "image/jpeg"
+}
+
+// Suggested purpose tokens (open list per the spec). Single source of truth for the UI dropdown.
+export const PODCAST_IMAGE_PURPOSES: { value: string; label: string; description: string }[] = [
+  { value: 'artwork', label: 'Artwork', description: 'Represents the show/episode (square cover)' },
+  { value: 'banner', label: 'Banner', description: 'Wide hero image to complement your artwork' },
+  { value: 'canvas', label: 'Canvas', description: 'Immersive Now Playing background (desktop/mobile)' },
+  { value: 'social', label: 'Social', description: 'Social preview / share card' },
+  { value: 'publisher', label: 'Publisher', description: 'Publisher / label logo' },
+  { value: 'circular', label: 'Circular', description: 'Image meant to be cropped to a circle' },
+  { value: 'poster', label: 'Poster', description: 'Static thumbnail for video episodes' },
+];
+
 // Base channel data shared between Album and PublisherFeed
 export interface BaseChannelData {
   title: string;
@@ -91,6 +114,7 @@ export interface BaseChannelData {
   persons: Person[];
   value: ValueBlock;
   funding: Funding[];
+  podcastImages?: PodcastImage[];
   unknownChannelElements?: Record<string, unknown>;
 }
 
@@ -118,6 +142,7 @@ export interface Track {
   trackArtWidth?: number;
   trackArtHeight?: number;
   bannerArtUrl?: string;
+  podcastImages?: PodcastImage[];
   transcriptUrl?: string;
   transcriptType?: string;
   overridePersons: boolean;
@@ -158,6 +183,7 @@ export interface Album {
   imageLink: string;
   imageDescription: string;
   bannerArtUrl: string;
+  podcastImages?: PodcastImage[];
 
   // Contact
   managingEditor: string;
@@ -254,6 +280,7 @@ export const createEmptyTrack = (trackNumber: number, enclosureType: string = 'a
   explicit: false,
   trackArtUrl: '',
   bannerArtUrl: '',
+  podcastImages: [],
   transcriptUrl: '',
   transcriptType: 'application/srt',
   overridePersons: false,
@@ -323,6 +350,7 @@ export const createEmptyAlbum = (): Album => ({
   imageLink: '',
   imageDescription: '',
   bannerArtUrl: '',
+  podcastImages: [],
   managingEditor: '',
   webMaster: '',
   persons: [],
@@ -362,6 +390,7 @@ export const createEmptyVideoAlbum = (): Album => ({
   imageLink: '',
   imageDescription: '',
   bannerArtUrl: '',
+  podcastImages: [],
   managingEditor: '',
   webMaster: '',
   persons: [],

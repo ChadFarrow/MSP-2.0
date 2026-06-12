@@ -98,7 +98,7 @@ export function PodcastImagesList({ images, onChange, label = 'Additional Images
                     <select className="form-input" value={selectValue} onChange={e => handlePurposeSelect(index, e.target.value)}>
                       <option value="">(none)</option>
                       {PODCAST_IMAGE_PURPOSES.map(opt => (
-                        <option key={opt.value} value={opt.value} title={opt.description}>{opt.label}</option>
+                        <option key={opt.value} value={opt.value} title={opt.description}>{opt.label} — {opt.description}</option>
                       ))}
                       <option value={CUSTOM}>Custom…</option>
                     </select>

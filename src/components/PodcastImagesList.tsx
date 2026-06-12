@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { PodcastImage } from '../types/feed';
 import { PODCAST_IMAGE_PURPOSES } from '../types/feed';
 import { detectImageMetadata, suggestPurpose } from '../utils/imageMetadata';
+import { FIELD_INFO } from '../data/fieldInfo';
+import { InfoIcon } from './InfoIcon';
 
 interface PodcastImagesListProps {
   images: PodcastImage[];
@@ -67,7 +69,11 @@ export function PodcastImagesList({ images, onChange, label = 'Additional Images
 
   return (
     <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-      <label className="form-label">{label}</label>
+      <label className="form-label">{label}<InfoIcon text={FIELD_INFO.podcastImages} /></label>
+      <p style={{ fontSize: '0.85rem', opacity: 0.7, margin: '0 0 0.75rem' }}>
+        Optional extra artwork apps can use in different places — e.g. a wide background for
+        Now Playing screens or a banner. Paste a URL and MSP fills in the size and type for you.
+      </p>
       <div className="repeatable-list">
         {images.map((img, index) => {
           const showCustom = customRows.has(index) || (!!img.purpose && !isPreset(img.purpose));
@@ -88,7 +94,7 @@ export function PodcastImagesList({ images, onChange, label = 'Additional Images
                     />
                   </div>
                   <div className="form-group">
-                    <label className="form-label">Purpose</label>
+                    <label className="form-label">Purpose<InfoIcon text={FIELD_INFO.podcastImagePurpose} /></label>
                     <select className="form-input" value={selectValue} onChange={e => handlePurposeSelect(index, e.target.value)}>
                       <option value="">(none)</option>
                       {PODCAST_IMAGE_PURPOSES.map(opt => (
@@ -108,7 +114,7 @@ export function PodcastImagesList({ images, onChange, label = 'Additional Images
                     )}
                   </div>
                   <div className="form-group">
-                    <label className="form-label">Alt text</label>
+                    <label className="form-label">Alt text<InfoIcon text={FIELD_INFO.podcastImageAlt} /></label>
                     <input
                       type="text"
                       className="form-input"

@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- This feed follows the Demu feed template format. See https://github.com/de-mu/demu-feed-template for the original template and documentation. -->
+<!-- This "rss" tag denotes the beginning of the RSS feed and includes declarations of all XML namespaces used in the feed. Two namespaces are declared: the "podcast" namespace from Podcast Index and the "iTunes" namespace from Apple. -->
+<rss xmlns:podcast="https://podcastindex.org/namespace/1.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" version="2.0">
+    <!-- The "channel" tag contains metadata describing this feed as a whole. For a music album, the channel describes the album. Each track on the album becomes an "item" inside the channel. -->
+    <channel>
+        <!-- The "title" tag will contain the name of your album. -->
+        <title>My Album Title</title>
+        <!-- The "itunes:author" tag describes the artist or band name. -->
+        <itunes:author>My Band Name</itunes:author>
+        <!-- The "description" tag gives listeners a brief overview of the album. -->
+        <description>
+            A brief description of your album. Tell listeners what it's about, the vibe, the story behind it.
+        </description>
+        <!-- The "link" tag holds the main link for listeners to visit — usually your band website. -->
+        <link>https://mybandwebsite.com</link>
+        <!-- The "language" tag describes the language the feed is written in. See https://www.rssboard.org/rss-language-codes for a full list of language codes. -->
+        <language>en</language>
+        <!-- The "generator" tag describes the tool used to create this feed. -->
+        <generator>MSP 2.0 - Music Side Project Studio</generator>
+        <!-- The "pubDate" is when the most recent item in the feed was published. Dates must be in RFC-822 format. -->
+        <pubDate>Mon, 01 Jan 2024 00:00:00 GMT</pubDate>
+        <!-- The "lastBuildDate" is when this feed was last rebuilt, also in RFC-822 format. -->
+        <lastBuildDate>Mon, 01 Jan 2024 00:00:00 GMT</lastBuildDate>
+        <!-- The "podcast:locked" tag prevents other platforms from claiming this feed without permission. Set to "yes" to lock it. See https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md#locked -->
+        <podcast:locked owner="you@example.com">no</podcast:locked>
+        <!-- The "podcast:guid" tag is a Globally Unique ID for the feed itself. It should never change once set. Generate one at https://tools.rssblue.com/podcast-guid. See https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md#guid -->
+        <podcast:guid>xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</podcast:guid>
+        <!-- The "itunes:category" tags describe which categories your feed falls under. You may include up to 3. See https://podcasters.apple.com/support/1691-apple-podcasts-categories -->
+        <itunes:category text="Music" />
+        <!-- The "itunes:keywords" tag contains search terms to help listeners discover your music. -->
+        <itunes:keywords>rock, indie, alternative</itunes:keywords>
+        <!-- The "managingEditor" tag provides the email of the person responsible for editorial content. -->
+        <managingEditor>you@example.com</managingEditor>
+        <!-- The "webMaster" tag provides the email of the person responsible for the technical side of the feed. -->
+        <webMaster>you@example.com</webMaster>
+        <!-- The RSS "image" tag displays your album artwork to podcast aggregators. Child tags: url (image file location), title, link (band website), and description. -->
+        <image>
+            <url>https://mybandwebsite.com/album-art.jpg</url>
+            <title>My Album Title cover art</title>
+            <link>https://mybandwebsite.com</link>
+            <description>My Album Title by My Band Name</description>
+        </image>
+        <!-- The "itunes:image" tag is the Apple Podcasts-compatible image reference for your album artwork. -->
+        <itunes:image href="https://mybandwebsite.com/album-art.jpg" />
+        <!-- The "podcast:medium" tag tells apps this feed contains music. It is intended for feeds whose items are exclusively music files. See https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md#medium -->
+        <podcast:medium>music</podcast:medium>
+        <!-- The "itunes:explicit" tag indicates whether the content contains explicit language. Set to "true" if your music has explicit content. -->
+        <itunes:explicit>false</itunes:explicit>
+        <!-- The "itunes:owner" tag provides contact info for administrative purposes, such as Apple Podcasts ownership verification. -->
+        <itunes:owner>
+            <itunes:name>My Band Name</itunes:name>
+            <itunes:email>you@example.com</itunes:email>
+        </itunes:owner>
+        <!-- The "podcast:person" tags list people of note: band members, producers, featured artists and more. Each tag is a credit. "href" links to a profile page, "img" links to a photo, and "group"/"role" describe their contribution. See https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md#person -->
+        <podcast:person href="https://mybandwebsite.com" img="https://mybandwebsite.com/photo.jpg" group="music" role="band">My Band Name</podcast:person>
+        <podcast:person group="music" role="vocalist">Singer Name</podcast:person>
+        <podcast:person group="music" role="guitarist">Guitarist Name</podcast:person>
+        <podcast:person group="audio-post-production" role="producer">Producer Name</podcast:person>
+        <!-- The "podcast:value" tag describes how Lightning payments are split between recipients when listeners boost or stream sats. "type" and "method" describe the payment technology; "suggested" is a recommended boost amount in BTC. See https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md#value -->
+        <podcast:value type="lightning" method="lnaddress" suggested="0.000033333">
+            <!-- Each "podcast:valueRecipient" tag defines one payment recipient: their name, Lightning address or node pubkey, and their percentage share of the split. Splits are proportional — they don't need to add up to 100, but whole numbers are recommended. -->
+            <podcast:valueRecipient name="My Band Name" address="myband@getalby.com" split="95" type="lnaddress" />
+            <podcast:valueRecipient name="Podcast Index" address="03ae9f91a0cb8ff43840e3c322c4c61f019d8c1c3cea15a25cfc425ac605e61a4a" split="1" type="node" />
+            <podcast:valueRecipient name="MSP 2.0" address="chadf@getalby.com" split="4" type="lnaddress" />
+        </podcast:value>
+        <!-- The "podcast:funding" tag provides a link where listeners can support you directly (e.g. a Patreon, PayPal, or donation page). -->
+        <podcast:funding url="https://mybandwebsite.com/support">Support My Band</podcast:funding>
+        <!-- Each "item" tag below represents one track on the album. In a music feed, each item is a song with its own title, audio file, and metadata. -->
+        <item>
+            <!-- The "title" tag holds the song title. -->
+            <title>Track One</title>
+            <!-- The "description" tag holds an optional description of this track. -->
+            <description>The opening track of the album.</description>
+            <!-- The "pubDate" tag is when this track was published, in RFC-822 format. -->
+            <pubDate>Mon, 01 Jan 2024 00:00:00 GMT</pubDate>
+            <!-- The "guid" tag is a Globally Unique Identifier for this track. Every track must have its own unique GUID — apps use it to identify tracks across feeds and route boost payments correctly. -->
+            <guid isPermaLink="false">aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa</guid>
+            <!-- The "itunes:image" tag at the item level links to artwork for this specific track. If omitted, the channel-level image is displayed instead. -->
+            <itunes:image href="https://mybandwebsite.com/album-art.jpg" />
+            <!-- The "enclosure" tag points to the audio file. "url" is the file location (must be publicly accessible), "length" is the file size in bytes, and "type" is the MIME type (e.g. audio/mpeg for MP3). -->
+            <enclosure url="https://mybandwebsite.com/audio/track01.mp3" length="5242880" type="audio/mpeg"/>
+            <!-- The "itunes:duration" tag defines the total running time in HH:MM:SS format. Required for Fountain Radio support. -->
+            <itunes:duration>00:03:45</itunes:duration>
+            <!-- The "podcast:season" tag describes the season number. Music albums use season 1. -->
+            <podcast:season>1</podcast:season>
+            <!-- The "podcast:episode" tag is the track number on the album. See https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md#episode -->
+            <podcast:episode>1</podcast:episode>
+            <!-- The "itunes:explicit" tag indicates whether this specific track contains explicit language. -->
+            <itunes:explicit>false</itunes:explicit>
+            <!-- "podcast:value" block: this track uses the channel-level payment splits defined above. -->
+            <podcast:value type="lightning" method="lnaddress" suggested="0.000033333">
+                <!-- Each "podcast:valueRecipient" tag defines one payment recipient: their name, Lightning address or node pubkey, and their percentage share of the split. Splits are proportional — they don't need to add up to 100, but whole numbers are recommended. -->
+                <podcast:valueRecipient name="My Band Name" address="myband@getalby.com" split="95" type="lnaddress" />
+                <podcast:valueRecipient name="Podcast Index" address="03ae9f91a0cb8ff43840e3c322c4c61f019d8c1c3cea15a25cfc425ac605e61a4a" split="1" type="node" />
+                <podcast:valueRecipient name="MSP 2.0" address="chadf@getalby.com" split="4" type="lnaddress" />
+            </podcast:value>
+        </item>
+        <item>
+            <!-- The "title" tag holds the song title. -->
+            <title>Track Two (with Lyrics)</title>
+            <!-- The "description" tag holds an optional description of this track. -->
+            <description>This track includes a time-coded lyrics file via podcast:transcript.</description>
+            <!-- The "pubDate" tag is when this track was published, in RFC-822 format. -->
+            <pubDate>Mon, 01 Jan 2024 00:01:00 GMT</pubDate>
+            <!-- The "guid" tag is a Globally Unique Identifier for this track. Every track must have its own unique GUID — apps use it to identify tracks across feeds and route boost payments correctly. -->
+            <guid isPermaLink="false">bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb</guid>
+            <!-- The "podcast:transcript" tag links to an external lyrics file. An SRT file can time-code lyrics to display in sync with playback. See https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md#transcript -->
+            <podcast:transcript url="https://mybandwebsite.com/lyrics/track02.srt" type="application/srt" />
+            <!-- The "itunes:image" tag at the item level links to artwork for this specific track. If omitted, the channel-level image is displayed instead. -->
+            <itunes:image href="https://mybandwebsite.com/album-art.jpg" />
+            <!-- The "enclosure" tag points to the audio file. "url" is the file location (must be publicly accessible), "length" is the file size in bytes, and "type" is the MIME type (e.g. audio/mpeg for MP3). -->
+            <enclosure url="https://mybandwebsite.com/audio/track02.mp3" length="6291456" type="audio/mpeg"/>
+            <!-- The "itunes:duration" tag defines the total running time in HH:MM:SS format. Required for Fountain Radio support. -->
+            <itunes:duration>00:04:32</itunes:duration>
+            <!-- The "podcast:season" tag describes the season number. Music albums use season 1. -->
+            <podcast:season>1</podcast:season>
+            <!-- The "podcast:episode" tag is the track number on the album. See https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md#episode -->
+            <podcast:episode>2</podcast:episode>
+            <!-- The "itunes:explicit" tag indicates whether this specific track contains explicit language. -->
+            <itunes:explicit>false</itunes:explicit>
+            <!-- "podcast:value" block: this track uses the channel-level payment splits defined above. -->
+            <podcast:value type="lightning" method="lnaddress" suggested="0.000033333">
+                <!-- Each "podcast:valueRecipient" tag defines one payment recipient: their name, Lightning address or node pubkey, and their percentage share of the split. Splits are proportional — they don't need to add up to 100, but whole numbers are recommended. -->
+                <podcast:valueRecipient name="My Band Name" address="myband@getalby.com" split="95" type="lnaddress" />
+                <podcast:valueRecipient name="Podcast Index" address="03ae9f91a0cb8ff43840e3c322c4c61f019d8c1c3cea15a25cfc425ac605e61a4a" split="1" type="node" />
+                <podcast:valueRecipient name="MSP 2.0" address="chadf@getalby.com" split="4" type="lnaddress" />
+            </podcast:value>
+        </item>
+        <item>
+            <!-- The "title" tag holds the song title. -->
+            <title>Track Three (Featured Artist)</title>
+            <!-- The "description" tag holds an optional description of this track. -->
+            <description>This track features a guest artist with their own value split at the item level.</description>
+            <!-- The "pubDate" tag is when this track was published, in RFC-822 format. -->
+            <pubDate>Mon, 01 Jan 2024 00:02:00 GMT</pubDate>
+            <!-- The "guid" tag is a Globally Unique Identifier for this track. Every track must have its own unique GUID — apps use it to identify tracks across feeds and route boost payments correctly. -->
+            <guid isPermaLink="false">cccccccc-cccc-cccc-cccc-cccccccccccc</guid>
+            <!-- The "itunes:image" tag at the item level links to artwork for this specific track. If omitted, the channel-level image is displayed instead. -->
+            <itunes:image href="https://mybandwebsite.com/album-art.jpg" />
+            <!-- The "enclosure" tag points to the audio file. "url" is the file location (must be publicly accessible), "length" is the file size in bytes, and "type" is the MIME type (e.g. audio/mpeg for MP3). -->
+            <enclosure url="https://mybandwebsite.com/audio/track03.mp3" length="7340032" type="audio/mpeg"/>
+            <!-- The "itunes:duration" tag defines the total running time in HH:MM:SS format. Required for Fountain Radio support. -->
+            <itunes:duration>00:05:18</itunes:duration>
+            <!-- The "podcast:season" tag describes the season number. Music albums use season 1. -->
+            <podcast:season>1</podcast:season>
+            <!-- The "podcast:episode" tag is the track number on the album. See https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md#episode -->
+            <podcast:episode>3</podcast:episode>
+            <!-- The "itunes:explicit" tag indicates whether this specific track contains explicit language. -->
+            <itunes:explicit>false</itunes:explicit>
+            <!-- Track-level "podcast:person" tags override the channel-level credits for this specific track. List anyone who contributed uniquely to this track (e.g. a featured artist or guest producer). -->
+            <podcast:person group="music" role="vocalist">Singer Name</podcast:person>
+            <podcast:person href="https://guestartist.com" img="https://guestartist.com/photo.jpg" group="cast" role="guest">Guest Artist Name</podcast:person>
+            <!-- Track-level "podcast:value" block: overrides the channel-level payment splits for this specific track (e.g. to give a featured artist their share). -->
+            <podcast:value type="lightning" method="lnaddress" suggested="0.000033333">
+                <!-- Each "podcast:valueRecipient" tag defines one payment recipient: their name, Lightning address or node pubkey, and their percentage share of the split. Splits are proportional — they don't need to add up to 100, but whole numbers are recommended. -->
+                <podcast:valueRecipient name="My Band Name" address="myband@getalby.com" split="47" type="lnaddress" />
+                <podcast:valueRecipient name="Guest Artist Name" address="guest@getalby.com" split="48" type="lnaddress" />
+                <podcast:valueRecipient name="Podcast Index" address="03ae9f91a0cb8ff43840e3c322c4c61f019d8c1c3cea15a25cfc425ac605e61a4a" split="1" type="node" />
+                <podcast:valueRecipient name="MSP 2.0" address="chadf@getalby.com" split="4" type="lnaddress" />
+            </podcast:value>
+        </item>
+    </channel>
+</rss>

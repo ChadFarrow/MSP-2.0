@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateRssFeed, generatePublisherRssFeed } from './xmlGenerator';
+import { generateRssFeed, generatePublisherRssFeed, stripXmlComments } from './xmlGenerator';
 import { parseRssFeed } from './xmlParser';
 import { createEmptyAlbum, createEmptyPublisherFeed } from '../types/feed';
 
@@ -326,6 +326,33 @@ describe('DeMu-style educational comments', () => {
     for (const comment of xml.match(/<!--[\s\S]*?-->/g) ?? []) {
       expect(comment.slice(4, -3)).not.toContain('--');
     }
+  });
+
+  it('stripXmlComments removes every comment line but leaves tags and content intact', () => {
+    const album = createEmptyAlbum();
+    album.title = 'Strip Test';
+    album.author = 'Artist';
+    album.description = 'A test album';
+    album.tracks[0].title = 'Song';
+    album.tracks[0].enclosureUrl = 'https://example.com/track1.mp3';
+
+    const xml = generateRssFeed(album);
+    expect(xml).toContain('<!--'); // sanity: the feed has comments
+    const commentLines = (xml.match(/^[ \t]*<!--.*?-->[ \t]*$/gm) ?? []).length;
+
+    const stripped = stripXmlComments(xml);
+    expect(stripped).not.toContain('<!--');
+    expect(stripped).not.toContain('-->');
+    // Tags and content survive
+    expect(stripped).toContain('<title>Strip Test</title>');
+    expect(stripped).toContain('<rss');
+    expect(stripped).toContain('</rss>');
+    // Still parses back to the same album
+    const reparsed = parseRssFeed(stripped);
+    expect(reparsed.title).toBe('Strip Test');
+    expect(reparsed.tracks[0].title).toBe('Song');
+    // Exactly the comment lines were removed — no blank lines left behind
+    expect(stripped.split('\n').length).toBe(xml.split('\n').length - commentLines);
   });
 
   it('drops comments on round-trip (parser does not capture or re-emit them)', () => {

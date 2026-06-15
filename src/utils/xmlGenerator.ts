@@ -635,6 +635,13 @@ export const generatePublisherRssFeed = (publisher: PublisherFeed): string => {
   return lines.join('\n');
 };
 
+// Remove the educational <!-- ... --> comment lines from generated XML.
+// Each comment is emitted on its own line, so dropping whole comment lines
+// leaves the surrounding tags untouched. Used for the View Feed "Show comments" toggle.
+export const stripXmlComments = (xml: string): string => {
+  return xml.replace(/^[ \t]*<!--.*?-->[ \t]*\n/gm, '');
+};
+
 // Download XML as file
 export const downloadXml = (xml: string, filename: string = 'feed.xml'): void => {
   const blob = new Blob([xml], { type: 'application/xml' });

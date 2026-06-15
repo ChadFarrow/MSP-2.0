@@ -532,6 +532,7 @@ export const generateRssFeed = (album: Album): string => {
   // RSS root with namespaces
   const baseNs = 'xmlns:podcast="https://podcastindex.org/namespace/1.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"';
   const rssAttrs = additionalNsDecl ? `${baseNs} ${additionalNsDecl}` : baseNs;
+  lines.push(`<!-- This feed follows the Demu feed template format. See https://github.com/de-mu/demu-feed-template for the original template and documentation. -->`);
   lines.push(`<!-- This "rss" tag denotes the beginning of the RSS feed and includes declarations of all XML namespaces used in the feed. Two namespaces are declared: the "podcast" namespace from Podcast Index and the "iTunes" namespace from Apple. -->`);
   lines.push(`<rss ${rssAttrs} version="2.0">`);
 
@@ -587,6 +588,7 @@ export const generatePublisherRssFeed = (publisher: PublisherFeed): string => {
   // RSS root with namespaces
   const baseNs = 'xmlns:podcast="https://podcastindex.org/namespace/1.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"';
   const rssAttrs = additionalNsDecl ? `${baseNs} ${additionalNsDecl}` : baseNs;
+  lines.push(`<!-- This feed follows the Demu feed template format. See https://github.com/de-mu/demu-feed-template for the original template and documentation. -->`);
   lines.push(`<!-- This "rss" tag denotes the beginning of the RSS feed and includes declarations of all XML namespaces used in the feed. Two namespaces are declared: the "podcast" namespace from Podcast Index and the "iTunes" namespace from Apple. -->`);
   lines.push(`<rss ${rssAttrs} version="2.0">`);
 

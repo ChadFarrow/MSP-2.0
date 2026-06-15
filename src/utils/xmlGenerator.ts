@@ -350,15 +350,6 @@ const generateCommonChannelElements = (data: BaseChannelData, medium: string, le
     lines.push(`${indent(level)}<itunes:keywords>${escapeXml(data.keywords)}</itunes:keywords>`);
   }
 
-  // Contact
-  if (data.managingEditor) {
-    lines.push(`${indent(level)}<!-- Contact info for your web master and/or managing editor can be added (an email address is expected) using the tags below. -->`);
-    lines.push(`${indent(level)}<managingEditor>${escapeXml(data.managingEditor)}</managingEditor>`);
-  }
-  if (data.webMaster) {
-    lines.push(`${indent(level)}<webMaster>${escapeXml(data.webMaster)}</webMaster>`);
-  }
-
   // Image
   if (data.imageUrl) {
     lines.push(`${indent(level)}<!-- The RSS image tag displays an image to aggregators digesting this feed. It has 4 children tags: url, title, link, and description. -->`);

@@ -194,6 +194,23 @@ export function PreviewModal({ onClose, album, publisherFeed, feedType = 'album'
       className="preview-modal"
       footer={
         <>
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '0.875rem',
+              cursor: 'pointer',
+              userSelect: 'none'
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={showComments}
+              onChange={(e) => setShowComments(e.target.checked)}
+            />
+            Show comments
+          </label>
           <button className="btn btn-secondary" onClick={handleCopy}>
             Copy to Clipboard
           </button>
@@ -206,25 +223,6 @@ export function PreviewModal({ onClose, album, publisherFeed, feedType = 'album'
         </>
       }
     >
-      <label
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          marginBottom: '12px',
-          fontSize: '0.875rem',
-          cursor: 'pointer',
-          userSelect: 'none'
-        }}
-      >
-        <input
-          type="checkbox"
-          checked={showComments}
-          onChange={(e) => setShowComments(e.target.checked)}
-        />
-        Show comments
-      </label>
-
       <pre
         style={{
           backgroundColor: '#1e1e1e',

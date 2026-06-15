@@ -275,16 +275,26 @@ const generatePodcastImageXml = (image: PodcastImage): string | null => {
 const generateCommonChannelElements = (data: BaseChannelData, medium: string, level: number): string[] => {
   const lines: string[] = [];
 
+  // This function is shared by album/video feeds and publisher (label/catalog) feeds.
+  // Comments that describe an album-centric concept are reworded for publisher feeds.
+  const isPublisher = medium === 'publisher';
+
   // Title
-  lines.push(`${indent(level)}<!-- The "title" tag will contain the name of your album. -->`);
+  lines.push(isPublisher
+    ? `${indent(level)}<!-- The "title" tag will contain the name of your publisher or label catalog. -->`
+    : `${indent(level)}<!-- The "title" tag will contain the name of your album. -->`);
   lines.push(`${indent(level)}<title>${escapeXml(data.title)}</title>`);
 
   // Author
-  lines.push(`${indent(level)}<!-- The "itunes:author" tag describes the artist or band name. -->`);
+  lines.push(isPublisher
+    ? `${indent(level)}<!-- The "itunes:author" tag describes the label or publisher name. -->`
+    : `${indent(level)}<!-- The "itunes:author" tag describes the artist or band name. -->`);
   lines.push(`${indent(level)}<itunes:author>${escapeXml(data.author)}</itunes:author>`);
 
   // Description
-  lines.push(`${indent(level)}<!-- The "description" tag gives listeners a brief overview of the album. -->`);
+  lines.push(isPublisher
+    ? `${indent(level)}<!-- The "description" tag gives listeners a brief overview of this publisher or label catalog. -->`
+    : `${indent(level)}<!-- The "description" tag gives listeners a brief overview of the album. -->`);
   lines.push(`${indent(level)}<description>`);
   lines.push(`${indent(level + 1)}${escapeXml(data.description)}`);
   lines.push(`${indent(level)}</description>`);
@@ -375,7 +385,9 @@ const generateCommonChannelElements = (data: BaseChannelData, medium: string, le
   }
 
   // Medium
-  lines.push(`${indent(level)}<!-- The "podcast:medium" tag tells apps this feed contains music. It is intended for feeds whose items are exclusively music files. See https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md#medium -->`);
+  lines.push(isPublisher
+    ? `${indent(level)}<!-- The "podcast:medium" tag identifies this as a publisher feed: a label/catalog that references other feeds (each album) via "podcast:remoteItem", rather than containing media items itself. See https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md#medium -->`
+    : `${indent(level)}<!-- The "podcast:medium" tag tells apps this feed contains music. It is intended for feeds whose items are exclusively music files. See https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md#medium -->`);
   lines.push(`${indent(level)}<podcast:medium>${medium}</podcast:medium>`);
 
   // Explicit

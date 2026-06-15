@@ -14,7 +14,7 @@
         </description>
         <!-- The "link" tag holds the main link you want listeners to visit. Usually a band website will be put here. -->
         <link>https://mybandwebsite.com</link>
-        <!-- The "language" tag describes the language the feed is written in. See https://www.rssboard.org/rss-language-codes for a full list of RSS Language codes. -->
+        <!-- The "language" tag describes the language the music is in. See https://www.rssboard.org/rss-language-codes for a full list of RSS Language codes. -->
         <language>en</language>
         <!-- The "generator" tag describes how this feed was created. -->
         <generator>MSP 2.0 - Music Side Project Studio</generator>

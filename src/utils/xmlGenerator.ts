@@ -306,7 +306,7 @@ const generateCommonChannelElements = (data: BaseChannelData, medium: string, le
   }
 
   // Language
-  lines.push(`${indent(level)}<!-- The "language" tag describes the language the feed is written in. See https://www.rssboard.org/rss-language-codes for a full list of RSS Language codes. -->`);
+  lines.push(`${indent(level)}<!-- The "language" tag describes the language the music is in. See https://www.rssboard.org/rss-language-codes for a full list of RSS Language codes. -->`);
   lines.push(`${indent(level)}<language>${data.language}</language>`);
 
   // Generator

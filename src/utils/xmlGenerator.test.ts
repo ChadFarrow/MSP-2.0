@@ -297,7 +297,7 @@ describe('DeMu-style educational comments', () => {
     expect(xml).toContain('This feed follows the Demu feed template format.');
     // Album-centric wording for shared channel comments
     expect(xml).toContain('<!-- The "title" tag will contain the name of your album. -->');
-    expect(xml).toContain('<!-- The "itunes:author" tag describes the artist or band name. -->');
+    expect(xml).toContain('describes the author of the content in the feed. For a music release, we put the album\'s artist here.');
     expect(xml).toContain('this feed contains music');
   });
 

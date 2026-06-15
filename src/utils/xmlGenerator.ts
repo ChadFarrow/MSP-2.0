@@ -381,7 +381,7 @@ const generateCommonChannelElements = (data: BaseChannelData, medium: string, le
   // Medium
   lines.push(isPublisher
     ? `${indent(level)}<!-- The "podcast:medium" tag identifies this as a publisher feed: a label/catalog that references other feeds (each album) via "podcast:remoteItem", rather than containing media items itself. See https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md#medium -->`
-    : `${indent(level)}<!-- The "podcast:medium" tag is used to tell apps that this feed contains music. It is intended to describe feeds that have *only* music as the contents of its item enclosures. Shows about music or featuring music should not use a "podcast:medium" of music if they are podcasts or radio shows. If you are publishing a music album or single with this feed, the tag below should remain unchanged. If you are publishing a playlist of other existing songs (or any other "list mediums"), you should add a capital "L" to the end of the medium tag's content. More information is available here: https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md#medium -->`);
+    : `${indent(level)}<!-- The "podcast:medium" tag is used to tell apps that this feed contains music. It is intended to describe feeds that have *only* music as the contents of its item enclosures. Shows about music or featuring music should not use a "podcast:medium" of music if they are podcasts or radio shows. More information is available here: https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md#medium -->`);
   lines.push(`${indent(level)}<podcast:medium>${medium}</podcast:medium>`);
 
   // Explicit

@@ -213,7 +213,7 @@ const generateValueXml = (value: ValueBlock, level: number): string => {
   if (value.suggested) attrs.push(`suggested="${value.suggested}"`);
 
   lines.push(`${indent(level)}<podcast:value ${attrs.join(' ')}>`);
-  lines.push(`${indent(level + 1)}<!-- The "podcast:valueRecipient" tag describes each recipient in the value split. This can point to a lightning node's public address directly, as in the examples below. There are also services such as Alby, Fountain, Satoshis.Stream and others that can be used to create boostable lightning wallets. For more info on how to set up a wallet to build out a valueRecipient tag with, refer to the guides here: https://value4value.info/guides/ -->`);
+  lines.push(`${indent(level + 1)}<!-- The "podcast:valueRecipient" tag describes each recipient in the value split. Each recipient's "address" is either a Lightning address (e.g. name@getalby.com) or a Lightning node's public key, and "type" is set to "lnaddress" or "node" to match. MSP sets all of this up for you in the app's Value section — the recipients, their splits, and the community support splits — so there's no need to build these tags by hand. Learn more about Value 4 Value: https://value4value.info/guides/ -->`);
   value.recipients.forEach(r => lines.push(generateRecipientXml(r, level + 1)));
   lines.push(`${indent(level)}</podcast:value>`);
 

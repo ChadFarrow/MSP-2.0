@@ -452,7 +452,7 @@ const generateTrackXml = (track: Track, album: Album, level: number): string => 
   lines.push(`${indent(level + 1)}<!-- The "pubDate" tag describes the date this track was published. This could be the same as the album's pubDate, or more songs could be added to a feed after it is initially published. Date time data must be in RFC-822 format. -->`);
   lines.push(`${indent(level + 1)}<pubDate>${formatRFC822Date(track.pubDate)}</pubDate>`);
 
-  lines.push(`${indent(level + 1)}<!-- The "guid" tag defines a Globally Unique Identifier for an individual item in your RSS feed. It is expected to be a string, but there are technically no roles for its syntax other than it must be unique. In order to generate unique GUIDs for each item in your feed, it is recommended to use a GUID generator such as this one: https://guidgenerator.com/ Simply indicate the number of GUIDs you need (one for each item in your feed) and click "Generate some GUIDs!" Make sure each one of your items does have a unique GUID, because this is the identifier used to make remoteItems and the valueTimeSplit work. If your song is played on a music show, this is how the boosts get to the right place! -->`);
+  lines.push(`${indent(level + 1)}<!-- The "guid" tag is a Globally Unique Identifier for an individual track in this feed. MSP generates a unique GUID for each track automatically, so there's no need to make one yourself. It must stay unique and should never change once set, because it's the identifier podcast apps and Podcast Index use to make remoteItems and valueTimeSplit work — it's how a boost gets routed to the right track. -->`);
   lines.push(`${indent(level + 1)}<guid isPermaLink="false">${escapeXml(track.guid)}</guid>`);
 
   if (track.transcriptUrl) {

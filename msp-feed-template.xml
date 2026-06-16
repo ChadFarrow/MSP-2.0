@@ -75,7 +75,7 @@
             <itunes:image href="https://mybandwebsite.com/album-art.jpg" />
             <!-- The "enclosure" tag is where the true magic of podcasting sits. This tag holds the audio or video file that represents the main content of the "item" tag. The url attribute links to the file itself, while the length attribute shows the size of the file in bytes. The type attribute shows the file's standard MIME type. If you are updating the tag with your own mp3 file, change the url to point to your own hosted mp3 file and change the length to the size of your mp3 in bytes. For a list of common MIME types see https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types/Common_types -->
             <enclosure url="https://mybandwebsite.com/audio/track01.mp3" length="6029312" type="audio/mpeg"/>
-            <!-- The "itunes:duration" tag defines the total duration of the enclosure file in HH:MM:SS format. It currently is required for Fountain Radio functionality, although most podcasting and decentralized music apps surface the duration directly from the file. As such, this tag was previously considered optional for decentralized music feeds, but should be included if you want your music to work in Fountain Radio. -->
+            <!-- The "itunes:duration" tag defines the total length of the track in HH:MM:SS format. MSP fills this in automatically from your audio file. Most podcasting and music apps can also read the duration directly from the file, but including the tag is recommended for broad compatibility. -->
             <itunes:duration>00:04:12</itunes:duration>
             <!-- The "podcast:season" tag describes the season number. Music albums use season 1. -->
             <podcast:season>1</podcast:season>
@@ -104,7 +104,7 @@
             <itunes:image href="https://mybandwebsite.com/album-art.jpg" />
             <!-- The "enclosure" tag is where the true magic of podcasting sits. This tag holds the audio or video file that represents the main content of the "item" tag. The url attribute links to the file itself, while the length attribute shows the size of the file in bytes. The type attribute shows the file's standard MIME type. If you are updating the tag with your own mp3 file, change the url to point to your own hosted mp3 file and change the length to the size of your mp3 in bytes. For a list of common MIME types see https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types/Common_types -->
             <enclosure url="https://mybandwebsite.com/audio/track02.mp3" length="7340032" type="audio/mpeg"/>
-            <!-- The "itunes:duration" tag defines the total duration of the enclosure file in HH:MM:SS format. It currently is required for Fountain Radio functionality, although most podcasting and decentralized music apps surface the duration directly from the file. As such, this tag was previously considered optional for decentralized music feeds, but should be included if you want your music to work in Fountain Radio. -->
+            <!-- The "itunes:duration" tag defines the total length of the track in HH:MM:SS format. MSP fills this in automatically from your audio file. Most podcasting and music apps can also read the duration directly from the file, but including the tag is recommended for broad compatibility. -->
             <itunes:duration>00:05:18</itunes:duration>
             <!-- The "podcast:season" tag describes the season number. Music albums use season 1. -->
             <podcast:season>1</podcast:season>

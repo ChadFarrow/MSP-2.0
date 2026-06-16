@@ -481,7 +481,7 @@ const generateTrackXml = (track: Track, album: Album, level: number): string => 
   lines.push(`${indent(level + 1)}<enclosure url="${escapeXml(enclosureUrl)}" length="${fileLength}" type="${escapeXml(track.enclosureType)}"/>`);
 
   // Duration
-  lines.push(`${indent(level + 1)}<!-- The "itunes:duration" tag defines the total duration of the enclosure file in HH:MM:SS format. It currently is required for Fountain Radio functionality, although most podcasting and decentralized music apps surface the duration directly from the file. As such, this tag was previously considered optional for decentralized music feeds, but should be included if you want your music to work in Fountain Radio. -->`);
+  lines.push(`${indent(level + 1)}<!-- The "itunes:duration" tag defines the total length of the track in HH:MM:SS format. MSP fills this in automatically from your audio file. Most podcasting and music apps can also read the duration directly from the file, but including the tag is recommended for broad compatibility. -->`);
   lines.push(`${indent(level + 1)}<itunes:duration>${track.duration}</itunes:duration>`);
 
   // Season (always 1)

@@ -316,7 +316,7 @@ const generateCommonChannelElements = (data: BaseChannelData, medium: string, le
   // Dates
   lines.push(`${indent(level)}<!-- The pubDate refers to the date and time the most recent item in the feed was published. Date and time should be in RFC-822 format. -->`);
   lines.push(`${indent(level)}<pubDate>${formatRFC822Date(data.pubDate)}</pubDate>`);
-  lines.push(`${indent(level)}<!-- The "lastBuildDate" refers to the last time the feed was "built", it most often will match the pubDate above. also should be in RFC-822 -->`);
+  lines.push(`${indent(level)}<!-- The "lastBuildDate" is the last time the feed was rebuilt, in RFC-822 format. MSP updates it automatically each time the feed is generated. -->`);
   lines.push(`${indent(level)}<lastBuildDate>${formatRFC822Date(data.lastBuildDate)}</lastBuildDate>`);
 
   // Locked
@@ -477,7 +477,7 @@ const generateTrackXml = (track: Track, album: Album, level: number): string => 
   // Enclosure (audio file)
   const fileLength = track.enclosureLength || '0';
   const enclosureUrl = album.op3 ? applyOp3Prefix(track.enclosureUrl, album.podcastGuid) : track.enclosureUrl;
-  lines.push(`${indent(level + 1)}<!-- The "enclosure" tag is where the true magic of podcasting sits. This tag holds the audio or video file that represents the main content of the "item" tag. The url attribute links to the file itself, while the length attribute shows the size of the file in bytes. The type attribute shows the file's standard MIME type. If you are updating the tag with your own mp3 file, change the url to point to your own hosted mp3 file and change the length to the size of your mp3 in bytes. For a list of common MIME types see https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types/Common_types -->`);
+  lines.push(`${indent(level + 1)}<!-- The "enclosure" tag holds the audio or video file that is the main content of the "item" tag. The "url" attribute links to the file, "length" is the file size in bytes, and "type" is the file's MIME type (e.g. audio/mpeg for MP3). MSP sets the url and MIME type from the audio or video you add to the track. For a list of common MIME types see https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types/Common_types -->`);
   lines.push(`${indent(level + 1)}<enclosure url="${escapeXml(enclosureUrl)}" length="${fileLength}" type="${escapeXml(track.enclosureType)}"/>`);
 
   // Duration

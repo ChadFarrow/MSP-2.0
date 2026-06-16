@@ -20,7 +20,7 @@
         <generator>MSP 2.0 - Music Side Project Studio</generator>
         <!-- The pubDate refers to the date and time the most recent item in the feed was published. Date and time should be in RFC-822 format. -->
         <pubDate>Mon, 15 Jun 2026 23:16:31 GMT</pubDate>
-        <!-- The "lastBuildDate" refers to the last time the feed was "built", it most often will match the pubDate above. also should be in RFC-822 -->
+        <!-- The "lastBuildDate" is the last time the feed was rebuilt, in RFC-822 format. MSP updates it automatically each time the feed is generated. -->
         <lastBuildDate>Mon, 15 Jun 2026 23:16:31 GMT</lastBuildDate>
         <!-- The "podcast:locked" tag describes which platforms/apps, if any, are disallowed from importing this feed. For more info see https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md#locked -->
         <podcast:locked owner="you@example.com">yes</podcast:locked>
@@ -73,7 +73,7 @@
             <guid isPermaLink="false">3b77cf04-4256-42d4-804e-24df710d3d91</guid>
             <!-- The "itunes:image" tag at the item level links to art of the individual track if different from the overall album art at the channel level. If the tag below is not present, the channel level's image will be displayed instead. -->
             <itunes:image href="https://mybandwebsite.com/album-art.jpg" />
-            <!-- The "enclosure" tag is where the true magic of podcasting sits. This tag holds the audio or video file that represents the main content of the "item" tag. The url attribute links to the file itself, while the length attribute shows the size of the file in bytes. The type attribute shows the file's standard MIME type. If you are updating the tag with your own mp3 file, change the url to point to your own hosted mp3 file and change the length to the size of your mp3 in bytes. For a list of common MIME types see https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types/Common_types -->
+            <!-- The "enclosure" tag holds the audio or video file that is the main content of the "item" tag. The "url" attribute links to the file, "length" is the file size in bytes, and "type" is the file's MIME type (e.g. audio/mpeg for MP3). MSP sets the url and MIME type from the audio or video you add to the track. For a list of common MIME types see https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types/Common_types -->
             <enclosure url="https://mybandwebsite.com/audio/track01.mp3" length="6029312" type="audio/mpeg"/>
             <!-- The "itunes:duration" tag defines the total length of the track in HH:MM:SS format. MSP fills this in automatically from your audio file. Most podcasting and music apps can also read the duration directly from the file, but including the tag is recommended for broad compatibility. -->
             <itunes:duration>00:04:12</itunes:duration>
@@ -102,7 +102,7 @@
             <guid isPermaLink="false">3b77cf04-4256-42d4-804e-24df710d3d92</guid>
             <!-- The "itunes:image" tag at the item level links to art of the individual track if different from the overall album art at the channel level. If the tag below is not present, the channel level's image will be displayed instead. -->
             <itunes:image href="https://mybandwebsite.com/album-art.jpg" />
-            <!-- The "enclosure" tag is where the true magic of podcasting sits. This tag holds the audio or video file that represents the main content of the "item" tag. The url attribute links to the file itself, while the length attribute shows the size of the file in bytes. The type attribute shows the file's standard MIME type. If you are updating the tag with your own mp3 file, change the url to point to your own hosted mp3 file and change the length to the size of your mp3 in bytes. For a list of common MIME types see https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types/Common_types -->
+            <!-- The "enclosure" tag holds the audio or video file that is the main content of the "item" tag. The "url" attribute links to the file, "length" is the file size in bytes, and "type" is the file's MIME type (e.g. audio/mpeg for MP3). MSP sets the url and MIME type from the audio or video you add to the track. For a list of common MIME types see https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types/Common_types -->
             <enclosure url="https://mybandwebsite.com/audio/track02.mp3" length="7340032" type="audio/mpeg"/>
             <!-- The "itunes:duration" tag defines the total length of the track in HH:MM:SS format. MSP fills this in automatically from your audio file. Most podcasting and music apps can also read the duration directly from the file, but including the tag is recommended for broad compatibility. -->
             <itunes:duration>00:05:18</itunes:duration>

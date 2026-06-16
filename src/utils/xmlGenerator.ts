@@ -279,6 +279,9 @@ const generateCommonChannelElements = (data: BaseChannelData, medium: string, le
   // Comments that describe an album-centric concept are reworded for publisher feeds.
   const isPublisher = medium === 'publisher';
 
+  // Insert a single blank line between logical groups (no leading or double blanks).
+  const sep = () => { if (lines.length && lines[lines.length - 1] !== '') lines.push(''); };
+
   // Title
   lines.push(isPublisher
     ? `${indent(level)}<!-- The "title" tag will contain the name of your publisher or label catalog. -->`
@@ -310,6 +313,7 @@ const generateCommonChannelElements = (data: BaseChannelData, medium: string, le
   lines.push(`${indent(level)}<language>${data.language}</language>`);
 
   // Generator
+  sep();
   lines.push(`${indent(level)}<!-- The "generator" tag describes how this feed was created. -->`);
   lines.push(`${indent(level)}<generator>MSP 2.0 - Music Side Project Studio</generator>`);
 
@@ -318,6 +322,9 @@ const generateCommonChannelElements = (data: BaseChannelData, medium: string, le
   lines.push(`${indent(level)}<pubDate>${formatRFC822Date(data.pubDate)}</pubDate>`);
   lines.push(`${indent(level)}<!-- The "lastBuildDate" is the last time the feed was rebuilt, in RFC-822 format. MSP updates it automatically each time the feed is generated. -->`);
   lines.push(`${indent(level)}<lastBuildDate>${formatRFC822Date(data.lastBuildDate)}</lastBuildDate>`);
+
+  // Identifiers (locked / guid / npub) — one blank before the first one present
+  if ((data.locked && data.lockedOwner) || data.podcastGuid || (data as Album).artistNpub) sep();
 
   // Locked
   if (data.locked && data.lockedOwner) {
@@ -338,6 +345,7 @@ const generateCommonChannelElements = (data: BaseChannelData, medium: string, le
   }
 
   // Categories (default to Music for music feeds)
+  sep();
   const categories = data.categories.length > 0 ? data.categories : ['Music'];
   lines.push(`${indent(level)}<!-- The "itunes:category" tags describe which categories (and optional subcategories) your feed falls under. You may include up to 3 of these tags. For a full list and more info on iTunes categories see https://podcasters.apple.com/support/1691-apple-podcasts-categories -->`);
   categories.forEach(cat => {
@@ -349,6 +357,10 @@ const generateCommonChannelElements = (data: BaseChannelData, medium: string, le
     lines.push(`${indent(level)}<!-- The "itunes:keywords" tag contains search terms to help listeners discover your music. -->`);
     lines.push(`${indent(level)}<itunes:keywords>${escapeXml(data.keywords)}</itunes:keywords>`);
   }
+
+  // Artwork (RSS image + itunes:image + additional podcast:image)
+  const podcastImgTags = (data.podcastImages || []).map(img => generatePodcastImageXml(img)).filter((t): t is string => t !== null);
+  if (data.imageUrl || podcastImgTags.length > 0) sep();
 
   // Image
   if (data.imageUrl) {
@@ -372,13 +384,13 @@ const generateCommonChannelElements = (data: BaseChannelData, medium: string, le
   }
 
   // Podcasting 2.0 additional images
-  const podcastImgTags = (data.podcastImages || []).map(img => generatePodcastImageXml(img)).filter((t): t is string => t !== null);
   if (podcastImgTags.length > 0) {
     lines.push(`${indent(level)}<!-- The "podcast:image" tags provide additional artwork in different aspect ratios (e.g. a wide canvas background, a banner, or a social card). See https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md#images -->`);
     podcastImgTags.forEach(tag => lines.push(`${indent(level)}${tag}`));
   }
 
   // Medium
+  sep();
   lines.push(isPublisher
     ? `${indent(level)}<!-- The "podcast:medium" tag identifies this as a publisher feed: a label/catalog that references other feeds (each album) via "podcast:remoteItem", rather than containing media items itself. See https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md#medium -->`
     : `${indent(level)}<!-- The "podcast:medium" tag is used to tell apps that this feed contains music. It is intended to describe feeds that have *only* music as the contents of its item enclosures. Shows about music or featuring music should not use a "podcast:medium" of music if they are podcasts or radio shows. More information is available here: https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md#medium -->`);
@@ -390,6 +402,7 @@ const generateCommonChannelElements = (data: BaseChannelData, medium: string, le
 
   // Owner
   if (data.ownerName || data.ownerEmail) {
+    sep();
     lines.push(`${indent(level)}<!-- The "itunes:owner" tag provides contact info for administrative purposes, such as Apple Podcasts ownership verification. -->`);
     lines.push(`${indent(level)}<itunes:owner>`);
     if (data.ownerName) {
@@ -403,12 +416,14 @@ const generateCommonChannelElements = (data: BaseChannelData, medium: string, le
 
   // Persons
   if (data.persons.length > 0) {
+    sep();
     lines.push(`${indent(level)}<!-- The "person" tags describe people of note to the project in some way. This can include individual band members, the band as a whole, writers, producers, featured artists and more. Each one is like a "credit" with the person's name as the tag's content. The person tag has 5 attributes: "href" is a link to some landing page for that person (maybe a personal website or social profile), "img" is a link to an online profile picture, "npub" is the person's Nostr public key, and "group" and "role" describe the person's role in the project. You can list person tags in the channel level, the item level, or both. If present in the item level, person tags will overwrite all channel-level persons, so channel-level persons who are also involved in specific items should be included in both. For more info please see https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md#person -->`);
     data.persons.forEach(p => lines.push(generatePersonXml(p, level)));
   }
 
   // Value block
   if (data.value.recipients.length > 0) {
+    sep();
     lines.push(`${indent(level)}<!-- The "podcast:value" tag describes how each payment should be divided and where the payments should be routed when this feed receives boosts or streaming payments. The parent tag describes the type and method of payments as well as a "suggested" boost amount. If you intend to receive lightning payments of Bitcoin then the "type" and "method" attributes should not be changed. Each "podcast:valueRecipient" tag will be listed as a child of this parent tag. Further reading: https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md#value -->`);
     lines.push(generateValueXml(data.value, level));
   }
@@ -416,6 +431,7 @@ const generateCommonChannelElements = (data: BaseChannelData, medium: string, le
   // Funding
   const fundingLines = (data.funding || []).map(f => generateFundingXml(f, level)).filter(Boolean);
   if (fundingLines.length > 0) {
+    sep();
     lines.push(`${indent(level)}<!-- The "podcast:funding" tag provides a link where listeners can support you directly (e.g. a Patreon, PayPal, or donation page). -->`);
     fundingLines.forEach(f => lines.push(f as string));
   }
@@ -439,6 +455,9 @@ const applyOp3Prefix = (url: string, podcastGuid?: string): string => {
 const generateTrackXml = (track: Track, album: Album, level: number): string => {
   const lines: string[] = [];
 
+  // Insert a single blank line between logical groups inside the item (no leading/double blanks).
+  const sep = () => { if (lines.length && lines[lines.length - 1] !== '') lines.push(''); };
+
   lines.push(`${indent(level)}<item>`);
 
   lines.push(`${indent(level + 1)}<!-- The "title" tag holds the song title. -->`);
@@ -456,19 +475,21 @@ const generateTrackXml = (track: Track, album: Album, level: number): string => 
   lines.push(`${indent(level + 1)}<guid isPermaLink="false">${escapeXml(track.guid)}</guid>`);
 
   if (track.transcriptUrl) {
+    sep();
     lines.push(`${indent(level + 1)}<!-- The "podcast:transcript" tag links to an external file with lyrics. An srt file can be made which time codes the lyrics of your song to be displayed in time with the track. Additional reading on the transcript tag: https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md#transcript Instructions for how to time code captions in .srt files: https://itsupport.ou.edu/TDClient/30/Unified/KB/ArticleDet?ID=384 -->`);
     lines.push(`${indent(level + 1)}<podcast:transcript url="${escapeXml(track.transcriptUrl)}" type="${escapeXml(track.transcriptType || 'application/srt')}" />`);
   }
 
-  // Track artwork (falls back to album)
+  // Track artwork (item-level itunes:image + additional podcast:image; falls back to album)
   const artUrl = track.trackArtUrl || album.imageUrl;
+  const trackImgTags = (track.podcastImages || []).map(img => generatePodcastImageXml(img)).filter((t): t is string => t !== null);
+  if (artUrl || trackImgTags.length > 0) sep();
   if (artUrl) {
     lines.push(`${indent(level + 1)}<!-- The "itunes:image" tag at the item level links to art of the individual track if different from the overall album art at the channel level. If the tag below is not present, the channel level's image will be displayed instead. -->`);
     lines.push(`${indent(level + 1)}<itunes:image href="${escapeXml(artUrl)}" />`);
   }
 
   // Podcasting 2.0 additional images (track level)
-  const trackImgTags = (track.podcastImages || []).map(img => generatePodcastImageXml(img)).filter((t): t is string => t !== null);
   if (trackImgTags.length > 0) {
     lines.push(`${indent(level + 1)}<!-- Track-level "podcast:image" tags provide additional artwork for this specific track in different aspect ratios. -->`);
     trackImgTags.forEach(tag => lines.push(`${indent(level + 1)}${tag}`));
@@ -477,6 +498,7 @@ const generateTrackXml = (track: Track, album: Album, level: number): string => 
   // Enclosure (audio file)
   const fileLength = track.enclosureLength || '0';
   const enclosureUrl = album.op3 ? applyOp3Prefix(track.enclosureUrl, album.podcastGuid) : track.enclosureUrl;
+  sep();
   lines.push(`${indent(level + 1)}<!-- The "enclosure" tag holds the audio or video file that is the main content of the "item" tag. The "url" attribute links to the file, "length" is the file size in bytes, and "type" is the file's MIME type (e.g. audio/mpeg for MP3). MSP sets the url and MIME type from the audio or video you add to the track. For a list of common MIME types see https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types/Common_types -->`);
   lines.push(`${indent(level + 1)}<enclosure url="${escapeXml(enclosureUrl)}" length="${fileLength}" type="${escapeXml(track.enclosureType)}"/>`);
 
@@ -485,6 +507,7 @@ const generateTrackXml = (track: Track, album: Album, level: number): string => 
   lines.push(`${indent(level + 1)}<itunes:duration>${track.duration}</itunes:duration>`);
 
   // Season (always 1)
+  sep();
   lines.push(`${indent(level + 1)}<!-- The "podcast:season" tag describes the season number. Music albums use season 1. -->`);
   lines.push(`${indent(level + 1)}<podcast:season>1</podcast:season>`);
 
@@ -498,6 +521,7 @@ const generateTrackXml = (track: Track, album: Album, level: number): string => 
 
   // Persons (only output at item level when overriding album persons)
   if (track.overridePersons) {
+    sep();
     lines.push(`${indent(level + 1)}<!-- The "podcast:person" tag is valid at both the channel and item levels. See above in the channel level for links to documentation. If you are listing specific people here in the item level, remember that these person tags will overwrite all tags present at the channel level, so person tags who are also relevant to this specific item should be listed at both the item and channel levels. -->`);
     track.persons.forEach(p => lines.push(generatePersonXml(p, level + 1)));
   }
@@ -505,6 +529,7 @@ const generateTrackXml = (track: Track, album: Album, level: number): string => 
   // Value block (override or inherit from album)
   const value = track.overrideValue && track.value ? track.value : album.value;
   if (value.recipients.length > 0) {
+    sep();
     if (track.overrideValue && track.value) {
       lines.push(`${indent(level + 1)}<!-- The "podcast:value" tag is valid at both the channel and item levels. See above in the channel level for links to the documentation. A value tag in the item will overwrite the channel level tag and will be prioritized by most apps if a listener boosts the currently playing track. However, different apps may handle the display and experience of item vs channel level boosts differently, so it's important to test your splits in different apps. Common use cases of value tags include writing splits at the channel level for those who worked on the entire project and writing splits at the item level for people who may have been featured on or contributed to specific tracks, but not necessarily on all of the tracks on the album. This might include a guest producer, an album artwork designer or a featured vocalist or musician. -->`);
     } else {
@@ -545,6 +570,7 @@ export const generateRssFeed = (album: Album): string => {
   // Channel
   lines.push(`${indent(1)}<!-- Below is the "channel" tag. It contains metadata describing the feed as a whole. The "channel" tag in RSS has traditionally been used to describe a podcast or blog. In the decentralized music world, the "channel" tag could be used to describe an album, a band, a label, a playlist, or more. The most common use of channels thus far has been for publishing albums, and this template has been designed for that particular use case. -->`);
   lines.push(`${indent(1)}<channel>`);
+  lines.push('');
 
   // Common channel elements
   lines.push(...generateCommonChannelElements(album, album.medium, 2));
@@ -553,6 +579,7 @@ export const generateRssFeed = (album: Album): string => {
   if (album.publisher) {
     const publisherXml = generatePublisherXml(album.publisher, 2);
     if (publisherXml) {
+      lines.push('');
       lines.push(`${indent(2)}<!-- The "podcast:publisher" tag links this album to a publisher or label feed, establishing the organizational hierarchy. -->`);
       lines.push(publisherXml);
     }
@@ -561,13 +588,20 @@ export const generateRssFeed = (album: Album): string => {
   // Unknown/unsupported channel elements (preserved from import)
   if (album.unknownChannelElements) {
     const unknownXml = generateUnknownXml(album.unknownChannelElements, 2);
-    if (unknownXml) lines.push(unknownXml);
+    if (unknownXml) {
+      lines.push('');
+      lines.push(unknownXml);
+    }
   }
 
   // Tracks
   if (album.tracks.length > 0) {
+    lines.push('');
     lines.push(`${indent(2)}<!-- The "item" tag describes an item in your RSS feed. In a music album there should be one item for each track on the album. Singles could be released with one item or with an "A-side" item and an additional "B-side" item. Many formats are possible, but the important part is you need to have an item for each song in your feed. All the child tags of the item tag describe that individual track. -->`);
-    album.tracks.forEach(track => lines.push(generateTrackXml(track, album, 2)));
+    album.tracks.forEach((track, i) => {
+      if (i > 0) lines.push('');
+      lines.push(generateTrackXml(track, album, 2));
+    });
   }
 
   // Close channel and rss
@@ -601,12 +635,14 @@ export const generatePublisherRssFeed = (publisher: PublisherFeed): string => {
   // Channel
   lines.push(`${indent(1)}<!-- The "channel" tag contains metadata describing this publisher or label catalog. Each album or release in the catalog is referenced as a "podcast:remoteItem" below. -->`);
   lines.push(`${indent(1)}<channel>`);
+  lines.push('');
 
   // Common channel elements (medium is always "publisher" for publisher feeds)
   lines.push(...generateCommonChannelElements(publisher, 'publisher', 2));
 
   // Remote items - the feeds this publisher owns
   if (publisher.remoteItems.length > 0) {
+    lines.push('');
     lines.push(`${indent(2)}<!-- Each "podcast:remoteItem" tag below references an album or feed that this publisher owns or distributes. "feedGuid" and "feedUrl" identify the referenced feed. -->`);
     publisher.remoteItems.forEach(item => {
       lines.push(generateRemoteItemXml(item, 2));
@@ -616,7 +652,10 @@ export const generatePublisherRssFeed = (publisher: PublisherFeed): string => {
   // Unknown/unsupported channel elements (preserved from import)
   if (publisher.unknownChannelElements) {
     const unknownXml = generateUnknownXml(publisher.unknownChannelElements, 2);
-    if (unknownXml) lines.push(unknownXml);
+    if (unknownXml) {
+      lines.push('');
+      lines.push(unknownXml);
+    }
   }
 
   // Close channel and rss

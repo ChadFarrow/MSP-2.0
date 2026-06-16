@@ -370,4 +370,32 @@ describe('DeMu-style educational comments', () => {
     const count = (s: string) => (s.match(/<!--/g) ?? []).length;
     expect(count(xml2)).toBe(count(xml1));
   });
+
+  it('groups tags with single blank lines — never two blank lines in a row (comments on OR off)', () => {
+    const album = createEmptyAlbum();
+    album.title = 'Spacing Test';
+    album.author = 'Artist';
+    album.description = 'A test album';
+    album.link = 'https://example.com';
+    album.keywords = 'rock';
+    album.imageUrl = 'https://example.com/cover.jpg';
+    album.ownerName = 'Owner';
+    album.persons = [{ name: 'P', roles: [{ group: 'music', role: 'band' }] }];
+    album.value = { type: 'lightning', method: 'keysend', suggested: '0', recipients: [{ name: 'N', address: 'n@getalby.com', split: 100, type: 'lnaddress' }] };
+    album.tracks = [
+      { ...album.tracks[0], title: 'One', enclosureUrl: 'https://example.com/1.mp3' },
+      { ...album.tracks[0], title: 'Two', enclosureUrl: 'https://example.com/2.mp3' },
+    ];
+
+    const xml = generateRssFeed(album);
+    const doubleBlank = /\n[ \t]*\n[ \t]*\n/;
+    // Has blank-line grouping at all
+    expect(xml).toMatch(/\n\n/);
+    // ...but never two consecutive blank lines, with comments on or off
+    expect(xml).not.toMatch(doubleBlank);
+    expect(stripXmlComments(xml)).not.toMatch(doubleBlank);
+    // No leading/trailing blank lines
+    expect(xml.startsWith('\n')).toBe(false);
+    expect(xml.endsWith('\n')).toBe(false);
+  });
 });

@@ -257,20 +257,6 @@ function AppContent() {
                       </button>
                     </>
                   )}
-                  {showExperimental && (
-                    <>
-                      <div className="dropdown-divider" />
-                      <a
-                        className="dropdown-item"
-                        href="https://msp-2-0-git-fafo-chadfs-projects.vercel.app/"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={() => setShowDropdown(false)}
-                      >
-                        🧪 Experimental (FAFO)
-                      </a>
-                    </>
-                  )}
                   <div className="dropdown-divider" />
                   <div className="dropdown-version">v{__APP_VERSION__}</div>
                 </div>

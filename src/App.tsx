@@ -17,6 +17,7 @@ import { PreviewModal } from './components/modals/PreviewModal';
 import { PodpingModal } from './components/modals/PodpingModal';
 import { InfoModal } from './components/modals/InfoModal';
 import { NostrConnectModal } from './components/modals/NostrConnectModal';
+import { ManagedKeyModal } from './components/modals/ManagedKeyModal';
 import { NewFeedChoiceModal } from './components/modals/NewFeedChoiceModal';
 import { Editor } from './components/Editor/Editor';
 import { PublisherEditor } from './components/Editor/PublisherEditor';
@@ -36,6 +37,7 @@ function AppContent() {
   const [showPodpingModal, setShowPodpingModal] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [showNostrConnectModal, setShowNostrConnectModal] = useState(false);
+  const [showManagedKeyModal, setShowManagedKeyModal] = useState(false);
   const [showNewFeedChoiceModal, setShowNewFeedChoiceModal] = useState(false);
   const [pendingNewFeedType, setPendingNewFeedType] = useState<FeedType>('album');
   const [isTemplateMode, setIsTemplateMode] = useState(false);
@@ -228,18 +230,28 @@ function AppContent() {
                   </button>
                   <div className="dropdown-divider" />
                   {nostrState.isLoggedIn ? (
-                    <button
-                      className="dropdown-item"
-                      onClick={() => { nostrLogout(); setShowDropdown(false); }}
-                    >
-                      🚪 Sign Out (nostr)
-                    </button>
+                    <>
+                      <button
+                        className="dropdown-item"
+                        onClick={() => { nostrLogout(); setShowDropdown(false); }}
+                      >
+                        🚪 Sign Out{nostrState.connectionMethod !== 'managed' ? ' (nostr)' : ''}
+                      </button>
+                      {nostrState.connectionMethod === 'managed' && (
+                        <button
+                          className="dropdown-item"
+                          onClick={() => { setShowManagedKeyModal(true); setShowDropdown(false); }}
+                        >
+                          🔑 My Nostr Keys
+                        </button>
+                      )}
+                    </>
                   ) : (
                     <button
                       className="dropdown-item"
                       onClick={() => { setShowNostrConnectModal(true); setShowDropdown(false); }}
                     >
-                      🔑 Sign In (nostr)
+                      🔑 Sign In
                     </button>
                   )}
                   {/* Local dev only — gated on import.meta.env.DEV so it is tree-shaken out of production builds */}
@@ -366,6 +378,9 @@ function AppContent() {
 
       {showNostrConnectModal && (
         <NostrConnectModal onClose={() => setShowNostrConnectModal(false)} />
+      )}
+      {showManagedKeyModal && (
+        <ManagedKeyModal onClose={() => setShowManagedKeyModal(false)} />
       )}
 
       <NewFeedChoiceModal

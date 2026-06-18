@@ -11,6 +11,7 @@ import {
 import {
   hasNip07Extension,
   initNip07Signer,
+  initManagedKeySigner,
   initNip46SignerFromBunker,
   waitForNip46Connection,
   reconnectNip46,
@@ -18,6 +19,7 @@ import {
   loadConnectionMethod,
   loadBunkerPointer,
 } from '../utils/nostrSigner';
+import { hexToBytes } from '@noble/hashes/utils';
 import { fetchNostrProfile } from '../utils/nostrSync';
 
 // Action types
@@ -26,10 +28,10 @@ type NostrAction =
   | { type: 'SET_ERROR'; payload: string | null }
   | { type: 'SET_HAS_EXTENSION'; payload: boolean }
   | { type: 'SET_CONNECTION_METHOD'; payload: 'nip07' | 'nip46' | null }
-  | { type: 'LOGIN_SUCCESS'; payload: { user: NostrUser; method: 'nip07' | 'nip46' } }
+  | { type: 'LOGIN_SUCCESS'; payload: { user: NostrUser; method: 'nip07' | 'nip46' | 'managed' } }
   | { type: 'UPDATE_PROFILE'; payload: { displayName?: string; picture?: string; nip05?: string; lud16?: string } }
   | { type: 'LOGOUT' }
-  | { type: 'RESTORE_SESSION'; payload: { user: NostrUser; method: 'nip07' | 'nip46' } };
+  | { type: 'RESTORE_SESSION'; payload: { user: NostrUser; method: 'nip07' | 'nip46' | 'managed' } };
 
 // Initial state
 const initialState: NostrAuthState = {
@@ -99,6 +101,7 @@ interface NostrContextType {
   state: NostrAuthState;
   login: () => Promise<void>;
   loginWithNip46: (bunkerUri?: string, onUriGenerated?: (uri: string) => void) => Promise<void>;
+  loginWithGoogle: () => void;
   logout: () => void;
 }
 
@@ -128,91 +131,133 @@ export function NostrProvider({ children }: { children: ReactNode }) {
   // Check for extension and restore session on mount
   useEffect(() => {
     async function init() {
-      // Check for stored session
       const storedUser = loadStoredUser();
       const storedMethod = loadConnectionMethod();
       console.log('[Nostr] Init - storedUser:', storedUser?.npub, 'storedMethod:', storedMethod);
 
-      // Check for NIP-07 extension
-      // Wait a bit for extension to inject
+      // Wait for NIP-07 extension to inject
       await new Promise(resolve => setTimeout(resolve, 500));
       const extensionAvailable = hasNip07Extension();
       dispatch({ type: 'SET_HAS_EXTENSION', payload: extensionAvailable });
 
       // Try to restore session based on stored method
-      if (storedUser && storedMethod) {
-        if (storedMethod === 'nip46') {
-          // Try to reconnect NIP-46
-          const bunkerPointer = loadBunkerPointer();
-          console.log('[Nostr] Attempting NIP-46 reconnect, bunkerPointer:', !!bunkerPointer);
-          if (bunkerPointer) {
-            try {
-              console.log('[Nostr] Calling reconnectNip46...');
-              const pubkey = await reconnectNip46();
-              console.log('[Nostr] reconnectNip46 returned:', pubkey);
-              if (pubkey && pubkey === storedUser.pubkey) {
-                dispatch({ type: 'RESTORE_SESSION', payload: { user: storedUser, method: 'nip46' } });
-                refreshProfile(pubkey);
-                return;
-              }
-            } catch (e) {
-              console.error('[Nostr] Failed to reconnect NIP-46:', e);
-            }
-            // Reconnect failed — if credentials are still stored it was a timeout
-            // (reconnectNip46 only clears credentials for auth errors, not timeouts).
-            // Restore the UI session so the user appears logged in; read-only operations
-            // use the stored pubkey directly, and the signer will re-connect on the next
-            // signing operation via checkSignerConnection().
-            if (loadBunkerPointer()) {
-              console.log('[Nostr] Reconnect timed out, restoring session from stored data');
-              dispatch({ type: 'RESTORE_SESSION', payload: { user: storedUser, method: 'nip46' } });
-              return;
-            }
-          }
-          // Credentials were cleared (auth error) — fully log out
-          console.log('[Nostr] Reconnection failed (auth error), clearing stored session');
-          clearStoredUser();
-          clearSigner();
-          dispatch({ type: 'SET_LOADING', payload: false });
-        } else if (storedMethod === 'nip07' && extensionAvailable) {
-          // Verify NIP-07 session
+      if (storedUser && storedMethod === 'nip46') {
+        // Try to reconnect NIP-46
+        const bunkerPointer = loadBunkerPointer();
+        console.log('[Nostr] Attempting NIP-46 reconnect, bunkerPointer:', !!bunkerPointer);
+        if (bunkerPointer) {
           try {
-            const pubkey = await initNip07Signer();
-            if (pubkey === storedUser.pubkey) {
-              dispatch({ type: 'RESTORE_SESSION', payload: { user: storedUser, method: 'nip07' } });
-
-              // Refresh profile in background
-              fetchNostrProfile(pubkey).then((profile) => {
-                if (profile) {
-                  dispatch({
-                    type: 'UPDATE_PROFILE',
-                    payload: {
-                      displayName: profile.display_name || profile.name,
-                      picture: profile.picture,
-                      nip05: profile.nip05,
-                      lud16: profile.lud16
-                    }
-                  });
-                }
-              });
+            console.log('[Nostr] Calling reconnectNip46...');
+            const pubkey = await reconnectNip46();
+            console.log('[Nostr] reconnectNip46 returned:', pubkey);
+            if (pubkey && pubkey === storedUser.pubkey) {
+              dispatch({ type: 'RESTORE_SESSION', payload: { user: storedUser, method: 'nip46' } });
+              refreshProfile(pubkey);
               return;
-            } else {
-              // Different account, clear stored session
-              clearStoredUser();
-              clearSigner();
             }
-          } catch {
-            // Extension refused or error, clear stored session
+          } catch (e) {
+            console.error('[Nostr] Failed to reconnect NIP-46:', e);
+          }
+          if (loadBunkerPointer()) {
+            dispatch({ type: 'RESTORE_SESSION', payload: { user: storedUser, method: 'nip46' } });
+            return;
+          }
+        }
+        clearStoredUser();
+        clearSigner();
+        dispatch({ type: 'SET_LOADING', payload: false });
+      } else if (storedUser && storedMethod === 'nip07' && extensionAvailable) {
+        try {
+          const pubkey = await initNip07Signer();
+          if (pubkey === storedUser.pubkey) {
+            dispatch({ type: 'RESTORE_SESSION', payload: { user: storedUser, method: 'nip07' } });
+            fetchNostrProfile(pubkey).then((profile) => {
+              if (profile) {
+                dispatch({
+                  type: 'UPDATE_PROFILE',
+                  payload: {
+                    displayName: profile.display_name || profile.name,
+                    picture: profile.picture,
+                    nip05: profile.nip05,
+                    lud16: profile.lud16
+                  }
+                });
+              }
+            });
+            return;
+          } else {
             clearStoredUser();
             clearSigner();
           }
-          dispatch({ type: 'SET_LOADING', payload: false });
-        } else {
-          // No valid method to restore
+        } catch {
           clearStoredUser();
-          dispatch({ type: 'SET_LOADING', payload: false });
+          clearSigner();
         }
+        dispatch({ type: 'SET_LOADING', payload: false });
+      } else if (storedMethod === 'managed') {
+        // Restore managed (Google-authenticated) session
+        try {
+          const meRes = await fetch('/api/auth/me');
+          if (meRes.ok) {
+            const data = await meRes.json() as {
+              pubkey: string; npub: string; displayName?: string; picture?: string;
+            };
+            let skInitialized = false;
+            try {
+              const kpRes = await fetch('/api/auth/keypair');
+              if (kpRes.ok) {
+                const { sk: skHex } = await kpRes.json() as { sk: string };
+                initManagedKeySigner(hexToBytes(skHex));
+                skInitialized = true;
+              }
+            } catch { /* signer init failed — restore UI session without signing */ }
+            const user: NostrUser = {
+              pubkey: data.pubkey,
+              npub: data.npub,
+              displayName: data.displayName ?? storedUser?.displayName,
+              picture: data.picture ?? storedUser?.picture,
+            };
+            if (skInitialized) saveUser(user);
+            dispatch({ type: 'RESTORE_SESSION', payload: { user, method: 'managed' } });
+            return;
+          }
+        } catch { /* network error — fall through to clear */ }
+        // Cookie expired or network failure
+        clearStoredUser();
+        clearSigner();
+        dispatch({ type: 'SET_LOADING', payload: false });
       } else {
+        // Check if returning from Google OAuth (first-time login, no stored method yet)
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('auth') === 'success') {
+          window.history.replaceState({}, '', window.location.pathname);
+          try {
+            const meRes = await fetch('/api/auth/me');
+            if (meRes.ok) {
+              const data = await meRes.json() as {
+                pubkey: string; npub: string; displayName?: string; picture?: string;
+              };
+              let skInitialized = false;
+              try {
+                const kpRes = await fetch('/api/auth/keypair');
+                if (kpRes.ok) {
+                  const { sk: skHex } = await kpRes.json() as { sk: string };
+                  initManagedKeySigner(hexToBytes(skHex));
+                  skInitialized = true;
+                }
+              } catch { /* proceed without signer */ }
+              const user: NostrUser = {
+                pubkey: data.pubkey,
+                npub: data.npub,
+                displayName: data.displayName,
+                picture: data.picture,
+              };
+              if (skInitialized) saveUser(user);
+              dispatch({ type: 'LOGIN_SUCCESS', payload: { user, method: 'managed' } });
+              return;
+            }
+          } catch { /* fall through */ }
+        }
         dispatch({ type: 'SET_LOADING', payload: false });
       }
     }
@@ -293,6 +338,10 @@ export function NostrProvider({ children }: { children: ReactNode }) {
     }
   }, [refreshProfile]);
 
+  const loginWithGoogle = useCallback(() => {
+    window.location.href = '/api/auth/google-start';
+  }, []);
+
   // Logout function
   const logout = useCallback(() => {
     clearStoredUser();
@@ -301,7 +350,7 @@ export function NostrProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <NostrContext.Provider value={{ state, login, loginWithNip46, logout }}>
+    <NostrContext.Provider value={{ state, login, loginWithNip46, loginWithGoogle, logout }}>
       {children}
     </NostrContext.Provider>
   );

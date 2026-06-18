@@ -1,7 +1,7 @@
 // Unified Nostr Signer - supports both NIP-07 (extension) and NIP-46 (remote signer)
 import { BunkerSigner, parseBunkerInput, createNostrConnectURI } from 'nostr-tools/nip46';
 import { SimplePool } from 'nostr-tools/pool';
-import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
+import { generateSecretKey, getPublicKey, finalizeEvent } from 'nostr-tools/pure';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
 import type { EventTemplate, VerifiedEvent } from 'nostr-tools/pure';
 import type { BunkerPointer } from 'nostr-tools/nip46';
@@ -28,7 +28,7 @@ export interface NostrSigner {
 
 // Current active signer
 let currentSigner: NostrSigner | null = null;
-let currentMethod: 'nip07' | 'nip46' | null = null;
+let currentMethod: 'nip07' | 'nip46' | 'managed' | null = null;
 
 // NIP-07 Signer (browser extension)
 class Nip07Signer implements NostrSigner {
@@ -110,14 +110,14 @@ export function clearBunkerPointer(): void {
 }
 
 // Store connection method
-export function storeConnectionMethod(method: 'nip07' | 'nip46'): void {
+export function storeConnectionMethod(method: 'nip07' | 'nip46' | 'managed'): void {
   localStorage.setItem(CONNECTION_METHOD_KEY, method);
 }
 
 // Load connection method
-export function loadConnectionMethod(): 'nip07' | 'nip46' | null {
+export function loadConnectionMethod(): 'nip07' | 'nip46' | 'managed' | null {
   const stored = localStorage.getItem(CONNECTION_METHOD_KEY);
-  if (stored === 'nip07' || stored === 'nip46') return stored;
+  if (stored === 'nip07' || stored === 'nip46' || stored === 'managed') return stored;
   return null;
 }
 
@@ -331,6 +331,11 @@ export async function getPublicKeyWithTimeout(timeoutMs?: number): Promise<strin
 export async function checkSignerConnection(timeoutMs?: number): Promise<{ connected: boolean; error?: string }> {
   const method = currentMethod ?? loadConnectionMethod();
 
+  if (method === 'managed') {
+    if (hasSigner()) return { connected: true };
+    return { connected: false, error: 'Session expired. Please sign in again.' };
+  }
+
   if (method === 'nip46') {
     if (hasSigner()) {
       // Active signer — pool manages relay reconnects automatically.
@@ -383,8 +388,19 @@ export function hasSigner(): boolean {
 }
 
 // Get current connection method
-export function getConnectionMethod(): 'nip07' | 'nip46' | null {
+export function getConnectionMethod(): 'nip07' | 'nip46' | 'managed' | null {
   return currentMethod;
+}
+
+// Initialize a managed keypair signer (local signing, no external calls)
+export function initManagedKeySigner(sk: Uint8Array): void {
+  const pubkey = getPublicKey(sk);
+  currentSigner = {
+    getPublicKey: async () => pubkey,
+    signEvent: async (event) => finalizeEvent(event, sk),
+  };
+  currentMethod = 'managed';
+  storeConnectionMethod('managed');
 }
 
 // Clear signer (logout)
@@ -392,11 +408,15 @@ export function clearSigner(): void {
   if (currentSigner?.close) {
     currentSigner.close();
   }
+  const wasManaged = currentMethod === 'managed';
   currentSigner = null;
   currentMethod = null;
   clearBunkerPointer();
   clearClientSecretKey();
   clearConnectionMethod();
+  if (wasManaged) {
+    fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+  }
 }
 
 // Check if NIP-07 extension is available

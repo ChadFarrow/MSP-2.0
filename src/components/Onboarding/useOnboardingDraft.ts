@@ -23,6 +23,8 @@ import { useNostr } from '../../store/nostrStore';
 import { createSupportRecipients, isCommunitySupport } from '../../types/feed';
 import type { PublisherFeed, Album, ValueBlock } from '../../types/feed';
 import { generateRssFeed } from '../../utils/xmlGenerator';
+import { fetchNostrProfile, mergeProfileFields, publishProfileMetadata } from '../../utils/nostrSync';
+import { getConnectionMethod } from '../../utils/nostrSigner';
 import {
   getHostedFeedInfo,
   saveHostedFeedInfo,
@@ -315,11 +317,37 @@ export function useOnboardingDraft(lookupExistingPublishers?: ExistingPublisherL
       if (result.updatedPublisherFeed) {
         dispatch({ type: 'SET_PUBLISHER_FEED', payload: result.updatedPublisherFeed });
       }
+
+      // Managed (Google) keypairs are minted with no kind-0 profile, so the npub
+      // shows as a truncated npub1… everywhere. Give it a real name + avatar from
+      // what the artist just entered. Managed-only (NIP-07/NIP-46 users already
+      // have a profile + the opt-in pull). Best-effort — never blocks publishing.
+      if (getConnectionMethod() === 'managed') {
+        try {
+          const existingProfile = await fetchNostrProfile(pubkey);
+          const merged = mergeProfileFields(existingProfile, {
+            name: publisherFeed.author,
+            picture: publisherFeed.imageUrl,
+          });
+          if (merged) {
+            const profileRes = await publishProfileMetadata(merged);
+            if (profileRes.success) {
+              nostr.updateProfile({
+                displayName: merged.display_name || merged.name,
+                picture: merged.picture,
+              });
+            }
+          }
+        } catch (e) {
+          console.warn('Managed profile push failed (non-blocking):', e);
+        }
+      }
+
       return result;
     } finally {
       setPublishing(false);
     }
-  }, [state.album, state.publisherFeed, nostr.state, isReturningArtist, dispatch]);
+  }, [state.album, state.publisherFeed, nostr, isReturningArtist, dispatch]);
 
   const reset = useCallback(() => {
     localStorage.removeItem(STEP_PERSIST_KEY);

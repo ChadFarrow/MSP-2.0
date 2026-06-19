@@ -14,6 +14,7 @@ export const STORAGE_KEYS = {
   ONBOARDING_COMPLETE: 'msp2-onboarding-complete',
   FEATURE_PREFS: 'msp2-feature-prefs',
   WIZARD_COMPLETE: 'msp2-wizard-complete',
+  WIZARD_IN_PROGRESS: 'msp2-wizard-in-progress',
 } as const;
 
 // Migration helper: convert old person format to new format
@@ -197,5 +198,12 @@ export const pendingHostedStorage = {
 // New artist onboarding wizard completion flag
 export const wizardStorage = {
   isComplete: (): boolean => getItem<boolean>(STORAGE_KEYS.WIZARD_COMPLETE) === true,
-  markComplete: (): boolean => setItem(STORAGE_KEYS.WIZARD_COMPLETE, true)
+  markComplete: (): boolean => setItem(STORAGE_KEYS.WIZARD_COMPLETE, true),
+  // "Wizard is currently open" flag. Set while the wizard is mounted so a
+  // full-page navigation (the Google OAuth redirect) can re-open it on return —
+  // App.tsx initializes showArtistWizard from this. Cleared when the wizard is
+  // explicitly closed or finished.
+  isInProgress: (): boolean => getItem<boolean>(STORAGE_KEYS.WIZARD_IN_PROGRESS) === true,
+  markInProgress: (): boolean => setItem(STORAGE_KEYS.WIZARD_IN_PROGRESS, true),
+  clearInProgress: (): boolean => removeItem(STORAGE_KEYS.WIZARD_IN_PROGRESS)
 };

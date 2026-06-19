@@ -74,7 +74,9 @@ function AppContent() {
   );
   // The dead-simple artist wizard (#67) — opened from the onboarding gate's
   // first-time branch and from the "New Artist (Guided)" choice in NewFeedChoiceModal.
-  const [showArtistWizard, setShowArtistWizard] = useState(false);
+  // Initialized from the in-progress flag so the Google OAuth full-page redirect
+  // (which unmounts the SPA) re-opens the wizard at its saved step on return.
+  const [showArtistWizard, setShowArtistWizard] = useState(() => wizardStorage.isInProgress());
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { state: nostrState, logout: nostrLogout } = useNostr();
@@ -220,6 +222,7 @@ function AppContent() {
           onboardingStorage.markComplete();
           setShowOnboarding(false);
           handleSwitchFeedType('artist');
+          wizardStorage.markInProgress();
           setShowArtistWizard(true);
         }}
       />
@@ -493,12 +496,19 @@ function AppContent() {
         onUseTemplate={handleUseTemplate}
         onArtistSetup={pendingNewFeedType === 'album' ? handleArtistSetup : undefined}
         onCancel={() => setShowNewFeedChoiceModal(false)}
-        onNewArtist={() => { setShowNewFeedChoiceModal(false); setShowArtistWizard(true); }}
+        onNewArtist={() => {
+          setShowNewFeedChoiceModal(false);
+          wizardStorage.markInProgress();
+          setShowArtistWizard(true);
+        }}
       />
 
       {showArtistWizard && (
         <OnboardingWizard
-          onComplete={() => setShowArtistWizard(false)}
+          onComplete={() => {
+            wizardStorage.clearInProgress();
+            setShowArtistWizard(false);
+          }}
         />
       )}
     </>

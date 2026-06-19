@@ -1256,6 +1256,56 @@ body {
   font-size: 0.85em;
 }
 
+/* Three-way sign-in chooser (wizard auth step) */
+.auth-choice-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm, 6px);
+  padding: 14px 16px;
+  cursor: pointer;
+  color: var(--text-primary);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.auth-choice-card:hover {
+  border-color: var(--accent-primary, #7c3aed);
+}
+
+.auth-choice-card-primary {
+  border-color: var(--accent-primary, #7c3aed);
+  background: color-mix(in srgb, var(--accent-primary, #7c3aed) 8%, var(--bg-secondary));
+}
+
+.auth-choice-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 0.98em;
+}
+
+.auth-choice-desc {
+  color: var(--text-secondary);
+  font-size: 0.85em;
+  line-height: 1.4;
+}
+
+.auth-choice-badge {
+  font-size: 0.7em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: var(--accent-primary, #7c3aed);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
 /* Intro step call-to-action */
 .onboarding-intro-cta {
   display: flex;

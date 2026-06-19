@@ -102,6 +102,7 @@ interface NostrContextType {
   login: () => Promise<void>;
   loginWithNip46: (bunkerUri?: string, onUriGenerated?: (uri: string) => void) => Promise<void>;
   loginWithGoogle: () => void;
+  updateProfile: (payload: { displayName?: string; picture?: string; nip05?: string; lud16?: string }) => void;
   logout: () => void;
 }
 
@@ -342,6 +343,12 @@ export function NostrProvider({ children }: { children: ReactNode }) {
     window.location.href = '/api/auth/google-start';
   }, []);
 
+  // Apply local profile fields (used after publishing a kind-0 for managed keys
+  // so the identity card updates without waiting for a relay round-trip).
+  const updateProfile = useCallback((payload: { displayName?: string; picture?: string; nip05?: string; lud16?: string }) => {
+    dispatch({ type: 'UPDATE_PROFILE', payload });
+  }, []);
+
   // Logout function
   const logout = useCallback(() => {
     clearStoredUser();
@@ -350,7 +357,7 @@ export function NostrProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <NostrContext.Provider value={{ state, login, loginWithNip46, loginWithGoogle, logout }}>
+    <NostrContext.Provider value={{ state, login, loginWithNip46, loginWithGoogle, updateProfile, logout }}>
       {children}
     </NostrContext.Provider>
   );

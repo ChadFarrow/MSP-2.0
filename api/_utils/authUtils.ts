@@ -42,9 +42,35 @@ export async function decryptNsec(encrypted: string, userId: string): Promise<Ui
   return new Uint8Array(plaintext);
 }
 
-export function userBlobPath(googleId: string): string {
+// Unguessable prefix used to list() a user's keypair blob. Has no `.json`
+// extension so it still matches the name produced by put(addRandomSuffix: true),
+// which inserts `-<random>` before the extension.
+export function userBlobPrefix(googleId: string): string {
   const hash = bytesToHex(sha256(new TextEncoder().encode(googleId)));
-  return `auth/users/${hash}.json`;
+  return `auth/users/${hash}`;
+}
+
+// Deterministic object name passed to put(). With addRandomSuffix the stored
+// name becomes `${userBlobPath}` with `-<random>` inserted before `.json`.
+export function userBlobPath(googleId: string): string {
+  return `${userBlobPrefix(googleId)}.json`;
+}
+
+// The record persisted to Blob. Intentionally excludes PII (email / displayName
+// / picture): those are carried in the signed session JWT and re-fetched fresh
+// from Google on each login, so they must never sit in a public blob.
+export interface StoredKeyRecord {
+  pubkey: string;
+  encryptedNsec: string;
+  createdAt: string;
+}
+
+export function buildStoredKeyRecord(
+  pubkey: string,
+  encryptedNsec: string,
+  createdAt: string
+): StoredKeyRecord {
+  return { pubkey, encryptedNsec, createdAt };
 }
 
 async function hmacKey(secret: string): Promise<CryptoKey> {

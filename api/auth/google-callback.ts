@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
 import { npubEncode } from 'nostr-tools/nip19';
 import { list, put } from '@vercel/blob';
-import { encryptNsec, decryptNsec, userBlobPath, signJwt, sessionCookie } from '../_utils/authUtils.js';
+import { encryptNsec, decryptNsec, userBlobPath, userBlobPrefix, buildStoredKeyRecord, signJwt, sessionCookie } from '../_utils/authUtils.js';
 
 interface GoogleTokenPayload {
   sub: string;
@@ -11,13 +11,10 @@ interface GoogleTokenPayload {
   picture?: string;
 }
 
+// Only the non-PII fields are read back; PII lives in the session JWT, not the blob.
 interface StoredKeyData {
   pubkey: string;
   encryptedNsec: string;
-  email: string;
-  displayName?: string;
-  picture?: string;
-  createdAt: string;
 }
 
 async function exchangeCodeForUser(
@@ -75,11 +72,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const { sub: googleId, email, name: displayName, picture } = await exchangeCodeForUser(code, redirectUri);
 
-    const blobPath = userBlobPath(googleId);
+    const blobPrefix = userBlobPrefix(googleId);
     let pubkey: string;
     let sk: Uint8Array | null = null;
 
-    const { blobs } = await list({ prefix: blobPath });
+    const { blobs } = await list({ prefix: blobPrefix });
 
     if (blobs.length > 0) {
       const blobRes = await fetch(blobs[0].url);
@@ -90,18 +87,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       sk = generateSecretKey();
       pubkey = getPublicKey(sk);
       const encryptedNsec = await encryptNsec(sk, googleId);
-      const data: StoredKeyData = {
-        pubkey,
-        encryptedNsec,
-        email,
-        displayName,
-        picture,
-        createdAt: new Date().toISOString(),
-      };
-      await put(blobPath, JSON.stringify(data), {
+      const data = buildStoredKeyRecord(pubkey, encryptedNsec, new Date().toISOString());
+      // Vercel Blob v2 only serves public blobs; addRandomSuffix gives the object
+      // an unguessable name so the keypair can't be fetched from a derived URL.
+      await put(userBlobPath(googleId), JSON.stringify(data), {
         access: 'public',
         contentType: 'application/json',
-        addRandomSuffix: false,
+        addRandomSuffix: true,
       });
     }
 

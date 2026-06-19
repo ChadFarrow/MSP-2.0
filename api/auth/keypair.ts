@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { list } from '@vercel/blob';
 import { bytesToHex } from '@noble/hashes/utils';
-import { getSessionToken, verifyJwt, decryptNsec, userBlobPath } from '../_utils/authUtils.js';
+import { getSessionToken, verifyJwt, decryptNsec, userBlobPrefix } from '../_utils/authUtils.js';
 
 interface StoredKeyData {
   pubkey: string;
@@ -17,8 +17,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const payload = await verifyJwt(token);
     const googleId = payload.sub as string;
 
-    const blobPath = userBlobPath(googleId);
-    const { blobs } = await list({ prefix: blobPath });
+    const { blobs } = await list({ prefix: userBlobPrefix(googleId) });
     if (blobs.length === 0) {
       return res.status(404).json({ error: 'Keypair not found' });
     }

@@ -1,5 +1,25 @@
-import { describe, it, expect } from 'vitest';
-import { mergeProfileFields } from './nostrSync';
+import { describe, it, expect, vi } from 'vitest';
+
+const { signMock, publishMock } = vi.hoisted(() => ({
+  signMock: vi.fn(async (e: { kind: number; content: string }) => ({ ...e, id: 'fake-event-id', sig: 'fake-sig' })),
+  publishMock: vi.fn(async () => ({ successCount: 1, results: [] })),
+}));
+
+vi.mock('./nostrSigner', () => ({
+  hasSigner: () => true,
+  getPublicKeyWithTimeout: vi.fn(async () => 'pubkeyhex'),
+  signEventWithTimeout: signMock,
+}));
+
+vi.mock('./nostrRelay', () => ({
+  DEFAULT_RELAYS: ['wss://relay.test'],
+  MUSIC_RELAYS: ['wss://relay.test'],
+  connectRelay: vi.fn(),
+  collectEvents: vi.fn(),
+  publishEventToRelays: publishMock,
+}));
+
+import { mergeProfileFields, publishProfileMetadata } from './nostrSync';
 
 describe('mergeProfileFields', () => {
   it('fills name, display_name, and picture for a null (fresh) profile', () => {
@@ -30,5 +50,22 @@ describe('mergeProfileFields', () => {
 
   it('returns null when the supplied fields are empty/whitespace', () => {
     expect(mergeProfileFields(null, { name: '   ', picture: '' })).toBeNull();
+  });
+});
+
+describe('publishProfileMetadata', () => {
+  it('signs a kind-0 event carrying the profile JSON and publishes it', async () => {
+    const res = await publishProfileMetadata({ name: 'Doerfels', display_name: 'Doerfels', picture: 'https://img/a.png' });
+    expect(res.success).toBe(true);
+    expect(res.eventId).toBe('fake-event-id');
+
+    const signedEvent = signMock.mock.calls[0][0];
+    expect(signedEvent.kind).toBe(0);
+    expect(JSON.parse(signedEvent.content)).toMatchObject({
+      name: 'Doerfels',
+      display_name: 'Doerfels',
+      picture: 'https://img/a.png',
+    });
+    expect(publishMock).toHaveBeenCalledTimes(1);
   });
 });

@@ -108,6 +108,31 @@ export function mergeProfileFields(
   return changed ? merged : null;
 }
 
+// Publish the logged-in user's kind-0 profile (NIP-01 metadata). Used to give a
+// freshly-minted managed (Google) keypair a real name + avatar. Best-effort:
+// returns { success: false } rather than throwing so callers never break.
+export async function publishProfileMetadata(
+  profile: NostrProfile,
+  relays = DEFAULT_RELAYS
+): Promise<{ success: boolean; eventId?: string }> {
+  if (!hasSigner()) return { success: false };
+  try {
+    const pubkey = await getPublicKeyWithTimeout();
+    const unsigned: NostrEvent = {
+      kind: 0,
+      pubkey,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: [],
+      content: JSON.stringify(profile),
+    };
+    const signed = await signEventWithTimeout(unsigned);
+    const { successCount } = await publishEventToRelays(signed as NostrEvent, relays);
+    return { success: successCount > 0, eventId: (signed as NostrEvent).id };
+  } catch {
+    return { success: false };
+  }
+}
+
 // Create an unsigned event for an RSS feed
 function createFeedEvent(rssXml: string, podcastGuid: string, title: string, pubkey: string): NostrEvent {
   return {

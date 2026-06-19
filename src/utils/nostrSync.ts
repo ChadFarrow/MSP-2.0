@@ -91,6 +91,23 @@ export async function fetchNostrProfile(
   }
 }
 
+// Merge artist-provided fields into an existing kind-0 profile, filling only
+// fields that are currently empty (non-destructive — mirrors the opt-in profile
+// pull in the wizard). Returns the merged profile if it adds anything, else null.
+export function mergeProfileFields(
+  existing: NostrProfile | null,
+  fields: { name?: string; picture?: string }
+): NostrProfile | null {
+  const merged: NostrProfile = existing ? { ...existing } : {};
+  const name = (fields.name ?? '').trim();
+  const picture = (fields.picture ?? '').trim();
+  let changed = false;
+  if (name && !merged.name) { merged.name = name; changed = true; }
+  if (name && !merged.display_name) { merged.display_name = name; changed = true; }
+  if (picture && !merged.picture) { merged.picture = picture; changed = true; }
+  return changed ? merged : null;
+}
+
 // Create an unsigned event for an RSS feed
 function createFeedEvent(rssXml: string, podcastGuid: string, title: string, pubkey: string): NostrEvent {
   return {

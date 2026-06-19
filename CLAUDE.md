@@ -21,6 +21,8 @@ A `.env` file is required with the following variables:
 - `VITE_CANONICAL_URL` - Canonical URL for the application
 - `PODPING_ENDPOINT_URL` - Full URL to MSP's self-hosted podping-hivepinger Railway service, trailing slash (optional; podping notifications are skipped when unset)
 - `PODPING_BEARER_TOKEN` - Bearer token shared with the Railway service (optional; podping notifications are skipped when unset)
+- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` - Google OAuth client credentials for managed-keypair sign-in (optional; `/api/auth/google-start` returns 503 "not configured" when unset)
+- `AUTH_SECRET` - HKDF root secret used to encrypt every stored managed nsec and to sign session JWTs (`api/_utils/authUtils.ts`). **Load-bearing & must stay fixed** — rotating it orphans all stored managed keypairs (they become undecryptable)
 
 No `.env.example` exists - request credentials from the team.
 
@@ -156,6 +158,8 @@ Vercel serverless functions:
 - `hosted/` - MSP feed hosting endpoints (create, update, delete, backup/restore)
 - `feed/[npub]/[guid].ts` - Nostr-stored feed retrieval
 - `admin/` - Admin authentication (challenge/verify)
+- `auth/` - **Google OAuth → managed Nostr keypair sign-in** (currently on `new-onboarding-v2` only, not yet on master). `google-start.ts` redirects to Google's consent screen (builds `redirect_uri` from the request `Host` header — so every host that serves this needs its own Authorized Redirect URI registered in the Google OAuth client, or Google rejects with `redirect_uri_mismatch`); `google-callback.ts` exchanges the code, creates-or-loads the user's encrypted keypair blob, and sets the session cookie; `keypair.ts` returns the decrypted secret key (hex) for the logged-in user so the client can init a signer; `me.ts` returns the session user (pubkey/npub/email/displayName/picture) from the JWT; `logout.ts` clears the session cookie
+- `_utils/authUtils.ts` - Managed-keypair crypto + session helpers: HKDF-derives an AES-GCM key from `AUTH_SECRET`+userId to `encryptNsec`/`decryptNsec`, `signJwt`/`verifyJwt` (30-day sessions), session-cookie helpers, and blob path/prefix helpers (`sha256(googleId)`, stored via `put(addRandomSuffix: true)` so the object name isn't guessable). Encrypted keypairs live in Vercel Blob (`BLOB_READ_WRITE_TOKEN`)
 - `_utils/podcastIndex.ts` - Shared Podcast Index auth headers
 - `_utils/feedUtils.ts` - Shared feed utilities (PI notification, podping notification, `isPodpingConfigured()` helper, UUID validation, token hashing)
 - `_utils/rateLimiter.ts` - In-memory fixed-window IP rate limiter used by `/api/podping`
@@ -241,6 +245,7 @@ A guided flow that takes a brand-new artist from zero to a live hosted feed with
 ### Nostr Integration
 - NIP-07 browser extension support for signing
 - NIP-46 remote signer support
+- **Managed keypair (Google sign-in)** — a third connection method (`'managed'`, alongside `'nip07'`/`'nip46'` in `nostrStore.tsx`). The user signs in with Google; the server holds an AES-GCM-encrypted Nostr keypair (see `api/auth/` + `_utils/authUtils.ts` under API Layer) and hands the secret key to the client, which inits a local signer via `initManagedKeySigner()` (`src/utils/nostrSigner.ts`). UI entry point is the Google button + `ManagedKeyModal` in `NostrConnectModal.tsx`. `nostrStore` session restore handles both an existing managed session (`/api/auth/me` → `/api/auth/keypair`) and the first-login OAuth return (the `?auth=success` query param). Currently on `new-onboarding-v2` only, not yet on master
 - **Kind 30054** — full RSS XML embedded in a parameterized-replaceable event (`d`-tag = `podcastGuid`). Used by "Save RSS feed to Nostr" for personal cross-device sync. Read back via `loadAlbumsFromNostr` in `src/utils/nostrSync.ts`
 - **Kind 36787 + 34139** — Nostr Music track events and playlist event. Published via `publishNostrMusicTracks` in `src/utils/nostrSync.ts:648`, imported via `fetchNostrMusicTracks` at `:384`. These three functions (plus `deleteNostrMusicTracks`) default to `MUSIC_RELAYS` rather than `DEFAULT_RELAYS` — `MUSIC_RELAYS` (defined in `src/utils/nostrRelay.ts`) is `DEFAULT_RELAYS` + `wss://drops.basspistol.org`, a public relay that only accepts music kinds and would reject kind 0/30054/1063 traffic if we sent it there. Kind 36787 is a lossy format — it carries no description/file-size/required-duration — so the SaveModal validator skips those requirements in `nostrMusic` mode to let round-tripped albums republish. Field-by-field mapping between RSS output and these events (useful when building converters or reasoning about what survives a round-trip) is in `docs/rss-nostr-music-crossref.md`.
 - **Kind 5 (NIP-09)** — deletion request used by the "Unpublish (delete)" button next to "Publish to Nostr Music". `deleteNostrMusicTracks` (`src/utils/nostrSync.ts:741`) builds `a`-tag references for each kind-36787 track event and the kind-34139 playlist; relays *may* honor it. Success message says "Sent deletion request..." rather than "Deleted" to be honest about NIP-09 semantics

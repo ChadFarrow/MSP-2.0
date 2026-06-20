@@ -19,8 +19,7 @@ export function NewToNostrPanel({ inlineConnect = false }: NewToNostrPanelProps)
   return (
     <div className="nostr-connect-primal">
       <p className="connect-description">
-        Primal is an easy way to get a real Nostr identity that works across many apps —
-        Fountain, Wavlake, Zap.stream, and more.
+        Primal is an easy way to get a real Nostr identity that works across many apps.
       </p>
       <div className="primal-steps">
         <div className="primal-step">
@@ -30,7 +29,7 @@ export function NewToNostrPanel({ inlineConnect = false }: NewToNostrPanelProps)
             <p>
               Get the app at{' '}
               <a href="https://primal.net" target="_blank" rel="noopener noreferrer">primal.net</a>
-              {' '}— available on iOS, Android, and web.
+              {' '}— available on iOS and Android.
             </p>
           </div>
         </div>
@@ -38,28 +37,29 @@ export function NewToNostrPanel({ inlineConnect = false }: NewToNostrPanelProps)
           <div className="primal-step-number">2</div>
           <div className="primal-step-content">
             <strong>Create your account</strong>
-            <p>Sign up with your email address or phone number in the Primal app.</p>
+            <p>Add a display name (and a photo if you like). Primal generates your Nostr keys for you and can save them to your iCloud Keychain.</p>
           </div>
         </div>
         <div className="primal-step">
           <div className="primal-step-number">3</div>
           <div className="primal-step-content">
-            <strong>Get your connection code</strong>
-            <p>
-              In Primal: <strong>Settings → Keys → Nostr Connect</strong> — copy the{' '}
-              <code>bunker://</code> URI shown there.
-            </p>
+            <strong>Scan the QR code</strong>
+            <p>In Primal, open the QR scanner and scan the code shown below — nothing to copy or paste.</p>
           </div>
         </div>
         <div className="primal-step">
           <div className="primal-step-number">4</div>
           <div className="primal-step-content">
-            <strong>Connect here</strong>
+            <strong>Approve the connection</strong>
             {inlineConnect ? (
-              <p>Paste your connection code below (or scan a QR code) to connect.</p>
+              <p>
+                Approve the request in Primal and you're connected. Prefer not to scan? Paste a{' '}
+                <code>bunker://</code> code from Primal's <strong>Settings → Keys → Nostr Connect</strong> instead.
+              </p>
             ) : (
               <p>
-                Go to the <strong>Remote Signer</strong> tab above, paste your code, and connect.
+                Approve the request in Primal and you're connected — or paste a <code>bunker://</code> code on the{' '}
+                <strong>Remote Signer</strong> tab.
               </p>
             )}
           </div>

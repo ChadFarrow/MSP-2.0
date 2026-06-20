@@ -15,6 +15,9 @@ export function NostrLoginPanel() {
 
   const [bunkerUri, setBunkerUri] = useState('');
   const [loginError, setLoginError] = useState('');
+  // Scanning MSP's QR (nostrconnect://) is the primary path; the bunker:// paste is
+  // demoted to a secondary "Advanced" affordance revealed by this toggle.
+  const [showBunkerPaste, setShowBunkerPaste] = useState(false);
   // NIP-46 QR login (scan with Amber etc.) so mobile users can connect inline.
   const [connectUri, setConnectUri] = useState<string | null>(null);
   const [generatingQr, setGeneratingQr] = useState(false);
@@ -125,35 +128,54 @@ export function NostrLoginPanel() {
         </button>
       )}
       <div>
-        <label className="form-label">Remote signer (Amber, nsecBunker)</label>
+        <label className="form-label">Remote signer (Primal, Amber, nsecBunker)</label>
         {!connectUri ? (
           <>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                className="form-input"
-                style={{ flex: 1 }}
-                placeholder="bunker://..."
-                value={bunkerUri}
-                onChange={e => setBunkerUri(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') handleBunkerLogin(); }}
-              />
-              <button
-                className="btn btn-primary"
-                onClick={handleBunkerLogin}
-                disabled={!bunkerUri.trim() || nostrState.isLoading}
-              >
-                Connect
-              </button>
-            </div>
             <button
               type="button"
-              className="btn btn-secondary"
+              className="btn btn-primary"
               onClick={handleGenerateQr}
               disabled={generatingQr || nostrState.isLoading}
-              style={{ marginTop: 8 }}
+              style={{ width: '100%' }}
             >
-              {generatingQr ? 'Generating…' : 'Or scan a QR code'}
+              {generatingQr ? 'Generating…' : 'Scan a QR code to connect'}
             </button>
+            <button
+              type="button"
+              className="btn-link"
+              onClick={() => setShowBunkerPaste(v => !v)}
+              style={{
+                marginTop: 8,
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                color: 'var(--text-secondary)',
+                fontSize: '0.85em',
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              {showBunkerPaste ? 'Hide' : 'Paste a bunker:// code instead'}
+            </button>
+            {showBunkerPaste && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <input
+                  className="form-input"
+                  style={{ flex: 1 }}
+                  placeholder="bunker://..."
+                  value={bunkerUri}
+                  onChange={e => setBunkerUri(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleBunkerLogin(); }}
+                />
+                <button
+                  className="btn btn-primary"
+                  onClick={handleBunkerLogin}
+                  disabled={!bunkerUri.trim() || nostrState.isLoading}
+                >
+                  Connect
+                </button>
+              </div>
+            )}
           </>
         ) : (
           <div className="connect-qr-container">

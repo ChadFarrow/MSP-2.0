@@ -10,7 +10,14 @@ import QRCode from 'qrcode';
 import { useNostr } from '../../store/nostrStore';
 import { truncateNpub } from '../../utils/nostr';
 
-export function NostrLoginPanel() {
+interface NostrLoginPanelProps {
+  // QR-only variant: auto-generate the nostrconnect:// QR on mount and show just
+  // the code + waiting state (no extension button, no bunker paste). Used by the
+  // onboarding connect page where the only path is scanning with Primal.
+  qrOnly?: boolean;
+}
+
+export function NostrLoginPanel({ qrOnly = false }: NostrLoginPanelProps = {}) {
   const { state: nostrState, login, loginWithNip46, logout } = useNostr();
 
   const [bunkerUri, setBunkerUri] = useState('');
@@ -22,6 +29,7 @@ export function NostrLoginPanel() {
   const [connectUri, setConnectUri] = useState<string | null>(null);
   const [generatingQr, setGeneratingQr] = useState(false);
   const qrCanvasRef = useRef<HTMLCanvasElement>(null);
+  const autoStarted = useRef(false);
 
   const handleExtensionLogin = async () => {
     setLoginError('');
@@ -83,6 +91,15 @@ export function NostrLoginPanel() {
     }
   }, [connectUri]);
 
+  // QR-only variant auto-generates the connect code as soon as the page opens.
+  useEffect(() => {
+    if (qrOnly && !autoStarted.current && !nostrState.isLoggedIn) {
+      autoStarted.current = true;
+      handleGenerateQr();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qrOnly, nostrState.isLoggedIn]);
+
   // Once signed in, confirm who they are with their profile name + picture.
   if (nostrState.isLoggedIn && nostrState.user) {
     const { user } = nostrState;
@@ -108,6 +125,37 @@ export function NostrLoginPanel() {
         >
           Sign out
         </button>
+      </div>
+    );
+  }
+
+  // QR-only variant: just the connect code + waiting state (used by the connect page).
+  if (qrOnly) {
+    return (
+      <div className="connect-qr-container">
+        {connectUri ? (
+          <>
+            <div className="qr-code-wrapper">
+              <canvas ref={qrCanvasRef} />
+            </div>
+            <p className="connect-waiting">Waiting for Primal to connect…</p>
+          </>
+        ) : (
+          <p className="connect-waiting">Generating your connect code…</p>
+        )}
+        {(loginError || nostrState.error) && (
+          <div style={{ color: 'var(--error, #dc2626)', fontSize: '0.85em', textAlign: 'center' }}>
+            <div>{loginError || nostrState.error}</div>
+            <button
+              type="button"
+              className="btn btn-secondary btn-small"
+              onClick={handleGenerateQr}
+              style={{ marginTop: 8 }}
+            >
+              Try again
+            </button>
+          </div>
+        )}
       </div>
     );
   }

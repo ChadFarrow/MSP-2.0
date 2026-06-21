@@ -1,47 +1,40 @@
 // src/components/Onboarding/NewToNostrPanel.tsx
 //
-// "New to Nostr?" walkthrough — guides a first-timer through creating a real
-// Nostr identity with Primal, then connecting via a remote signer. Single source
-// of truth shared by NostrConnectModal (tab layout: educational only, points at
-// the Remote Signer tab) and the onboarding wizard (inlineConnect: educational +
-// the remote-signer connect UI right below).
-//
-// Layout: a two-column Primal walkthrough (PrimalSignupCarousel) with a big phone
-// screenshot on the left and a numbered step checklist on the right. The connect
-// step is passed in as the carousel's connectSlot and only appears once the user
-// has paged through all five Primal setup steps — set up Primal first, then connect.
+// "New to Nostr?" walkthrough. Two views:
+//  - steps:   the centered intro + the 5-step Primal setup carousel. Its sixth
+//             checklist item, "Connect to MSP", switches to the connect view.
+//  - connect: a dedicated page that shows the nostrconnect:// QR (QR-only) for the
+//             user to scan with Primal's Remote Login. Set up Primal first, then
+//             connect it here.
+// Shared by the onboarding wizard (AuthStep) and NostrConnectModal's "New to Nostr" tab.
 
+import { useState } from 'react';
 import { NostrLoginPanel } from './NostrLoginPanel';
 import { PrimalSignupCarousel } from './PrimalSignupCarousel';
 
-interface NewToNostrPanelProps {
-  // When true, render the remote-signer connect UI (NostrLoginPanel) directly in
-  // the carousel's connect slot instead of telling the user to switch tabs. Used
-  // in the wizard, where there is no separate "Remote Signer" tab to point at.
-  inlineConnect?: boolean;
-}
+export function NewToNostrPanel() {
+  const [view, setView] = useState<'steps' | 'connect'>('steps');
 
-export function NewToNostrPanel({ inlineConnect = false }: NewToNostrPanelProps) {
-  const connectSlot = (
-    <div className="primal-connect-slot">
-      {inlineConnect ? (
-        <>
-          <p className="connect-description">
-            Scan the QR below with Primal to connect — approve the request and you're in.
-            Prefer not to scan? Paste a <code>bunker://</code> code from Primal's{' '}
-            <strong>Settings → Keys → Nostr Connect</strong>.
+  if (view === 'connect') {
+    return (
+      <div className="nostr-connect-primal">
+        <button
+          type="button"
+          className="btn btn-secondary btn-small primal-connect-back"
+          onClick={() => setView('steps')}
+        >
+          ← Back to setup
+        </button>
+        <div className="primal-connect-page">
+          <h4 className="primal-connect-title">Connect Primal to MSP</h4>
+          <p className="primal-connect-instructions">
+            In Primal, open <strong>Remote Login</strong> and scan this code to sign in.
           </p>
-          <NostrLoginPanel />
-        </>
-      ) : (
-        <p className="connect-description">
-          Go to the <strong>Remote Signer</strong> tab and scan the QR code with Primal — or
-          paste a <code>bunker://</code> code from Primal's{' '}
-          <strong>Settings → Keys → Nostr Connect</strong>.
-        </p>
-      )}
-    </div>
-  );
+          <NostrLoginPanel qrOnly />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="nostr-connect-primal">
@@ -49,8 +42,7 @@ export function NewToNostrPanel({ inlineConnect = false }: NewToNostrPanelProps)
         <strong>Create your account in the Primal app</strong> — on your phone, download Primal
         from the App Store or Google Play.
       </p>
-
-      <PrimalSignupCarousel connectSlot={connectSlot} />
+      <PrimalSignupCarousel onConnect={() => setView('connect')} />
     </div>
   );
 }

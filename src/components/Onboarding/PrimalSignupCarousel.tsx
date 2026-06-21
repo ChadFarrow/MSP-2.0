@@ -2,9 +2,9 @@
 //
 // Two-column Primal onboarding walkthrough: a large phone screenshot on the left,
 // a numbered step checklist on the right. The first five steps are the Primal
-// account-creation screens; the sixth step is "Connect to MSP" — locked until the
-// Primal steps have been reached, and when active it shows the connect UI (passed
-// in as connectSlot) in the right column. Pure presentational component.
+// account-creation screens; the sixth step, "Connect to MSP", is a navigation
+// trigger (locked until the Primal steps are reached) that fires onConnect() so
+// the parent can show the dedicated connect page. Pure presentational component.
 
 import { useState, type ReactNode } from 'react';
 import slide1 from '../../assets/onboarding/primal-1-create-account.webp';
@@ -31,29 +31,28 @@ const SLIDES: Slide[] = [
 const CONNECT_TITLE = 'Connect to MSP';
 
 interface PrimalSignupCarouselProps {
-  // Shown in the right column when the "Connect to MSP" step is active.
-  connectSlot?: ReactNode;
+  // Fired when the user activates the "Connect to MSP" step (clicking it once
+  // unlocked, or paging forward past the last Primal screen).
+  onConnect: () => void;
 }
 
-export function PrimalSignupCarousel({ connectSlot }: PrimalSignupCarouselProps) {
+export function PrimalSignupCarousel({ onConnect }: PrimalSignupCarouselProps) {
   const primalCount = SLIDES.length; // 5 Primal screens
-  const total = primalCount + 1; // + the Connect step
   const [index, setIndex] = useState(0);
-  // High-water mark — the furthest step reached.
+  // High-water mark — the furthest screen reached.
   const [maxSeen, setMaxSeen] = useState(0);
 
-  const onConnectStep = index === primalCount;
   // The Connect step unlocks once the user has reached the last Primal screen.
   const primalDone = maxSeen >= primalCount - 1;
-  // On the Connect step the phone keeps showing the final Primal screenshot.
-  const photoSlide = SLIDES[Math.min(index, primalCount - 1)];
+  const slide = SLIDES[index];
   const atStart = index === 0;
-  const atEnd = index === total - 1;
 
   const advance = (next: number) => {
-    let target = Math.max(0, Math.min(total - 1, next));
-    // Don't allow jumping to the Connect step before the Primal steps are done.
-    if (target === primalCount && !primalDone) target = index;
+    if (next >= primalCount) {
+      onConnect();
+      return;
+    }
+    const target = Math.max(0, next);
     setIndex(target);
     if (target > maxSeen) setMaxSeen(target);
   };
@@ -67,10 +66,9 @@ export function PrimalSignupCarousel({ connectSlot }: PrimalSignupCarouselProps)
           type="button"
           className="primal-carousel-photo"
           onClick={() => advance(index + 1)}
-          disabled={atEnd}
-          aria-label={atEnd ? photoSlide.alt : 'Next step'}
+          aria-label="Next step"
         >
-          <img className="primal-carousel-img" src={photoSlide.src} alt={photoSlide.alt} />
+          <img className="primal-carousel-img" src={slide.src} alt={slide.alt} />
         </button>
         <div className="primal-carousel-nav">
           <button
@@ -82,12 +80,11 @@ export function PrimalSignupCarousel({ connectSlot }: PrimalSignupCarouselProps)
           >
             ‹
           </button>
-          <span className="primal-carousel-counter">{index + 1} / {total}</span>
+          <span className="primal-carousel-counter">{index + 1} / {primalCount}</span>
           <button
             type="button"
             className="primal-carousel-arrow"
             onClick={() => advance(index + 1)}
-            disabled={atEnd}
             aria-label="Next step"
           >
             ›
@@ -100,14 +97,14 @@ export function PrimalSignupCarousel({ connectSlot }: PrimalSignupCarouselProps)
           {stepTitles.map((title, i) => {
             const isConnect = i === primalCount;
             const locked = isConnect && !primalDone;
-            const active = i === index;
+            const active = !isConnect && i === index;
             const done = !active && !isConnect && i <= maxSeen;
             return (
               <li key={title}>
                 <button
                   type="button"
                   className={`primal-step-item${active ? ' is-active' : ''}${done ? ' is-done' : ''}${isConnect ? ' is-connect' : ''}`}
-                  onClick={() => advance(i)}
+                  onClick={() => (isConnect ? onConnect() : setIndex(i))}
                   disabled={locked}
                   aria-current={active}
                 >
@@ -119,7 +116,7 @@ export function PrimalSignupCarousel({ connectSlot }: PrimalSignupCarouselProps)
           })}
         </ol>
 
-        {onConnectStep ? connectSlot : <p className="primal-carousel-desc">{photoSlide.caption}</p>}
+        <p className="primal-carousel-desc">{slide.caption}</p>
       </div>
     </div>
   );

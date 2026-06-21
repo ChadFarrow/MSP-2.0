@@ -2781,6 +2781,39 @@ body {
   gap: 12px;
 }
 
+/* Dedicated connect page (step 6 → its own view) */
+.primal-connect-back {
+  align-self: flex-start;
+}
+
+.primal-connect-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+  padding: 8px 0 4px;
+}
+
+.primal-connect-title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.primal-connect-instructions {
+  margin: 0;
+  max-width: 420px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.primal-connect-instructions strong {
+  color: var(--text-primary);
+}
+
 .primal-setup-hint {
   margin: 0;
   font-size: 0.8125rem;

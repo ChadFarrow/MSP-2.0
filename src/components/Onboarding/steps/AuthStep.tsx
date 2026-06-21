@@ -78,7 +78,7 @@ export function AuthStep({ w }: { w: OnboardingDraft }) {
       {!isLoggedIn && choice === 'new' && (
         <div>
           {backLink}
-          <NewToNostrPanel inlineConnect />
+          <NewToNostrPanel />
         </div>
       )}
 

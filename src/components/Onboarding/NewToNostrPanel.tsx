@@ -8,7 +8,7 @@
 //             connect it here.
 // Shared by the onboarding wizard (AuthStep) and NostrConnectModal's "New to Nostr" tab.
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { NostrLoginPanel } from './NostrLoginPanel';
 import { PrimalSignupCarousel } from './PrimalSignupCarousel';
 
@@ -16,41 +16,41 @@ export function NewToNostrPanel() {
   const [view, setView] = useState<'steps' | 'connect'>('steps');
 
   if (view === 'connect') {
+    const connectSteps: ReactNode[] = [
+      <>Open the <strong>Primal</strong> app on your phone.</>,
+      <>Tap your profile picture to open the menu, then tap <strong>Remote Login</strong>.</>,
+      <>Scan the code on the left with Primal.</>,
+      <>Approve the request — you're signed in.</>,
+    ];
+
     return (
       <div className="nostr-connect-primal">
-        <div className="primal-connect-page">
-          <button
-            type="button"
-            className="btn-link primal-connect-back"
-            onClick={() => setView('steps')}
-          >
-            ← Back to setup steps
-          </button>
-          <h4 className="primal-connect-title">Connect Primal to MSP</h4>
-
-          <div className="primal-connect-cols">
-            <ol className="primal-connect-steps">
-              <li>
-                <span className="primal-step-badge">1</span>
-                <span>Open the <strong>Primal</strong> app on your phone.</span>
-              </li>
-              <li>
-                <span className="primal-step-badge">2</span>
-                <span>Tap your profile picture to open the menu, then tap <strong>Remote Login</strong>.</span>
-              </li>
-              <li>
-                <span className="primal-step-badge">3</span>
-                <span>Scan the code on the right with Primal.</span>
-              </li>
-              <li>
-                <span className="primal-step-badge">4</span>
-                <span>Approve the request — you're signed in.</span>
-              </li>
+        <button
+          type="button"
+          className="btn-link primal-connect-back"
+          onClick={() => setView('steps')}
+        >
+          ← Back to setup steps
+        </button>
+        <p className="primal-intro">
+          <strong>Connect Primal to MSP</strong> — open <strong>Remote Login</strong> in Primal and
+          scan this code to sign in.
+        </p>
+        <div className="primal-carousel">
+          <div className="primal-carousel-stage">
+            <NostrLoginPanel qrOnly />
+          </div>
+          <div className="primal-carousel-side">
+            <ol className="primal-carousel-steps">
+              {connectSteps.map((step, i) => (
+                <li key={i}>
+                  <div className="primal-step-item is-static">
+                    <span className="primal-step-badge">{i + 1}</span>
+                    <span className="primal-step-label">{step}</span>
+                  </div>
+                </li>
+              ))}
             </ol>
-
-            <div className="primal-connect-qr">
-              <NostrLoginPanel qrOnly />
-            </div>
           </div>
         </div>
       </div>

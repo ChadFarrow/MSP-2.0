@@ -2781,13 +2781,8 @@ body {
   gap: 12px;
 }
 
-/* Dedicated connect page (step 6 → its own view) */
-.primal-connect-page {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
+/* Dedicated connect page (step 6 → its own view), matching the setup-page layout:
+   the QR sits in the phone's slot (left), the steps are the checklist boxes (right). */
 .primal-connect-back {
   align-self: flex-start;
   background: none;
@@ -2802,59 +2797,19 @@ body {
   color: var(--text-primary);
 }
 
-.primal-connect-title {
-  margin: 0;
-  font-size: 1.15rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  text-align: center;
-}
-
-/* Two columns: numbered steps on the left, the QR on the right. */
-.primal-connect-cols {
-  display: flex;
+/* Static (non-interactive) checklist box used for the connect-page steps. */
+.primal-step-item.is-static {
+  cursor: default;
   align-items: flex-start;
-  justify-content: center;
-  gap: 40px;
-  width: 100%;
-  max-width: 880px;
-  margin: 0 auto;
 }
 
-.primal-connect-steps {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  flex: 1 1 0;
-  max-width: 360px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+.primal-step-item.is-static:hover {
+  border-color: var(--border-color);
+  background: var(--bg-tertiary);
 }
 
-.primal-connect-steps li {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 0.95rem;
-  line-height: 1.4;
+.primal-step-item.is-static .primal-step-label {
   color: var(--text-secondary);
-}
-
-.primal-connect-steps strong {
-  color: var(--text-primary);
-}
-
-.primal-connect-qr {
-  flex: 0 0 auto;
-}
-
-@media (max-width: 720px) {
-  .primal-connect-cols {
-    flex-direction: column;
-    align-items: center;
-    gap: 20px;
-  }
 }
 
 .primal-setup-hint {

@@ -87,29 +87,40 @@ export function PrimalSignupCarousel({ onReachedEnd, connectSlot, pendingHint }:
       </div>
 
       <div className="primal-carousel-side">
-        <ol className="primal-carousel-steps">
-          {SLIDES.map((s, i) => {
-            const locked = i > maxSeen;
-            const active = i === index;
-            const done = !active && i <= maxSeen;
-            return (
-              <li key={s.src}>
-                <button
-                  type="button"
-                  className={`primal-step-item${active ? ' is-active' : ''}${done ? ' is-done' : ''}`}
-                  onClick={() => !locked && setIndex(i)}
-                  disabled={locked}
-                  aria-current={active}
-                >
-                  <span className="primal-step-badge">{done ? '✓' : i + 1}</span>
-                  <span className="primal-step-label">{s.title}</span>
-                </button>
-              </li>
-            );
-          })}
-        </ol>
-
-        {complete ? connectSlot : pendingHint}
+        {complete ? (
+          <>
+            <div className="primal-steps-done">
+              <span className="primal-step-badge is-done-badge">✓</span>
+              Primal account set up — use the arrows to review any step.
+            </div>
+            {connectSlot}
+          </>
+        ) : (
+          <>
+            <ol className="primal-carousel-steps">
+              {SLIDES.map((s, i) => {
+                const locked = i > maxSeen;
+                const active = i === index;
+                const done = !active && i <= maxSeen;
+                return (
+                  <li key={s.src}>
+                    <button
+                      type="button"
+                      className={`primal-step-item${active ? ' is-active' : ''}${done ? ' is-done' : ''}`}
+                      onClick={() => !locked && setIndex(i)}
+                      disabled={locked}
+                      aria-current={active}
+                    >
+                      <span className="primal-step-badge">{done ? '✓' : i + 1}</span>
+                      <span className="primal-step-label">{s.title}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ol>
+            {pendingHint}
+          </>
+        )}
       </div>
     </div>
   );

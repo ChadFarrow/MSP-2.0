@@ -2716,12 +2716,24 @@ body {
   font-weight: 500;
 }
 
+.primal-steps-done {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.primal-step-badge.is-done-badge {
+  background: var(--success, #16a34a);
+  color: #fff;
+}
+
 .primal-connect-slot {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding-top: 4px;
-  border-top: 1px solid var(--border-color);
 }
 
 .primal-setup-hint {

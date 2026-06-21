@@ -11,6 +11,7 @@
 import { useState, type ReactNode } from 'react';
 import { NostrLoginPanel } from './NostrLoginPanel';
 import { PrimalSignupCarousel } from './PrimalSignupCarousel';
+import remoteLoginShot from '../../assets/onboarding/primal-remote-login.webp';
 
 export function NewToNostrPanel() {
   const [view, setView] = useState<'steps' | 'connect'>('steps');
@@ -36,21 +37,22 @@ export function NewToNostrPanel() {
           <strong>Connect Primal to MSP</strong> — open <strong>Remote Login</strong> in Primal and
           scan this code to sign in.
         </p>
-        <div className="primal-carousel">
-          <div className="primal-carousel-stage">
-            <NostrLoginPanel qrOnly />
+        <div className="primal-connect-cols">
+          <div className="primal-connect-phone">
+            <img src={remoteLoginShot} alt="Primal Remote Login screen" />
           </div>
-          <div className="primal-carousel-side">
-            <ol className="primal-carousel-steps">
-              {connectSteps.map((step, i) => (
-                <li key={i}>
-                  <div className="primal-step-item is-static">
-                    <span className="primal-step-badge">{i + 1}</span>
-                    <span className="primal-step-label">{step}</span>
-                  </div>
-                </li>
-              ))}
-            </ol>
+          <ol className="primal-connect-steps">
+            {connectSteps.map((step, i) => (
+              <li key={i}>
+                <div className="primal-step-item is-static">
+                  <span className="primal-step-badge">{i + 1}</span>
+                  <span className="primal-step-label">{step}</span>
+                </div>
+              </li>
+            ))}
+          </ol>
+          <div className="primal-connect-qr">
+            <NostrLoginPanel qrOnly />
           </div>
         </div>
       </div>

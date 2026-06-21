@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:podcast="https://podcastindex.org/namespace/1.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" version="2.0">
+    <channel>
+        <title>Live at Rockpile</title>
+        <itunes:author>Strange Love</itunes:author>
+        <description>
+            This is a 7 song live EP recorded in 2011 at The Rockpile in Toronto. All songs written by Anthony Columbro and Josh Moroz.
+
+Strange Love is :
+Anthony Columbro - guitar/keys
+Josh Moroz - vocals/bass
+Alex Nicol - drums
+        </description>
+        <link>https://strangeloveofmusic.wixsite.com/strangelove</link>
+        <language>en</language>
+        <generator>MSP 2.0 - Music Side Project Studio</generator>
+        <pubDate>Fri, 09 Jan 2026 03:51:51 GMT</pubDate>
+        <lastBuildDate>Wed, 03 Jun 2026 01:38:34 GMT</lastBuildDate>
+        <podcast:guid>7192ec54-3aa2-5c61-987b-51bf75f68568</podcast:guid>
+        <podcast:txt purpose="npub">npub1l5hwyh7saazz4gdhgp9fx4939e25asx74kq6dj9ahrx69lcfxulsudhdrf</podcast:txt>
+        <itunes:category text="Music" />
+        <itunes:keywords>rock, alternative, metal</itunes:keywords>
+        <image>
+            <url>https://phafe.com/wp-content/uploads/rssfeed/music/strangelove/LIve_at_Rockpile/cover.jpeg</url>
+            <title>Live at Rockpile</title>
+        </image>
+        <itunes:image href="https://phafe.com/wp-content/uploads/rssfeed/music/strangelove/LIve_at_Rockpile/cover.jpeg" />
+        <podcast:medium>music</podcast:medium>
+        <itunes:explicit>false</itunes:explicit>
+        <itunes:owner>
+            <itunes:name>Strange Love</itunes:name>
+            <itunes:email>strangeloveofmusic@gmail.com</itunes:email>
+        </itunes:owner>
+        <podcast:person img="https://cdn.satellite.earth/f66620ab11c4c6e92195b8e801c20ae1e507717cedef35fa08c0e20c8a9e34ea.jpg" group="music" role="guitarist">Anthony Columbro</podcast:person>
+        <podcast:person img="https://cdn.satellite.earth/f66620ab11c4c6e92195b8e801c20ae1e507717cedef35fa08c0e20c8a9e34ea.jpg" group="music" role="keyboardist">Anthony Columbro</podcast:person>
+        <podcast:person img="https://cdn.satellite.earth/f66620ab11c4c6e92195b8e801c20ae1e507717cedef35fa08c0e20c8a9e34ea.jpg" group="writing" role="songwriter">Anthony Columbro</podcast:person>
+        <podcast:person img="https://cdn.satellite.earth/1d3621f50a76b2f0be8d7146e3a0daf6c6ee3061e21156580c1b1cf95ba86519.jpg" group="music" role="vocalist">Josh Moroz</podcast:person>
+        <podcast:person img="https://cdn.satellite.earth/1d3621f50a76b2f0be8d7146e3a0daf6c6ee3061e21156580c1b1cf95ba86519.jpg" group="music" role="bassist">Josh Moroz</podcast:person>
+        <podcast:person img="https://cdn.satellite.earth/1d3621f50a76b2f0be8d7146e3a0daf6c6ee3061e21156580c1b1cf95ba86519.jpg" group="writing" role="songwriter">Josh Moroz</podcast:person>
+        <podcast:person img="https://cdn.satellite.earth/66da6f023d371468ab60f4d83e9811011a5977f29bca0efab5b093f047989de7.jpg" group="music" role="drummer">Alex Nicol</podcast:person>
+        <podcast:value type="lightning" method="lnaddress" suggested="0.000033333">
+            <podcast:valueRecipient name="Strange Love" address="strangeloveofmusic@fountain.fm" split="100" type="lnaddress" />
+        </podcast:value>
+        <podcast:publisher>
+            <podcast:remoteItem medium="publisher" feedGuid="e3e2e758-6c83-41e3-87f2-d3c64d3011f8" feedUrl="https://msp.podtards.com/api/hosted/e3e2e758-6c83-41e3-87f2-d3c64d3011f8.xml" />
+        </podcast:publisher>
+        <item>
+            <title>The Moment We Leave (Live)</title>
+            <pubDate>Sat, 17 Jan 2026 12:51:00 GMT</pubDate>
+            <guid isPermaLink="false">a5613ac6-8a50-4c79-8e4e-49f7f031a15c</guid>
+            <itunes:image href="https://cdn.satellite.earth/af43fd71bd72ca7b1f3a7f2238627043283b8abd24496e27694010e13ce1fdfd.png" />
+            <podcast:images srcset="https://cdn.satellite.earth/af43fd71bd72ca7b1f3a7f2238627043283b8abd24496e27694010e13ce1fdfd.png" />
+            <enclosure url="https://op3.dev/e,pg=7192ec54-3aa2-5c61-987b-51bf75f68568/phafe.com/wp-content/uploads/rssfeed/music/strangelove/LIve_at_Rockpile/The_Moment_We_Leave_LAR_FINAL-converted.mp3" length="33" type="audio/mpeg"/>
+            <itunes:duration>00:04:24</itunes:duration>
+            <podcast:season>1</podcast:season>
+            <podcast:episode>1</podcast:episode>
+            <itunes:explicit>false</itunes:explicit>
+            <podcast:value type="lightning" method="lnaddress" suggested="0.000033333">
+                <podcast:valueRecipient name="Strange Love" address="strangeloveofmusic@fountain.fm" split="100" type="lnaddress" />
+            </podcast:value>
+        </item>
+        <item>
+            <title>Too Late To Be Found (Live)</title>
+            <pubDate>Sat, 17 Jan 2026 09:19:00 GMT</pubDate>
+            <guid isPermaLink="false">03990582-c211-4b7a-9bca-a673300727c9</guid>
+            <itunes:image href="https://cdn.satellite.earth/af43fd71bd72ca7b1f3a7f2238627043283b8abd24496e27694010e13ce1fdfd.png" />
+            <podcast:images srcset="https://cdn.satellite.earth/af43fd71bd72ca7b1f3a7f2238627043283b8abd24496e27694010e13ce1fdfd.png" />
+            <enclosure url="https://op3.dev/e,pg=7192ec54-3aa2-5c61-987b-51bf75f68568/phafe.com/wp-content/uploads/rssfeed/music/strangelove/LIve_at_Rockpile/Too_Late_To_Be_Found_LAR_FINAL-converted.mp3" length="33" type="audio/mpeg"/>
+            <itunes:duration>00:02:47</itunes:duration>
+            <podcast:season>1</podcast:season>
+            <podcast:episode>2</podcast:episode>
+            <itunes:explicit>false</itunes:explicit>
+            <podcast:value type="lightning" method="lnaddress" suggested="0.000033333">
+                <podcast:valueRecipient name="Strange Love" address="strangeloveofmusic@fountain.fm" split="100" type="lnaddress" />
+            </podcast:value>
+        </item>
+        <item>
+            <title>To Be Intended (Live)</title>
+            <pubDate>Sat, 17 Jan 2026 05:20:00 GMT</pubDate>
+            <guid isPermaLink="false">42d4b668-85ac-4f08-b6a1-f977cbf4cccf</guid>
+            <itunes:image href="https://cdn.satellite.earth/af43fd71bd72ca7b1f3a7f2238627043283b8abd24496e27694010e13ce1fdfd.png" />
+            <podcast:images srcset="https://cdn.satellite.earth/af43fd71bd72ca7b1f3a7f2238627043283b8abd24496e27694010e13ce1fdfd.png" />
+            <enclosure url="https://op3.dev/e,pg=7192ec54-3aa2-5c61-987b-51bf75f68568/phafe.com/wp-content/uploads/rssfeed/music/strangelove/LIve_at_Rockpile/To_Be_Intended_LAR_FINAL-converted.mp3" length="33" type="audio/mpeg"/>
+            <itunes:duration>00:05:52</itunes:duration>
+            <podcast:season>1</podcast:season>
+            <podcast:episode>3</podcast:episode>
+            <itunes:explicit>false</itunes:explicit>
+            <podcast:value type="lightning" method="lnaddress" suggested="0.000033333">
+                <podcast:valueRecipient name="Strange Love" address="strangeloveofmusic@fountain.fm" split="100" type="lnaddress" />
+            </podcast:value>
+        </item>
+        <item>
+            <title>Come Back To Me Now (Live)</title>
+            <pubDate>Sat, 17 Jan 2026 05:21:00 GMT</pubDate>
+            <guid isPermaLink="false">bedd7730-abba-4bf0-9ac4-d25ef25e3970</guid>
+            <itunes:image href="https://cdn.satellite.earth/af43fd71bd72ca7b1f3a7f2238627043283b8abd24496e27694010e13ce1fdfd.png" />
+            <podcast:images srcset="https://cdn.satellite.earth/af43fd71bd72ca7b1f3a7f2238627043283b8abd24496e27694010e13ce1fdfd.png" />
+            <enclosure url="https://op3.dev/e,pg=7192ec54-3aa2-5c61-987b-51bf75f68568/phafe.com/wp-content/uploads/rssfeed/music/strangelove/LIve_at_Rockpile/Come_Back_To_Me_Now_LAR_FINAL-01-converted.mp3" length="33" type="audio/mpeg"/>
+            <itunes:duration>00:02:60</itunes:duration>
+            <podcast:season>1</podcast:season>
+            <podcast:episode>4</podcast:episode>
+            <itunes:explicit>false</itunes:explicit>
+            <podcast:value type="lightning" method="lnaddress" suggested="0.000033333">
+                <podcast:valueRecipient name="Strange Love" address="strangeloveofmusic@fountain.fm" split="100" type="lnaddress" />
+            </podcast:value>
+        </item>
+        <item>
+            <title>What Frankie Wants (Live)</title>
+            <pubDate>Sat, 17 Jan 2026 09:22:00 GMT</pubDate>
+            <guid isPermaLink="false">93900acc-f969-496c-8403-69030fb9e3d8</guid>
+            <itunes:image href="https://cdn.satellite.earth/af43fd71bd72ca7b1f3a7f2238627043283b8abd24496e27694010e13ce1fdfd.png" />
+            <podcast:images srcset="https://cdn.satellite.earth/af43fd71bd72ca7b1f3a7f2238627043283b8abd24496e27694010e13ce1fdfd.png" />
+            <enclosure url="https://op3.dev/e,pg=7192ec54-3aa2-5c61-987b-51bf75f68568/phafe.com/wp-content/uploads/rssfeed/music/strangelove/LIve_at_Rockpile/What_Frankie_Wants_LAR_FINAL-01-converted.mp3" length="33" type="audio/mpeg"/>
+            <itunes:duration>00:04:60</itunes:duration>
+            <podcast:season>1</podcast:season>
+            <podcast:episode>5</podcast:episode>
+            <itunes:explicit>false</itunes:explicit>
+            <podcast:value type="lightning" method="lnaddress" suggested="0.000033333">
+                <podcast:valueRecipient name="Strange Love" address="strangeloveofmusic@fountain.fm" split="100" type="lnaddress" />
+            </podcast:value>
+        </item>
+        <item>
+            <title>Country Gin (Live)</title>
+            <pubDate>Sat, 17 Jan 2026 21:45:19 GMT</pubDate>
+            <guid isPermaLink="false">2b1f3425-7d30-4e24-a1c3-8b63aae9380a</guid>
+            <itunes:image href="https://cdn.satellite.earth/af43fd71bd72ca7b1f3a7f2238627043283b8abd24496e27694010e13ce1fdfd.png" />
+            <podcast:images srcset="https://cdn.satellite.earth/af43fd71bd72ca7b1f3a7f2238627043283b8abd24496e27694010e13ce1fdfd.png" />
+            <enclosure url="https://op3.dev/e,pg=7192ec54-3aa2-5c61-987b-51bf75f68568/phafe.com/wp-content/uploads/rssfeed/music/strangelove/LIve_at_Rockpile/Country_Gin_LAR_FINAL-converted.mp3" length="33" type="audio/mpeg"/>
+            <itunes:duration>00:02:54</itunes:duration>
+            <podcast:season>1</podcast:season>
+            <podcast:episode>6</podcast:episode>
+            <itunes:explicit>false</itunes:explicit>
+            <podcast:value type="lightning" method="lnaddress" suggested="0.000033333">
+                <podcast:valueRecipient name="Strange Love" address="strangeloveofmusic@fountain.fm" split="100" type="lnaddress" />
+            </podcast:value>
+        </item>
+        <item>
+            <title>The Middle (Live)</title>
+            <pubDate>Sat, 17 Jan 2026 21:45:21 GMT</pubDate>
+            <guid isPermaLink="false">facd476b-7f5c-42aa-8b7b-1cfa03302412</guid>
+            <itunes:image href="https://cdn.satellite.earth/af43fd71bd72ca7b1f3a7f2238627043283b8abd24496e27694010e13ce1fdfd.png" />
+            <podcast:images srcset="https://cdn.satellite.earth/af43fd71bd72ca7b1f3a7f2238627043283b8abd24496e27694010e13ce1fdfd.png" />
+            <enclosure url="https://op3.dev/e,pg=7192ec54-3aa2-5c61-987b-51bf75f68568/phafe.com/wp-content/uploads/rssfeed/music/strangelove/LIve_at_Rockpile/The_Middle_LAR_FINAL-converted.mp3" length="33" type="audio/mpeg"/>
+            <itunes:duration>00:05:24</itunes:duration>
+            <podcast:season>1</podcast:season>
+            <podcast:episode>7</podcast:episode>
+            <itunes:explicit>false</itunes:explicit>
+            <podcast:value type="lightning" method="lnaddress" suggested="0.000033333">
+                <podcast:valueRecipient name="Strange Love" address="strangeloveofmusic@fountain.fm" split="100" type="lnaddress" />
+            </podcast:value>
+        </item>
+    </channel>
+</rss>

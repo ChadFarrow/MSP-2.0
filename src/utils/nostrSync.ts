@@ -94,20 +94,35 @@ export async function fetchNostrProfile(
   }
 }
 
-// Merge artist-provided fields into an existing kind-0 profile, filling only
-// fields that are currently empty (non-destructive — mirrors the opt-in profile
-// pull in the wizard). Returns the merged profile if it adds anything, else null.
+// Merge artist-provided fields into an existing kind-0 profile. By default fills
+// only empty fields (non-destructive — mirrors the opt-in profile pull in the
+// wizard). With { overwrite: true } the provided values become authoritative —
+// used for managed (Google) keys where page 3 (Artist Name + publisher art) is
+// the source of truth, so edits propagate on re-publish. Either way, returns the
+// merged profile only if something actually changed (else null) so callers don't
+// emit a redundant kind-0 event.
 export function mergeProfileFields(
   existing: NostrProfile | null,
-  fields: { name?: string; picture?: string }
+  fields: { name?: string; picture?: string },
+  opts: { overwrite?: boolean } = {}
 ): NostrProfile | null {
+  const { overwrite = false } = opts;
   const merged: NostrProfile = existing ? { ...existing } : {};
   const name = (fields.name ?? '').trim();
   const picture = (fields.picture ?? '').trim();
   let changed = false;
-  if (name && !merged.name) { merged.name = name; changed = true; }
-  if (name && !merged.display_name) { merged.display_name = name; changed = true; }
-  if (picture && !merged.picture) { merged.picture = picture; changed = true; }
+  // Apply `val` to `key` if provided and either the field is empty (fill mode) or
+  // differs from the current value (overwrite mode).
+  const apply = (key: 'name' | 'display_name' | 'picture', val: string) => {
+    if (!val) return;
+    if (overwrite ? merged[key] !== val : !merged[key]) {
+      merged[key] = val;
+      changed = true;
+    }
+  };
+  apply('name', name);
+  apply('display_name', name);
+  apply('picture', picture);
   return changed ? merged : null;
 }
 

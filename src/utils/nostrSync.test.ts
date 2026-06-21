@@ -51,6 +51,29 @@ describe('mergeProfileFields', () => {
   it('returns null when the supplied fields are empty/whitespace', () => {
     expect(mergeProfileFields(null, { name: '   ', picture: '' })).toBeNull();
   });
+
+  it('overwrite: replaces an existing name/display_name/picture (page 3 authoritative)', () => {
+    const r = mergeProfileFields(
+      { name: 'Old Name', display_name: 'Old Name', picture: 'https://old.png', lud16: 'a@b.com' },
+      { name: 'New Name', picture: 'https://new.png' },
+      { overwrite: true }
+    );
+    expect(r).toEqual({
+      name: 'New Name',
+      display_name: 'New Name',
+      picture: 'https://new.png',
+      lud16: 'a@b.com',
+    });
+  });
+
+  it('overwrite: returns null when provided values equal the existing ones (no redundant publish)', () => {
+    const r = mergeProfileFields(
+      { name: 'Same', display_name: 'Same', picture: 'https://same.png' },
+      { name: 'Same', picture: 'https://same.png' },
+      { overwrite: true }
+    );
+    expect(r).toBeNull();
+  });
 });
 
 describe('publishProfileMetadata', () => {

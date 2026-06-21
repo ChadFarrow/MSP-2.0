@@ -325,10 +325,12 @@ export function useOnboardingDraft(lookupExistingPublishers?: ExistingPublisherL
       if (getConnectionMethod() === 'managed') {
         try {
           const existingProfile = await fetchNostrProfile(pubkey);
+          // Managed keys: page 3 (Artist Name + publisher art) is authoritative,
+          // so overwrite the kind-0 name/picture on every publish — edits propagate.
           const merged = mergeProfileFields(existingProfile, {
             name: publisherFeed.author,
             picture: publisherFeed.imageUrl,
-          });
+          }, { overwrite: true });
           if (merged) {
             const profileRes = await publishProfileMetadata(merged);
             if (profileRes.success) {

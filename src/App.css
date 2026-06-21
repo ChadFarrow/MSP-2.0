@@ -2567,7 +2567,11 @@ body {
   align-items: flex-start;
   gap: 28px;
   /* Cap the width and center the phone + checklist group so the screenshot sits
-     toward the middle of the page instead of jammed against the left edge. */
+     toward the middle of the page instead of jammed against the left edge.
+     width:100% is load-bearing — without it the auto margins inside the parent
+     column-flex shrink this to its content width, so the boxes change size as the
+     per-step description text gets longer or shorter. */
+  width: 100%;
   max-width: 880px;
   margin: 0 auto;
 }
@@ -2612,7 +2616,11 @@ body {
 }
 
 .primal-carousel-desc {
+  /* Pinned to the bottom of the fixed-height column and given a reserved height,
+     so the step boxes above stay put and the caption never tugs on them. */
   margin: 0;
+  margin-top: auto;
+  min-height: 2.8em;
   font-size: 0.875rem;
   line-height: 1.45;
   color: var(--text-secondary);

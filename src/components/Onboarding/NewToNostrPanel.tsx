@@ -7,6 +7,7 @@
 // the remote-signer connect UI right below).
 
 import { NostrLoginPanel } from './NostrLoginPanel';
+import { PrimalSignupCarousel } from './PrimalSignupCarousel';
 
 interface NewToNostrPanelProps {
   // When true, render the remote-signer connect UI (NostrLoginPanel) directly
@@ -20,56 +21,33 @@ export function NewToNostrPanel({ inlineConnect = false }: NewToNostrPanelProps)
     <div className="nostr-connect-primal">
       <p className="connect-description">
         Primal is an easy way to get a real Nostr identity that works across many apps.
+        Get the app at{' '}
+        <a href="https://primal.net" target="_blank" rel="noopener noreferrer">primal.net</a>
+        {' '}— available on iOS and Android.
       </p>
-      <div className="primal-steps">
-        <div className="primal-step">
-          <div className="primal-step-number">1</div>
-          <div className="primal-step-content">
-            <strong>Download Primal</strong>
-            <p>
-              Get the app at{' '}
-              <a href="https://primal.net" target="_blank" rel="noopener noreferrer">primal.net</a>
-              {' '}— available on iOS and Android.
-            </p>
-          </div>
-        </div>
-        <div className="primal-step">
-          <div className="primal-step-number">2</div>
-          <div className="primal-step-content">
-            <strong>Create your account</strong>
-            <p>Add a display name (and a photo if you like). Primal generates your Nostr keys for you and can save them to your iCloud Keychain.</p>
-          </div>
-        </div>
-        <div className="primal-step">
-          <div className="primal-step-number">3</div>
-          <div className="primal-step-content">
-            <strong>Scan the QR code</strong>
-            <p>In Primal, open the QR scanner and scan the code shown below — nothing to copy or paste.</p>
-          </div>
-        </div>
-        <div className="primal-step">
-          <div className="primal-step-number">4</div>
-          <div className="primal-step-content">
-            <strong>Approve the connection</strong>
-            {inlineConnect ? (
-              <p>
-                Approve the request in Primal and you're connected. Prefer not to scan? Paste a{' '}
-                <code>bunker://</code> code from Primal's <strong>Settings → Keys → Nostr Connect</strong> instead.
-              </p>
-            ) : (
-              <p>
-                Approve the request in Primal and you're connected — or paste a <code>bunker://</code> code on the{' '}
-                <strong>Remote Signer</strong> tab.
-              </p>
-            )}
-          </div>
-        </div>
-      </div>
 
-      {inlineConnect && (
-        <div style={{ marginTop: 16 }}>
-          <NostrLoginPanel />
-        </div>
+      <h4 className="primal-section-heading">Create your account in Primal</h4>
+      <PrimalSignupCarousel />
+
+      <h4 className="primal-section-heading">Then connect it to MSP</h4>
+      {inlineConnect ? (
+        <>
+          <p className="connect-description">
+            In Primal, open the QR scanner and scan the code below — nothing to copy or paste.
+            Approve the request and you're connected. Prefer not to scan? Paste a{' '}
+            <code>bunker://</code> code from Primal's{' '}
+            <strong>Settings → Keys → Nostr Connect</strong> instead.
+          </p>
+          <div style={{ marginTop: 16 }}>
+            <NostrLoginPanel />
+          </div>
+        </>
+      ) : (
+        <p className="connect-description">
+          Go to the <strong>Remote Signer</strong> tab, scan the QR code with Primal, and
+          approve the request — or paste a <code>bunker://</code> code from Primal's{' '}
+          <strong>Settings → Keys → Nostr Connect</strong>.
+        </p>
       )}
     </div>
   );

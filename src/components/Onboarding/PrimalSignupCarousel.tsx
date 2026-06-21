@@ -1,12 +1,12 @@
 // src/components/Onboarding/PrimalSignupCarousel.tsx
 //
-// Two-column Primal account-creation walkthrough: a large phone screenshot on the
-// left, a numbered step checklist on the right. The user pages forward through the
-// 5 steps (future steps stay locked until reached); once they reach the last step
-// the connect UI (passed in as connectSlot) is revealed in the right column.
-// Pure presentational component — no store coupling.
+// Two-column Primal onboarding walkthrough: a large phone screenshot on the left,
+// a numbered step checklist on the right. The first five steps are the Primal
+// account-creation screens; the sixth step is "Connect to MSP" — locked until the
+// Primal steps have been reached, and when active it shows the connect UI (passed
+// in as connectSlot) in the right column. Pure presentational component.
 
-import { useState, useEffect, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import slide1 from '../../assets/onboarding/primal-1-create-account.webp';
 import slide2 from '../../assets/onboarding/primal-2-follow-people.webp';
 import slide3 from '../../assets/onboarding/primal-3-account-preview.webp';
@@ -25,38 +25,40 @@ const SLIDES: Slide[] = [
   { src: slide2, alt: 'Primal Follow People screen', title: 'Pick a follow pack', caption: <>Choose at least one follow pack to get started — you can change this later.</> },
   { src: slide3, alt: 'Primal Account Preview screen', title: 'Review your profile', caption: <>Review your new profile, then tap Create Account.</> },
   { src: slide4, alt: 'Primal account-created success screen', title: 'Save to iCloud Keychain (optional)', caption: <>Optional — on iOS, keep <strong>Save to iCloud Keychain</strong> on to back up your key.</> },
-  { src: slide5, alt: 'Primal profile screen', title: "You're on Nostr!", caption: <>🎉 You're on Nostr — now connect it to MSP.</> },
+  { src: slide5, alt: 'Primal profile screen', title: "You're on Nostr!", caption: <>🎉 Your Primal account is ready — now connect it to MSP.</> },
 ];
 
+const CONNECT_TITLE = 'Connect to MSP';
+
 interface PrimalSignupCarouselProps {
-  // Fires once the user reaches the final step.
-  onReachedEnd?: () => void;
-  // Shown in the right column once every step has been reached (the connect UI).
+  // Shown in the right column when the "Connect to MSP" step is active.
   connectSlot?: ReactNode;
-  // Shown in the right column until then (a nudge to finish the walkthrough).
-  pendingHint?: ReactNode;
 }
 
-export function PrimalSignupCarousel({ onReachedEnd, connectSlot, pendingHint }: PrimalSignupCarouselProps) {
+export function PrimalSignupCarousel({ connectSlot }: PrimalSignupCarouselProps) {
+  const primalCount = SLIDES.length; // 5 Primal screens
+  const total = primalCount + 1; // + the Connect step
   const [index, setIndex] = useState(0);
-  // High-water mark — the furthest step reached. Steps beyond it stay locked so
-  // the user pages through the setup in order; visited steps stay revisitable.
+  // High-water mark — the furthest step reached.
   const [maxSeen, setMaxSeen] = useState(0);
-  const count = SLIDES.length;
-  const slide = SLIDES[index];
+
+  const onConnectStep = index === primalCount;
+  // The Connect step unlocks once the user has reached the last Primal screen.
+  const primalDone = maxSeen >= primalCount - 1;
+  // On the Connect step the phone keeps showing the final Primal screenshot.
+  const photoSlide = SLIDES[Math.min(index, primalCount - 1)];
   const atStart = index === 0;
-  const atEnd = index === count - 1;
-  const complete = maxSeen === count - 1;
+  const atEnd = index === total - 1;
 
   const advance = (next: number) => {
-    const target = Math.max(0, Math.min(count - 1, next));
+    let target = Math.max(0, Math.min(total - 1, next));
+    // Don't allow jumping to the Connect step before the Primal steps are done.
+    if (target === primalCount && !primalDone) target = index;
     setIndex(target);
     if (target > maxSeen) setMaxSeen(target);
   };
 
-  useEffect(() => {
-    if (complete) onReachedEnd?.();
-  }, [complete, onReachedEnd]);
+  const stepTitles = [...SLIDES.map((s) => s.title), CONNECT_TITLE];
 
   return (
     <div className="primal-carousel">
@@ -66,9 +68,9 @@ export function PrimalSignupCarousel({ onReachedEnd, connectSlot, pendingHint }:
           className="primal-carousel-photo"
           onClick={() => advance(index + 1)}
           disabled={atEnd}
-          aria-label={atEnd ? slide.alt : 'Next step'}
+          aria-label={atEnd ? photoSlide.alt : 'Next step'}
         >
-          <img className="primal-carousel-img" src={slide.src} alt={slide.alt} />
+          <img className="primal-carousel-img" src={photoSlide.src} alt={photoSlide.alt} />
         </button>
         <div className="primal-carousel-nav">
           <button
@@ -80,7 +82,7 @@ export function PrimalSignupCarousel({ onReachedEnd, connectSlot, pendingHint }:
           >
             ‹
           </button>
-          <span className="primal-carousel-counter">{index + 1} / {count}</span>
+          <span className="primal-carousel-counter">{index + 1} / {total}</span>
           <button
             type="button"
             className="primal-carousel-arrow"
@@ -94,39 +96,30 @@ export function PrimalSignupCarousel({ onReachedEnd, connectSlot, pendingHint }:
       </div>
 
       <div className="primal-carousel-side">
-        {complete ? (
-          <>
-            <div className="primal-steps-done">
-              <span className="primal-step-badge is-done-badge">✓</span>
-              Primal account set up — use the arrows to review any step.
-            </div>
-            {connectSlot}
-          </>
-        ) : (
-          <>
-            <ol className="primal-carousel-steps">
-              {SLIDES.map((s, i) => {
-                const active = i === index;
-                const done = !active && i <= maxSeen;
-                return (
-                  <li key={s.src}>
-                    <button
-                      type="button"
-                      className={`primal-step-item${active ? ' is-active' : ''}${done ? ' is-done' : ''}`}
-                      onClick={() => advance(i)}
-                      aria-current={active}
-                    >
-                      <span className="primal-step-badge">{done ? '✓' : i + 1}</span>
-                      <span className="primal-step-label">{s.title}</span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ol>
-            <p className="primal-carousel-desc">{slide.caption}</p>
-            {pendingHint}
-          </>
-        )}
+        <ol className="primal-carousel-steps">
+          {stepTitles.map((title, i) => {
+            const isConnect = i === primalCount;
+            const locked = isConnect && !primalDone;
+            const active = i === index;
+            const done = !active && !isConnect && i <= maxSeen;
+            return (
+              <li key={title}>
+                <button
+                  type="button"
+                  className={`primal-step-item${active ? ' is-active' : ''}${done ? ' is-done' : ''}${isConnect ? ' is-connect' : ''}`}
+                  onClick={() => advance(i)}
+                  disabled={locked}
+                  aria-current={active}
+                >
+                  <span className="primal-step-badge">{done ? '✓' : i + 1}</span>
+                  <span className="primal-step-label">{title}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+
+        {onConnectStep ? connectSlot : <p className="primal-carousel-desc">{photoSlide.caption}</p>}
       </div>
     </div>
   );

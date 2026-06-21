@@ -24,31 +24,23 @@ interface NewToNostrPanelProps {
 export function NewToNostrPanel({ inlineConnect = false }: NewToNostrPanelProps) {
   const connectSlot = (
     <div className="primal-connect-slot">
-      <h4 className="primal-section-heading">Then connect it to MSP</h4>
       {inlineConnect ? (
         <>
           <p className="connect-description">
-            In Primal, open the QR scanner and scan the code below — nothing to copy or
-            paste. Approve the request and you're connected. Prefer not to scan? Paste a{' '}
-            <code>bunker://</code> code from Primal's{' '}
-            <strong>Settings → Keys → Nostr Connect</strong> instead.
+            Scan the QR below with Primal to connect — approve the request and you're in.
+            Prefer not to scan? Paste a <code>bunker://</code> code from Primal's{' '}
+            <strong>Settings → Keys → Nostr Connect</strong>.
           </p>
           <NostrLoginPanel />
         </>
       ) : (
         <p className="connect-description">
-          Go to the <strong>Remote Signer</strong> tab, scan the QR code with Primal, and
-          approve the request — or paste a <code>bunker://</code> code from Primal's{' '}
+          Go to the <strong>Remote Signer</strong> tab and scan the QR code with Primal — or
+          paste a <code>bunker://</code> code from Primal's{' '}
           <strong>Settings → Keys → Nostr Connect</strong>.
         </p>
       )}
     </div>
-  );
-
-  const pendingHint = (
-    <p className="primal-setup-hint">
-      Step through all five screens, then you'll connect your new account to MSP.
-    </p>
   );
 
   return (
@@ -60,7 +52,7 @@ export function NewToNostrPanel({ inlineConnect = false }: NewToNostrPanelProps)
         {' '}(iOS and Android).
       </p>
 
-      <PrimalSignupCarousel connectSlot={connectSlot} pendingHint={pendingHint} />
+      <PrimalSignupCarousel connectSlot={connectSlot} />
     </div>
   );
 }

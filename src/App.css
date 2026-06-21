@@ -2566,6 +2566,10 @@ body {
   flex-direction: row;
   align-items: flex-start;
   gap: 28px;
+  /* Cap the width and center the phone + checklist group so the screenshot sits
+     toward the middle of the page instead of jammed against the left edge. */
+  max-width: 880px;
+  margin: 0 auto;
 }
 
 /* Left column: the phone screenshot, its caption, and the prev/next nav. */

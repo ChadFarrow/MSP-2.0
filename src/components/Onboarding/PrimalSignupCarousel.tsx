@@ -47,14 +47,17 @@ export function PrimalSignupCarousel({ onConnect }: PrimalSignupCarouselProps) {
   const slide = SLIDES[index];
   const atStart = index === 0;
 
+  const select = (i: number) => {
+    setIndex(i);
+    if (i > maxSeen) setMaxSeen(i);
+  };
+
   const advance = (next: number) => {
     if (next >= primalCount) {
       onConnect();
       return;
     }
-    const target = Math.max(0, next);
-    setIndex(target);
-    if (target > maxSeen) setMaxSeen(target);
+    select(Math.max(0, next));
   };
 
   const stepTitles = [...SLIDES.map((s) => s.title), CONNECT_TITLE];
@@ -104,7 +107,7 @@ export function PrimalSignupCarousel({ onConnect }: PrimalSignupCarouselProps) {
                 <button
                   type="button"
                   className={`primal-step-item${active ? ' is-active' : ''}${done ? ' is-done' : ''}${isConnect ? ' is-connect' : ''}`}
-                  onClick={() => (isConnect ? onConnect() : setIndex(i))}
+                  onClick={() => (isConnect ? onConnect() : select(i))}
                   disabled={locked}
                   aria-current={active}
                 >

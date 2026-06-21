@@ -2567,6 +2567,7 @@ body {
   font-size: 0.875rem;
   line-height: 1.45;
   color: var(--text-secondary);
+  text-align: center;
 }
 
 .primal-intro strong {

@@ -2554,13 +2554,6 @@ body {
   gap: 12px;
 }
 
-.primal-section-heading {
-  margin: 0;
-  font-size: 0.9375rem;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
 /* Intro line: lead-in + app-store guidance on one line */
 .primal-intro {
   margin: 0;
@@ -2761,26 +2754,6 @@ body {
   font-weight: 500;
 }
 
-.primal-steps-done {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.primal-step-badge.is-done-badge {
-  background: var(--success, #16a34a);
-  color: #fff;
-}
-
-.primal-connect-slot {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
 /* Dedicated connect page (step 6 → its own view), matching the setup-page layout:
    the QR sits in the phone's slot (left), the steps are the checklist boxes (right). */
 .primal-connect-back {
@@ -2811,29 +2784,17 @@ body {
 .primal-connect-phone {
   flex: 0 0 auto;
   /* Fixed to the screenshot footprint (portrait aspect ~0.46) so swapping shots
-     or the placeholder never shifts the steps/QR columns. */
+     never shifts the steps/QR columns. */
   width: calc(min(360px, 42vh) * 0.46);
 }
 
-.primal-connect-phone img,
-.primal-connect-phone-placeholder {
+.primal-connect-phone img {
   display: block;
   width: 100%;
   height: min(360px, 42vh);
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-color);
   background: var(--bg-tertiary);
-}
-
-.primal-connect-phone-placeholder {
-  border-style: dashed;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
-  font-size: 0.85rem;
-  text-align: center;
-  padding: 12px;
 }
 
 .primal-connect-steps {
@@ -2861,27 +2822,6 @@ body {
     align-items: center;
     gap: 20px;
   }
-}
-
-/* Static (non-interactive) checklist box used for the connect-page steps. */
-.primal-step-item.is-static {
-  cursor: default;
-  align-items: flex-start;
-}
-
-.primal-step-item.is-static:hover {
-  border-color: var(--border-color);
-  background: var(--bg-tertiary);
-}
-
-.primal-step-item.is-static .primal-step-label {
-  color: var(--text-secondary);
-}
-
-.primal-setup-hint {
-  margin: 0;
-  font-size: 0.8125rem;
-  color: var(--text-muted);
 }
 
 /* Stack the two columns on narrow viewports. */

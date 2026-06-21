@@ -18,7 +18,7 @@ import permissionsShot from '../../assets/onboarding/primal-connect-permissions.
 
 interface ConnectStep {
   label: ReactNode;
-  img: string | null; // screenshot for this step (null = not supplied yet)
+  img: string; // screenshot shown on the left when this step is active
   alt: string;
 }
 
@@ -52,11 +52,7 @@ export function NewToNostrPanel() {
         </p>
         <div className="primal-connect-cols">
           <div className="primal-connect-phone">
-            {activeShot.img ? (
-              <img src={activeShot.img} alt={activeShot.alt} />
-            ) : (
-              <div className="primal-connect-phone-placeholder">Screenshot coming</div>
-            )}
+            <img src={activeShot.img} alt={activeShot.alt} />
           </div>
           <ol className="primal-connect-steps">
             {CONNECT_STEPS.map((step, i) => (

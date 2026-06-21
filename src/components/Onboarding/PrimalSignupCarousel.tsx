@@ -106,7 +106,7 @@ export function PrimalSignupCarousel({ onConnect }: PrimalSignupCarouselProps) {
               <li key={title}>
                 <button
                   type="button"
-                  className={`primal-step-item${active ? ' is-active' : ''}${done ? ' is-done' : ''}${isConnect ? ' is-connect' : ''}`}
+                  className={`primal-step-item${active ? ' is-active' : ''}${done ? ' is-done' : ''}`}
                   onClick={() => (isConnect ? onConnect() : select(i))}
                   disabled={locked}
                   aria-current={active}

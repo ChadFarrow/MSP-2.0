@@ -2627,7 +2627,7 @@ body {
 
 .primal-carousel-img {
   /* Viewport-relative so the whole step stays on one screen (no page scroll). */
-  height: min(380px, 44vh);
+  height: min(360px, 42vh);
   max-width: 100%;
   object-fit: contain;
   border-radius: var(--radius-lg);
@@ -2695,7 +2695,7 @@ body {
   gap: 12px;
   /* Anchor the right column to the phone's height so the checklist stays put and
      the per-step description (1 vs 2 lines) doesn't grow/shrink the layout. */
-  min-height: min(380px, 44vh);
+  min-height: min(360px, 42vh);
 }
 
 .primal-carousel-steps {

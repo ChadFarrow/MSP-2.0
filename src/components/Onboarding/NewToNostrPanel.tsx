@@ -49,7 +49,7 @@ export function NewToNostrPanel({ inlineConnect = false }: NewToNostrPanelProps)
         <h4 className="primal-intro-title">Create your account in the Primal app</h4>
         <p className="primal-intro-sub">
           A real Nostr identity that works across many apps. On your phone, download Primal
-          from the App Store or Google Play — the web version won't work for connecting here.
+          from the App Store or Google Play.
         </p>
       </div>
 

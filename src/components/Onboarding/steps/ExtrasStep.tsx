@@ -2,7 +2,6 @@
 import type { OnboardingDraft } from '../useOnboardingDraft';
 import { createEmptyPersonRole } from '../../../types/feed';
 import { Section } from '../../Section';
-import { FundingFields } from '../../FundingFields';
 import { PersonsSection } from '../../Editor/AlbumEditor/PersonsSection';
 
 export function ExtrasStep({ w }: { w: OnboardingDraft }) {
@@ -26,13 +25,6 @@ export function ExtrasStep({ w }: { w: OnboardingDraft }) {
         showThumbnailPreview
         showRolesModalButton
       />
-
-      <div style={{ marginTop: 16 }}>
-        <FundingFields
-          funding={state.album.funding}
-          onUpdate={(funding) => dispatch({ type: 'UPDATE_ALBUM', payload: { funding } })}
-        />
-      </div>
     </Section>
   );
 }

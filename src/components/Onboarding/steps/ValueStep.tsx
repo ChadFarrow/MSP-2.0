@@ -2,6 +2,7 @@
 import type { OnboardingDraft } from '../useOnboardingDraft';
 import { Section } from '../../Section';
 import { RecipientsList } from '../../RecipientsList';
+import { FundingFields } from '../../FundingFields';
 
 export function ValueStep({ w }: { w: OnboardingDraft }) {
   const { state, dispatch } = w;
@@ -38,6 +39,15 @@ export function ValueStep({ w }: { w: OnboardingDraft }) {
         onUpdate={(idx, recipient) => dispatch({ type: 'UPDATE_RECIPIENT', payload: { index: idx, recipient } })}
         onRemove={(idx) => dispatch({ type: 'REMOVE_RECIPIENT', payload: idx })}
         onAdd={(recipient) => dispatch({ type: 'ADD_RECIPIENT', payload: recipient })}
+      />
+
+      <h4 style={{ marginTop: 24, marginBottom: 4, color: 'var(--text-secondary)' }}>Support link</h4>
+      <p style={{ color: 'var(--text-secondary)', fontSize: '0.85em', margin: '0 0 8px' }}>
+        A page where fans can support you (Patreon, a tip jar, your site) — works without Lightning.
+      </p>
+      <FundingFields
+        funding={state.album.funding}
+        onUpdate={(funding) => dispatch({ type: 'UPDATE_ALBUM', payload: { funding } })}
       />
     </Section>
   );

@@ -46,21 +46,11 @@ export function NewToNostrPanel({ inlineConnect = false }: NewToNostrPanelProps)
   return (
     <div className="nostr-connect-primal">
       <div className="primal-intro">
-        <div className="primal-intro-text">
-          <h4 className="primal-intro-title">Create your account in Primal</h4>
-          <p className="primal-intro-sub">
-            A real Nostr identity that works across many apps — yours to keep.
-          </p>
-        </div>
-        <a
-          className="primal-intro-cta"
-          href="https://primal.net"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <span className="primal-intro-cta-label">Get Primal ↗</span>
-          <span className="primal-intro-cta-os">iOS &amp; Android</span>
-        </a>
+        <h4 className="primal-intro-title">Create your account in the Primal app</h4>
+        <p className="primal-intro-sub">
+          A real Nostr identity that works across many apps. On your phone, download Primal
+          from the App Store or Google Play — the web version won't work for connecting here.
+        </p>
       </div>
 
       <PrimalSignupCarousel connectSlot={connectSlot} />

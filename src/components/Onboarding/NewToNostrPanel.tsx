@@ -11,7 +11,10 @@
 import { useState, type ReactNode } from 'react';
 import { NostrLoginPanel } from './NostrLoginPanel';
 import { PrimalSignupCarousel } from './PrimalSignupCarousel';
+import menuShot from '../../assets/onboarding/primal-menu.webp';
 import remoteLoginShot from '../../assets/onboarding/primal-remote-login.webp';
+import loginAsShot from '../../assets/onboarding/primal-connect-login.webp';
+import permissionsShot from '../../assets/onboarding/primal-connect-permissions.webp';
 
 interface ConnectStep {
   label: ReactNode;
@@ -20,16 +23,16 @@ interface ConnectStep {
 }
 
 const CONNECT_STEPS: ConnectStep[] = [
-  { label: <>Open the <strong>Primal</strong> app on your phone.</>, img: null, alt: 'Primal home screen' },
-  { label: <>Tap your profile picture to open the menu, then tap <strong>Remote Login</strong>.</>, img: null, alt: 'Primal side menu with Remote Login' },
+  { label: <>In Primal, tap your profile picture, then tap <strong>Remote Login</strong>.</>, img: menuShot, alt: 'Primal side menu with Remote Login' },
   { label: <>Scan the code on the right with Primal.</>, img: remoteLoginShot, alt: 'Primal Remote Login scanner' },
-  { label: <>Approve the request — you're signed in.</>, img: null, alt: 'Primal approve connection prompt' },
+  { label: <>Choose the account to log in as.</>, img: loginAsShot, alt: 'Primal Remote Login — choose account' },
+  { label: <>Pick a trust level, then tap <strong>Connect</strong>.</>, img: permissionsShot, alt: 'Primal Remote Login — permissions' },
 ];
 
 export function NewToNostrPanel() {
   const [view, setView] = useState<'steps' | 'connect'>('steps');
   // Which connect step's screenshot is shown on the left.
-  const [connectStep, setConnectStep] = useState(2); // default to the scan step
+  const [connectStep, setConnectStep] = useState(0);
 
   if (view === 'connect') {
     const activeShot = CONNECT_STEPS[connectStep];

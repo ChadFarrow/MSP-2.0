@@ -2848,7 +2848,7 @@ body {
 }
 
 .primal-connect-steps .primal-step-item {
-  align-items: flex-start;
+  align-items: center;
 }
 
 .primal-connect-qr {

@@ -36,7 +36,7 @@ export function NewToNostrPanel() {
               </li>
               <li>
                 <span className="primal-step-badge">2</span>
-                <span>Go to <strong>Remote Login</strong>.</span>
+                <span>Tap your profile picture to open the menu, then tap <strong>Remote Login</strong>.</span>
               </li>
               <li>
                 <span className="primal-step-badge">3</span>

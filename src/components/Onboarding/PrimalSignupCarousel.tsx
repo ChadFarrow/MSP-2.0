@@ -62,7 +62,6 @@ export function PrimalSignupCarousel({ onReachedEnd, connectSlot, pendingHint }:
     <div className="primal-carousel">
       <div className="primal-carousel-stage">
         <img className="primal-carousel-img" src={slide.src} alt={slide.alt} />
-        <p className="primal-carousel-caption">{slide.caption}</p>
         <div className="primal-carousel-nav">
           <button
             type="button"
@@ -118,6 +117,7 @@ export function PrimalSignupCarousel({ onReachedEnd, connectSlot, pendingHint }:
                 );
               })}
             </ol>
+            <p className="primal-carousel-desc">{slide.caption}</p>
             {pendingHint}
           </>
         )}

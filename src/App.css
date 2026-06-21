@@ -2579,7 +2579,7 @@ body {
 
 .primal-carousel-img {
   /* Viewport-relative so the whole step stays on one screen (no page scroll). */
-  height: min(440px, 50vh);
+  height: min(380px, 44vh);
   max-width: 100%;
   object-fit: contain;
   border-radius: var(--radius-lg);
@@ -2587,13 +2587,10 @@ body {
   background: var(--bg-tertiary);
 }
 
-.primal-carousel-caption {
+.primal-carousel-desc {
   margin: 0;
-  max-width: 260px;
-  min-height: 2.6em;
-  text-align: center;
-  font-size: 0.85rem;
-  line-height: 1.4;
+  font-size: 0.875rem;
+  line-height: 1.45;
   color: var(--text-secondary);
 }
 

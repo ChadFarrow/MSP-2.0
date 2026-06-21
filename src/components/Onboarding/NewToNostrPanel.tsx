@@ -54,13 +54,12 @@ export function NewToNostrPanel({ inlineConnect = false }: NewToNostrPanelProps)
   return (
     <div className="nostr-connect-primal">
       <p className="connect-description">
-        Primal is an easy way to get a real Nostr identity that works across many apps.
+        Create your account in Primal — a real Nostr identity that works across many apps.
         Get the app at{' '}
         <a href="https://primal.net" target="_blank" rel="noopener noreferrer">primal.net</a>
-        {' '}— available on iOS and Android.
+        {' '}(iOS and Android).
       </p>
 
-      <h4 className="primal-section-heading">Create your account in Primal</h4>
       <PrimalSignupCarousel connectSlot={connectSlot} pendingHint={pendingHint} />
     </div>
   );

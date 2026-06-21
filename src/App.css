@@ -2561,25 +2561,16 @@ body {
   color: var(--text-primary);
 }
 
-/* Intro: heading + sub + app-store links */
+/* Intro line: lead-in + app-store guidance on one line */
 .primal-intro {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.primal-intro-title {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.primal-intro-sub {
   margin: 0;
   font-size: 0.875rem;
   line-height: 1.45;
   color: var(--text-secondary);
+}
+
+.primal-intro strong {
+  color: var(--text-primary);
 }
 
 .primal-carousel {

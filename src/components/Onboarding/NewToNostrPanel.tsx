@@ -26,7 +26,7 @@ const CONNECT_STEPS: ConnectStep[] = [
   { label: <>In Primal, tap your profile picture, then tap <strong>Remote Login</strong>.</>, img: menuShot, alt: 'Primal side menu with Remote Login' },
   { label: <>Scan the code on the right with Primal.</>, img: remoteLoginShot, alt: 'Primal Remote Login scanner' },
   { label: <>Choose the account to log in as.</>, img: loginAsShot, alt: 'Primal Remote Login — choose account' },
-  { label: <>Pick a trust level, then tap <strong>Connect</strong>.</>, img: permissionsShot, alt: 'Primal Remote Login — permissions' },
+  { label: <>Pick a trust level, then tap <strong>Connect</strong>. <strong>Full Trust</strong> approves everything automatically; lower levels ask you to approve each request.</>, img: permissionsShot, alt: 'Primal Remote Login — permissions' },
 ];
 
 export function NewToNostrPanel() {

@@ -106,7 +106,6 @@ export function PrimalSignupCarousel({ onReachedEnd, connectSlot, pendingHint }:
           <>
             <ol className="primal-carousel-steps">
               {SLIDES.map((s, i) => {
-                const locked = i > maxSeen;
                 const active = i === index;
                 const done = !active && i <= maxSeen;
                 return (
@@ -114,8 +113,7 @@ export function PrimalSignupCarousel({ onReachedEnd, connectSlot, pendingHint }:
                     <button
                       type="button"
                       className={`primal-step-item${active ? ' is-active' : ''}${done ? ' is-done' : ''}`}
-                      onClick={() => !locked && setIndex(i)}
-                      disabled={locked}
+                      onClick={() => advance(i)}
                       aria-current={active}
                     >
                       <span className="primal-step-badge">{done ? '✓' : i + 1}</span>

@@ -18,19 +18,40 @@ export function NewToNostrPanel() {
   if (view === 'connect') {
     return (
       <div className="nostr-connect-primal">
-        <button
-          type="button"
-          className="btn btn-secondary btn-small primal-connect-back"
-          onClick={() => setView('steps')}
-        >
-          ← Back to setup
-        </button>
         <div className="primal-connect-page">
+          <button
+            type="button"
+            className="btn-link primal-connect-back"
+            onClick={() => setView('steps')}
+          >
+            ← Back to setup steps
+          </button>
           <h4 className="primal-connect-title">Connect Primal to MSP</h4>
-          <p className="primal-connect-instructions">
-            In Primal, open <strong>Remote Login</strong> and scan this code to sign in.
-          </p>
-          <NostrLoginPanel qrOnly />
+
+          <div className="primal-connect-cols">
+            <ol className="primal-connect-steps">
+              <li>
+                <span className="primal-step-badge">1</span>
+                <span>Open the <strong>Primal</strong> app on your phone.</span>
+              </li>
+              <li>
+                <span className="primal-step-badge">2</span>
+                <span>Go to <strong>Remote Login</strong>.</span>
+              </li>
+              <li>
+                <span className="primal-step-badge">3</span>
+                <span>Scan the code on the right with Primal.</span>
+              </li>
+              <li>
+                <span className="primal-step-badge">4</span>
+                <span>Approve the request — you're signed in.</span>
+              </li>
+            </ol>
+
+            <div className="primal-connect-qr">
+              <NostrLoginPanel qrOnly />
+            </div>
+          </div>
         </div>
       </div>
     );

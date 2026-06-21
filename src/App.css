@@ -2782,17 +2782,24 @@ body {
 }
 
 /* Dedicated connect page (step 6 → its own view) */
-.primal-connect-back {
-  align-self: flex-start;
-}
-
 .primal-connect-page {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  text-align: center;
-  padding: 8px 0 4px;
+  gap: 16px;
+}
+
+.primal-connect-back {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.primal-connect-back:hover {
+  color: var(--text-primary);
 }
 
 .primal-connect-title {
@@ -2800,18 +2807,54 @@ body {
   font-size: 1.15rem;
   font-weight: 600;
   color: var(--text-primary);
+  text-align: center;
 }
 
-.primal-connect-instructions {
+/* Two columns: numbered steps on the left, the QR on the right. */
+.primal-connect-cols {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 40px;
+  width: 100%;
+  max-width: 880px;
+  margin: 0 auto;
+}
+
+.primal-connect-steps {
+  list-style: none;
   margin: 0;
-  max-width: 420px;
-  font-size: 0.9rem;
-  line-height: 1.5;
+  padding: 0;
+  flex: 1 1 0;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.primal-connect-steps li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.95rem;
+  line-height: 1.4;
   color: var(--text-secondary);
 }
 
-.primal-connect-instructions strong {
+.primal-connect-steps strong {
   color: var(--text-primary);
+}
+
+.primal-connect-qr {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 720px) {
+  .primal-connect-cols {
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+  }
 }
 
 .primal-setup-hint {

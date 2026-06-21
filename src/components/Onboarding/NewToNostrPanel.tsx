@@ -6,6 +6,7 @@
 // the Remote Signer tab) and the onboarding wizard (inlineConnect: educational +
 // the remote-signer connect UI right below).
 
+import { useState } from 'react';
 import { NostrLoginPanel } from './NostrLoginPanel';
 import { PrimalSignupCarousel } from './PrimalSignupCarousel';
 
@@ -17,6 +18,10 @@ interface NewToNostrPanelProps {
 }
 
 export function NewToNostrPanel({ inlineConnect = false }: NewToNostrPanelProps) {
+  // Reveal the connect step only after the user pages through the whole Primal
+  // setup carousel — set up Primal first, then connect it.
+  const [setupComplete, setSetupComplete] = useState(false);
+
   return (
     <div className="nostr-connect-primal">
       <p className="connect-description">
@@ -27,27 +32,35 @@ export function NewToNostrPanel({ inlineConnect = false }: NewToNostrPanelProps)
       </p>
 
       <h4 className="primal-section-heading">Create your account in Primal</h4>
-      <PrimalSignupCarousel />
+      <PrimalSignupCarousel onReachedEnd={() => setSetupComplete(true)} />
 
-      <h4 className="primal-section-heading">Then connect it to MSP</h4>
-      {inlineConnect ? (
-        <>
-          <p className="connect-description">
-            In Primal, open the QR scanner and scan the code below — nothing to copy or paste.
-            Approve the request and you're connected. Prefer not to scan? Paste a{' '}
-            <code>bunker://</code> code from Primal's{' '}
-            <strong>Settings → Keys → Nostr Connect</strong> instead.
-          </p>
-          <div style={{ marginTop: 16 }}>
-            <NostrLoginPanel />
-          </div>
-        </>
-      ) : (
-        <p className="connect-description">
-          Go to the <strong>Remote Signer</strong> tab, scan the QR code with Primal, and
-          approve the request — or paste a <code>bunker://</code> code from Primal's{' '}
-          <strong>Settings → Keys → Nostr Connect</strong>.
+      {!setupComplete ? (
+        <p className="primal-setup-hint">
+          Step through all 5 screens above, then you'll connect your new account to MSP.
         </p>
+      ) : (
+        <>
+          <h4 className="primal-section-heading">Then connect it to MSP</h4>
+          {inlineConnect ? (
+            <>
+              <p className="connect-description">
+                In Primal, open the QR scanner and scan the code below — nothing to copy or
+                paste. Approve the request and you're connected. Prefer not to scan? Paste a{' '}
+                <code>bunker://</code> code from Primal's{' '}
+                <strong>Settings → Keys → Nostr Connect</strong> instead.
+              </p>
+              <div style={{ marginTop: 16 }}>
+                <NostrLoginPanel />
+              </div>
+            </>
+          ) : (
+            <p className="connect-description">
+              Go to the <strong>Remote Signer</strong> tab, scan the QR code with Primal, and
+              approve the request — or paste a <code>bunker://</code> code from Primal's{' '}
+              <strong>Settings → Keys → Nostr Connect</strong>.
+            </p>
+          )}
+        </>
       )}
     </div>
   );

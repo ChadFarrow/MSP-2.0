@@ -4,7 +4,7 @@
 // Used by NewToNostrPanel to *show* a first-timer how to make a Nostr identity before
 // they connect it to MSP via the QR. Pure presentational component — no store coupling.
 
-import { useState, type ReactNode } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import slide1 from '../../assets/onboarding/primal-1-create-account.webp';
 import slide2 from '../../assets/onboarding/primal-2-follow-people.webp';
 import slide3 from '../../assets/onboarding/primal-3-account-preview.webp';
@@ -25,12 +25,26 @@ const SLIDES: Slide[] = [
   { src: slide5, alt: 'Primal profile screen', caption: <>🎉 You're on Nostr — now connect it to MSP.</> },
 ];
 
-export function PrimalSignupCarousel() {
+interface PrimalSignupCarouselProps {
+  // Fires once the user reaches the final slide. The parent uses this to reveal
+  // the connect step only after they've paged through the whole Primal setup.
+  onReachedEnd?: () => void;
+}
+
+export function PrimalSignupCarousel({ onReachedEnd }: PrimalSignupCarouselProps) {
   const [index, setIndex] = useState(0);
   const count = SLIDES.length;
   const slide = SLIDES[index];
+  const atStart = index === 0;
+  const atEnd = index === count - 1;
 
-  const go = (next: number) => setIndex((next + count) % count);
+  // Clamp at the ends so "Next" walks through the steps in order (no wrap-around
+  // jump straight to the connect-revealing last slide).
+  const go = (next: number) => setIndex(Math.max(0, Math.min(count - 1, next)));
+
+  useEffect(() => {
+    if (atEnd) onReachedEnd?.();
+  }, [atEnd, onReachedEnd]);
 
   return (
     <div className="primal-carousel">
@@ -39,6 +53,7 @@ export function PrimalSignupCarousel() {
           type="button"
           className="primal-carousel-arrow primal-carousel-arrow-prev"
           onClick={() => go(index - 1)}
+          disabled={atStart}
           aria-label="Previous"
         >
           ‹
@@ -48,6 +63,7 @@ export function PrimalSignupCarousel() {
           type="button"
           className="primal-carousel-arrow primal-carousel-arrow-next"
           onClick={() => go(index + 1)}
+          disabled={atEnd}
           aria-label="Next"
         >
           ›

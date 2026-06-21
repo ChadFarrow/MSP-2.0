@@ -22,7 +22,7 @@ interface Slide {
 
 const SLIDES: Slide[] = [
   { src: slide1, alt: 'Primal Create Account screen', title: 'Add a name & photo', caption: <>Add a display name and photo — Primal generates your Nostr keys for you.</> },
-  { src: slide2, alt: 'Primal Follow People screen', title: 'Pick interests (optional)', caption: <>Pick a few topics to follow — optional, you can skip it.</> },
+  { src: slide2, alt: 'Primal Follow People screen', title: 'Pick a follow pack', caption: <>Choose at least one follow pack to get started — you can change this later.</> },
   { src: slide3, alt: 'Primal Account Preview screen', title: 'Review your profile', caption: <>Review your new profile, then tap Create Account.</> },
   { src: slide4, alt: 'Primal account-created success screen', title: 'Save to iCloud Keychain (optional)', caption: <>Optional — on iOS, keep <strong>Save to iCloud Keychain</strong> on to back up your key.</> },
   { src: slide5, alt: 'Primal profile screen', title: "You're on Nostr!", caption: <>🎉 You're on Nostr — now connect it to MSP.</> },

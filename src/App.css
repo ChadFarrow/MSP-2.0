@@ -2547,11 +2547,11 @@ body {
   margin: 0;
 }
 
-/* Primal signup carousel (NewToNostrPanel) */
+/* Primal signup walkthrough (NewToNostrPanel) — two-column: phone + step list */
 .nostr-connect-primal {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .primal-section-heading {
@@ -2563,28 +2563,44 @@ body {
 
 .primal-carousel {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 28px;
 }
 
-.primal-carousel-frame {
+/* Left column: the phone screenshot, its caption, and the prev/next nav. */
+.primal-carousel-stage {
+  flex: 0 0 auto;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: 100%;
+  gap: 10px;
 }
 
 .primal-carousel-img {
-  /* Viewport-relative so the screenshot shrinks to keep the step on one screen
-     (no page scroll), with a sane cap on tall displays. */
-  height: min(360px, 34vh);
+  /* Viewport-relative so the whole step stays on one screen (no page scroll). */
+  height: min(440px, 50vh);
   max-width: 100%;
   object-fit: contain;
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-color);
   background: var(--bg-tertiary);
+}
+
+.primal-carousel-caption {
+  margin: 0;
+  max-width: 260px;
+  min-height: 2.6em;
+  text-align: center;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+.primal-carousel-nav {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 
 .primal-carousel-arrow {
@@ -2614,52 +2630,115 @@ body {
   cursor: default;
 }
 
+.primal-carousel-counter {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* Right column: the numbered step checklist + revealed connect slot. */
+.primal-carousel-side {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.primal-carousel-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.primal-step-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  text-align: left;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.primal-step-item:hover:not(:disabled) {
+  border-color: var(--accent-primary);
+}
+
+.primal-step-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.primal-step-item.is-active {
+  border-color: var(--accent-primary);
+  background: var(--bg-secondary);
+}
+
+.primal-step-badge {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: var(--border-color);
+  color: var(--text-primary);
+}
+
+.primal-step-item.is-active .primal-step-badge {
+  background: var(--accent-primary);
+  color: #fff;
+}
+
+.primal-step-item.is-done .primal-step-badge {
+  background: var(--success, #16a34a);
+  color: #fff;
+}
+
+.primal-step-label {
+  font-size: 0.9rem;
+}
+
+.primal-step-item.is-active .primal-step-label {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.primal-connect-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border-color);
+}
+
 .primal-setup-hint {
-  margin: 4px 0 0 0;
-  text-align: center;
+  margin: 0;
   font-size: 0.8125rem;
   color: var(--text-muted);
 }
 
-.primal-carousel-caption {
-  margin: 0;
-  min-height: 2em;
-  text-align: center;
-  font-size: 0.875rem;
-  line-height: 1.4;
-  color: var(--text-secondary);
-}
-
-.primal-carousel-counter {
-  display: inline-block;
-  margin-right: 8px;
-  padding: 1px 8px;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  background: var(--bg-tertiary);
-}
-
-.primal-carousel-dots {
-  display: flex;
-  gap: 8px;
-}
-
-.primal-carousel-dot {
-  width: 9px;
-  height: 9px;
-  padding: 0;
-  border-radius: 50%;
-  border: none;
-  background: var(--border-color);
-  cursor: pointer;
-  transition: background 0.15s ease, transform 0.15s ease;
-}
-
-.primal-carousel-dot.is-active {
-  background: var(--accent-primary);
-  transform: scale(1.15);
+/* Stack the two columns on narrow viewports. */
+@media (max-width: 720px) {
+  .primal-carousel {
+    flex-direction: column;
+    align-items: center;
+  }
+  .primal-carousel-side {
+    width: 100%;
+  }
 }
 
 .connect-warning {

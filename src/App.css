@@ -2551,11 +2551,11 @@ body {
 .nostr-connect-primal {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 .primal-section-heading {
-  margin: 4px 0 0 0;
+  margin: 0;
   font-size: 0.9375rem;
   font-weight: 600;
   color: var(--text-primary);
@@ -2565,7 +2565,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .primal-carousel-frame {
@@ -2577,7 +2577,9 @@ body {
 }
 
 .primal-carousel-img {
-  max-height: 360px;
+  /* Viewport-relative so the screenshot shrinks to keep the step on one screen
+     (no page scroll), with a sane cap on tall displays. */
+  height: min(360px, 34vh);
   max-width: 100%;
   object-fit: contain;
   border-radius: var(--radius-lg);
@@ -2621,10 +2623,10 @@ body {
 
 .primal-carousel-caption {
   margin: 0;
-  min-height: 2.5em;
+  min-height: 2em;
   text-align: center;
   font-size: 0.875rem;
-  line-height: 1.45;
+  line-height: 1.4;
   color: var(--text-secondary);
 }
 

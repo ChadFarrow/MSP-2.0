@@ -13,16 +13,26 @@ import { NostrLoginPanel } from './NostrLoginPanel';
 import { PrimalSignupCarousel } from './PrimalSignupCarousel';
 import remoteLoginShot from '../../assets/onboarding/primal-remote-login.webp';
 
+interface ConnectStep {
+  label: ReactNode;
+  img: string | null; // screenshot for this step (null = not supplied yet)
+  alt: string;
+}
+
+const CONNECT_STEPS: ConnectStep[] = [
+  { label: <>Open the <strong>Primal</strong> app on your phone.</>, img: null, alt: 'Primal home screen' },
+  { label: <>Tap your profile picture to open the menu, then tap <strong>Remote Login</strong>.</>, img: null, alt: 'Primal side menu with Remote Login' },
+  { label: <>Scan the code on the right with Primal.</>, img: remoteLoginShot, alt: 'Primal Remote Login scanner' },
+  { label: <>Approve the request — you're signed in.</>, img: null, alt: 'Primal approve connection prompt' },
+];
+
 export function NewToNostrPanel() {
   const [view, setView] = useState<'steps' | 'connect'>('steps');
+  // Which connect step's screenshot is shown on the left.
+  const [connectStep, setConnectStep] = useState(2); // default to the scan step
 
   if (view === 'connect') {
-    const connectSteps: ReactNode[] = [
-      <>Open the <strong>Primal</strong> app on your phone.</>,
-      <>Tap your profile picture to open the menu, then tap <strong>Remote Login</strong>.</>,
-      <>Scan the code on the left with Primal.</>,
-      <>Approve the request — you're signed in.</>,
-    ];
+    const activeShot = CONNECT_STEPS[connectStep];
 
     return (
       <div className="nostr-connect-primal">
@@ -39,15 +49,24 @@ export function NewToNostrPanel() {
         </p>
         <div className="primal-connect-cols">
           <div className="primal-connect-phone">
-            <img src={remoteLoginShot} alt="Primal Remote Login screen" />
+            {activeShot.img ? (
+              <img src={activeShot.img} alt={activeShot.alt} />
+            ) : (
+              <div className="primal-connect-phone-placeholder">Screenshot coming</div>
+            )}
           </div>
           <ol className="primal-connect-steps">
-            {connectSteps.map((step, i) => (
+            {CONNECT_STEPS.map((step, i) => (
               <li key={i}>
-                <div className="primal-step-item is-static">
+                <button
+                  type="button"
+                  className={`primal-step-item${i === connectStep ? ' is-active' : ''}`}
+                  onClick={() => setConnectStep(i)}
+                  aria-current={i === connectStep}
+                >
                   <span className="primal-step-badge">{i + 1}</span>
-                  <span className="primal-step-label">{step}</span>
-                </div>
+                  <span className="primal-step-label">{step.label}</span>
+                </button>
               </li>
             ))}
           </ol>

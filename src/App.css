@@ -2810,14 +2810,30 @@ body {
 
 .primal-connect-phone {
   flex: 0 0 auto;
+  /* Fixed to the screenshot footprint (portrait aspect ~0.46) so swapping shots
+     or the placeholder never shifts the steps/QR columns. */
+  width: calc(min(360px, 42vh) * 0.46);
 }
 
-.primal-connect-phone img {
+.primal-connect-phone img,
+.primal-connect-phone-placeholder {
   display: block;
+  width: 100%;
   height: min(360px, 42vh);
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-color);
   background: var(--bg-tertiary);
+}
+
+.primal-connect-phone-placeholder {
+  border-style: dashed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 12px;
 }
 
 .primal-connect-steps {
@@ -2829,6 +2845,10 @@ body {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.primal-connect-steps .primal-step-item {
+  align-items: flex-start;
 }
 
 .primal-connect-qr {

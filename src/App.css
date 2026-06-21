@@ -2664,6 +2664,9 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* Anchor the right column to the phone's height so the checklist stays put and
+     the per-step description (1 vs 2 lines) doesn't grow/shrink the layout. */
+  min-height: min(380px, 44vh);
 }
 
 .primal-carousel-steps {
@@ -2771,6 +2774,7 @@ body {
   }
   .primal-carousel-side {
     width: 100%;
+    min-height: 0;
   }
 }
 

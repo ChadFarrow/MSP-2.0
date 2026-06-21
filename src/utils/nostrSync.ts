@@ -52,7 +52,10 @@ export async function fetchNostrProfile(
 
     const results = await Promise.allSettled(
       relays.map(async (relayUrl) => {
-        const ws = await connectRelay(relayUrl, 3000);
+        // Single attempt, no retries: this is a read gated by Promise.allSettled,
+        // so a dead relay's default 5× exponential-backoff retry (~30s) would
+        // stall the whole fetch — and the identity card — until it gives up.
+        const ws = await connectRelay(relayUrl, 3000, 1);
         try {
           const subId = Math.random().toString(36).substring(7);
           const filter = {

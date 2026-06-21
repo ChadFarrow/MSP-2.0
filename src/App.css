@@ -2581,6 +2581,25 @@ body {
   gap: 10px;
 }
 
+/* The screenshot is a button — click it to advance to the next step. */
+.primal-carousel-photo {
+  padding: 0;
+  border: none;
+  background: none;
+  display: block;
+  cursor: pointer;
+  border-radius: var(--radius-lg);
+  transition: transform 0.15s ease;
+}
+
+.primal-carousel-photo:hover:not(:disabled) {
+  transform: scale(1.015);
+}
+
+.primal-carousel-photo:disabled {
+  cursor: default;
+}
+
 .primal-carousel-img {
   /* Viewport-relative so the whole step stays on one screen (no page scroll). */
   height: min(380px, 44vh);
@@ -2589,6 +2608,7 @@ body {
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-color);
   background: var(--bg-tertiary);
+  display: block;
 }
 
 .primal-carousel-desc {

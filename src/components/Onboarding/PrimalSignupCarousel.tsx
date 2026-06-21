@@ -61,7 +61,15 @@ export function PrimalSignupCarousel({ onReachedEnd, connectSlot, pendingHint }:
   return (
     <div className="primal-carousel">
       <div className="primal-carousel-stage">
-        <img className="primal-carousel-img" src={slide.src} alt={slide.alt} />
+        <button
+          type="button"
+          className="primal-carousel-photo"
+          onClick={() => advance(index + 1)}
+          disabled={atEnd}
+          aria-label={atEnd ? slide.alt : 'Next step'}
+        >
+          <img className="primal-carousel-img" src={slide.src} alt={slide.alt} />
+        </button>
         <div className="primal-carousel-nav">
           <button
             type="button"

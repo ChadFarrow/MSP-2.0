@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { stripImageMetadata } from './imageMetadata';
 
 // --- byte helpers ----------------------------------------------------------
-function concat(parts: Uint8Array[]): Uint8Array {
+function concat(parts: Uint8Array[]): Uint8Array<ArrayBuffer> {
   const len = parts.reduce((n, p) => n + p.length, 0);
   const out = new Uint8Array(len);
   let off = 0;
@@ -30,7 +30,7 @@ async function strippedBytes(file: File): Promise<Uint8Array> {
 }
 
 // --- JPEG ------------------------------------------------------------------
-function buildJpeg(): Uint8Array {
+function buildJpeg(): Uint8Array<ArrayBuffer> {
   const soi = b(0xff, 0xd8);
   // APP0 / JFIF — must be KEPT
   const jfif = s('JFIF\0keepme');
@@ -72,7 +72,7 @@ function chunk(type: string, data: Uint8Array): Uint8Array {
   // length, type, data, crc (dummy crc — stripper copies kept chunks verbatim)
   return concat([u32be(data.length), s(type), data, b(0, 0, 0, 0)]);
 }
-function buildPng(): Uint8Array {
+function buildPng(): Uint8Array<ArrayBuffer> {
   return concat([
     PNG_SIG,
     chunk('IHDR', new Uint8Array(13)),         // keep

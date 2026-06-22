@@ -20,7 +20,7 @@ function makeFile(): File {
 }
 
 // Minimal JPEG: SOI + APP1/EXIF (with fake GPS) + SOS/entropy + EOI.
-function jpegWithExif(): Uint8Array {
+function jpegWithExif(): Uint8Array<ArrayBuffer> {
   const enc = (s: string) => new TextEncoder().encode(s);
   const exif = enc('Exif\0\0GPSsecretlocation');
   const len = exif.length + 2;

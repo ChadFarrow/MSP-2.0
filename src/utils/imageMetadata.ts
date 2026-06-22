@@ -11,7 +11,7 @@
 // Everything else (WebP, GIF, HEIC, SVG, audio, lyrics…) is returned unchanged.
 // Fail-open: any parse error returns the original file so an upload never breaks.
 
-function concatU8(parts: Uint8Array[]): Uint8Array {
+function concatU8(parts: Uint8Array[]): Uint8Array<ArrayBuffer> {
   const len = parts.reduce((n, p) => n + p.length, 0);
   const out = new Uint8Array(len);
   let off = 0;
@@ -35,7 +35,7 @@ function isPng(d: Uint8Array): boolean {
 // so color rendering is unaffected.
 const JPEG_STRIP_MARKERS = new Set([0xe1, 0xed, 0xfe]);
 
-function stripJpeg(data: Uint8Array): Uint8Array {
+function stripJpeg(data: Uint8Array): Uint8Array<ArrayBuffer> {
   const keep: Uint8Array[] = [data.subarray(0, 2)]; // SOI
   let pos = 2;
   while (pos + 1 < data.length) {
@@ -73,7 +73,7 @@ function stripJpeg(data: Uint8Array): Uint8Array {
 // (gAMA/cHRM/sRGB/iCCP/…) are kept.
 const PNG_STRIP_CHUNKS = new Set(['tEXt', 'zTXt', 'iTXt', 'eXIf', 'tIME']);
 
-function stripPng(data: Uint8Array): Uint8Array {
+function stripPng(data: Uint8Array): Uint8Array<ArrayBuffer> {
   const keep: Uint8Array[] = [data.subarray(0, 8)]; // signature
   let pos = 8;
   while (pos + 12 <= data.length) {
@@ -97,7 +97,7 @@ function stripPng(data: Uint8Array): Uint8Array {
 export async function stripImageMetadata(file: File): Promise<File> {
   try {
     const buf = new Uint8Array(await file.arrayBuffer());
-    let cleaned: Uint8Array | null = null;
+    let cleaned: Uint8Array<ArrayBuffer> | null = null;
     if (isJpeg(buf)) cleaned = stripJpeg(buf);
     else if (isPng(buf)) cleaned = stripPng(buf);
 

@@ -390,7 +390,7 @@ export function ArtistPublishSection() {
               ? 'Already hosted in this session. Click to re-host both XMLs (uses the same MSP URLs and Nostr identity). Useful after editing feed details.'
               : !titlesReady
                 ? `Add a title to your ${!albumTitleSet && !publisherTitleSet ? 'album and publisher' : !albumTitleSet ? 'album' : 'publisher'} feed above to enable hosting. Podcast Index won't index feeds without a title.`
-                : 'Uploads both feeds to msp.podtards.com, submits them to Podcast Index, and verifies they appear. Linked to your Nostr identity for future edits.'}
+                : 'Uploads both feeds to musicsideproject.com, submits them to Podcast Index, and verifies they appear. Linked to your Nostr identity for future edits.'}
           </p>
         </>
       ) : (

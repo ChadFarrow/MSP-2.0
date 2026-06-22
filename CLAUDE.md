@@ -34,11 +34,22 @@ npm run dev
 
 ## Deployment
 
-- Hosted on Vercel at msp.podtards.com
+- Hosted on Vercel. Canonical domain is **musicsideproject.com**; `msp.podtards.com` is a legacy alias of the same project (still resolves, but must not appear in newly generated URLs)
 - API functions in `/api/` directory are Vercel serverless functions
-- Dev server proxies `/api/*` to production
+- Dev server proxies `/api/*` to production (`musicsideproject.com`)
 - Build: `npm run build` (tsc + vite)
 - Build auto-unshallows Vercel's git clone for accurate version computation
+
+### Typechecking — use `npm run build`, not `tsc --noEmit`
+The root `tsconfig.json` is **references-only** (`files: []` + references to `tsconfig.app.json` / `tsconfig.node.json`), so `tsc --noEmit` against it checks **zero files** and always passes — a false green. Always verify types with `npm run build` (which runs `tsc -b && vite build`) or at minimum `npx tsc -b`. (Lint is separate: `npm run lint`.)
+
+### Canonical feed domain
+All hosted feed URLs (album/video/publisher) use the canonical domain, never the request host:
+- `getBaseUrl()` (`api/_utils/feedUtils.ts`) returns `process.env.CANONICAL_URL` (default `https://musicsideproject.com`) — it ignores the request host so a feed created on any alias/preview deploy still reports the canonical URL.
+- `buildHostedUrl()` (`src/utils/hostedFeed.ts`) uses `VITE_CANONICAL_URL` (default `https://musicsideproject.com`).
+- MSP-hosted detection (`isMspUrl` in `xmlParser.ts`, `isMspHosted` in `publisherPublish.ts`) and the `/api/proxy-feed` allowlist match both `musicsideproject.com` and the legacy `msp.podtards.com`.
+- The `/api/hosted/[feedId].xml` GET serves `Content-Type: application/xml` so browsers render feeds inline in a tab instead of downloading (podcast apps parse either XML content-type identically).
+- Changing the canonical only affects **newly generated/re-saved** URLs; feeds already registered in Podcast Index keep their original URL until re-saved.
 
 ### Versioning
 Version is auto-computed at build time from git commit count: `0.1.{count - 255}` (zero-padded). Each push to master increments the patch number. Configured in `vite.config.ts` via `getAutoVersion()`, with `package.json` version as fallback when git is unavailable. Displayed in the hamburger menu.
@@ -114,7 +125,7 @@ gh issue view <number>     # View issue details
 ## Commands
 
 ```bash
-npm run dev          # Start Vite dev server (proxies /api to msp.podtards.com)
+npm run dev          # Start Vite dev server (proxies /api to musicsideproject.com)
 npm run build        # TypeScript compile + Vite build
 npm run lint         # ESLint
 npm run test         # Run tests with Vitest
@@ -186,7 +197,7 @@ The Save modal (`src/components/modals/SaveModal.tsx`) offers nine destinations.
 | Local Storage | Album/Video/Publisher state | Browser localStorage | No |
 | Download XML | Generated RSS XML | User's filesystem | No |
 | Copy to Clipboard | Generated RSS XML | Clipboard | No |
-| Host on MSP | Generated RSS XML | Vercel Blob (`feeds/{feedId}.xml`) | Yes — `https://msp.podtards.com/api/hosted/{feedId}` |
+| Host on MSP | Generated RSS XML | Vercel Blob (`feeds/{feedId}.xml`) | Yes — `https://musicsideproject.com/api/hosted/{feedId}.xml` |
 | Host on MSP (album + publisher) | Both XMLs in sequence; Artist mode only when `isLoggedIn` | Vercel Blob (one entry per feed) | Yes — both feeds hosted with cross-link `feedUrl`s injected; see `hostBothOnMSP` in `src/utils/artistPublish.ts`. The dropdown swaps the single "Host on MSP" option for this combined variant when `feedType === 'artist'`. |
 | Submit to PodcastIndex | Feed URL (not the bytes) submitted to PI via `/api/pubnotify` | — (registration only) | Indirectly — PI indexes the URL so apps like Fountain/Castamatic can discover it |
 | Download Feed Package (album + publisher) | Both XMLs + `next-steps.txt` | User's filesystem | No (export only); paired with Artist mode for users who self-host |

@@ -257,7 +257,20 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
             {w.publishing ? 'Publishing…' : publishError ? 'Retry' : 'Publish'}
           </button>
         )
-      ) : step !== 'auth' && step !== 'intro' ? (
+      ) : step === 'auth' ? (
+        // Auth Next appears once signed in + lookup done: confirms the selected
+        // catalog (or starts a fresh one when the artist has none yet). Disabled
+        // until a catalog is highlighted when there are choices to pick from.
+        isLoggedIn && !w.lookingUp ? (
+          <button
+            className="btn btn-primary"
+            onClick={w.confirmPublisherSelection}
+            disabled={w.publisherChoices.length > 0 && !w.selectedPublisherGuid}
+          >
+            Next
+          </button>
+        ) : null
+      ) : step !== 'intro' ? (
         <button className="btn btn-primary" onClick={onNextFromStep} disabled={nextDisabled}>Next</button>
       ) : null}
     </div>

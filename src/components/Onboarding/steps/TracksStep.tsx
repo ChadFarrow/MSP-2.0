@@ -12,7 +12,6 @@ export function TracksStep({ w }: { w: OnboardingDraft }) {
       album={w.state.album}
       dispatch={w.dispatch}
       isEnabled={wizardIsEnabled}
-      allowBulkAdd
       showOverrides={false}
     />
   );

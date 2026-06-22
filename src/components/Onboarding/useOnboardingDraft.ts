@@ -95,6 +95,11 @@ export function useOnboardingDraft(lookupExistingPublishers?: ExistingPublisherL
   });
   const [isReturningArtist, setIsReturningArtist] = useState(false);
   const [publisherChoices, setPublisherChoices] = useState<PublisherFeed[]>([]);
+  // Which catalog the returning artist has highlighted in the chooser. Selection
+  // is decoupled from navigation: clicking a catalog highlights it, and the
+  // footer "Next" confirms (choosePublisher). A single catalog auto-selects so
+  // Next works in one click.
+  const [selectedPublisherGuid, setSelectedPublisherGuid] = useState<string | null>(null);
   const [lookingUp, setLookingUp] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [progress, setProgress] = useState<PublishProgress | null>(null);
@@ -158,10 +163,21 @@ export function useOnboardingDraft(lookupExistingPublishers?: ExistingPublisherL
     const npub = nostr.state?.user?.npub;
     if (prevNpubRef.current !== undefined && prevNpubRef.current !== npub) {
       setPublisherChoices([]);
+      setSelectedPublisherGuid(null);
       setIsReturningArtist(false);
     }
     prevNpubRef.current = npub;
   }, [nostr.state?.user?.npub]);
+
+  // Auto-select when there's exactly one catalog (one-click Next); drop the
+  // selection if it no longer matches an available choice.
+  useEffect(() => {
+    if (publisherChoices.length === 1) {
+      setSelectedPublisherGuid(publisherChoices[0].podcastGuid);
+    } else if (!publisherChoices.some((f) => f.podcastGuid === selectedPublisherGuid)) {
+      setSelectedPublisherGuid(null);
+    }
+  }, [publisherChoices, selectedPublisherGuid]);
 
   const choosePublisher = useCallback((feed: PublisherFeed) => {
     dispatch({ type: 'SET_PUBLISHER_FEED', payload: feed });
@@ -175,8 +191,27 @@ export function useOnboardingDraft(lookupExistingPublishers?: ExistingPublisherL
   const startNewPublisher = useCallback(() => {
     setIsReturningArtist(false);
     setPublisherChoices([]);
+    // Replace any feed already in state (e.g. the user's existing publisher
+    // hydrated from localStorage by the main app) with a fresh blank shell, so
+    // "start a new publisher" actually starts blank instead of editing the old
+    // one. ensurePublisherShell only creates when none exists, so without this
+    // the existing feed would simply be re-locked and shown pre-filled.
+    dispatch({ type: 'CREATE_NEW_PUBLISHER_FEED' });
     setStep('publisher');
-  }, [setStep]);
+  }, [dispatch, setStep]);
+
+  // Highlight a catalog in the chooser without navigating (footer Next confirms).
+  const selectPublisher = useCallback((guid: string) => {
+    setSelectedPublisherGuid(guid);
+  }, []);
+
+  // Footer "Next" on the auth step: advance with the highlighted catalog, or
+  // start a fresh one when the signed-in artist has none yet.
+  const confirmPublisherSelection = useCallback(() => {
+    if (publisherChoices.length === 0) { startNewPublisher(); return; }
+    const feed = publisherChoices.find((f) => f.podcastGuid === selectedPublisherGuid);
+    if (feed) choosePublisher(feed);
+  }, [publisherChoices, selectedPublisherGuid, startNewPublisher, choosePublisher]);
 
   // --- HARD TIE -----------------------------------------------------------
   const ensurePublisherShell = useCallback(() => {
@@ -376,6 +411,7 @@ export function useOnboardingDraft(lookupExistingPublishers?: ExistingPublisherL
   return {
     step, index, maxIndex, setStep, next, back,
     isReturningArtist, publisherChoices, lookingUp, publishing, progress,
+    selectedPublisherGuid, selectPublisher, confirmPublisherSelection,
     onSignedIn, choosePublisher, startNewPublisher,
     ensurePublisherShell, pullProfileFromNostr, linkAlbumToPublisher,
     suggestedLightningAddress, lightningPromptHandled,

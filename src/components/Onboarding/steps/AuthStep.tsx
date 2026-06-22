@@ -101,30 +101,43 @@ export function AuthStep({ w }: { w: OnboardingDraft }) {
           )}
 
           {!w.lookingUp && w.publisherChoices.length === 0 && (
-            <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={w.startNewPublisher}>
-              Continue
-            </button>
+            <p style={{ marginTop: 12, color: 'var(--text-secondary)' }}>
+              You're all set — press <strong>Next</strong> to start building your release.
+            </p>
           )}
 
           {!w.lookingUp && w.publisherChoices.length > 0 && (
             <div className="publisher-chooser">
-              <p>You already own {w.publisherChoices.length} publisher feed
-                {w.publisherChoices.length > 1 ? 's' : ''}. Add this release to one,
-                or start a new project:</p>
+              <p>{w.publisherChoices.length > 1
+                ? 'Welcome back! Here are your catalogs — pick one, then press Next to add this release to it:'
+                : "Welcome back! Here's your current catalog — press Next to add this release to it:"}</p>
               <ul>
-                {w.publisherChoices.map((feed) => (
-                  <li key={feed.podcastGuid}>
-                    <button className="chooser-item" onClick={() => w.choosePublisher(feed)}>
-                      <strong>{feed.title || 'Untitled publisher'}</strong>
-                      <span> · {(feed.remoteItems || []).length} release
-                        {(feed.remoteItems || []).length === 1 ? '' : 's'}</span>
-                    </button>
-                  </li>
-                ))}
+                {w.publisherChoices.map((feed) => {
+                  const releases = feed.remoteItems || [];
+                  const selected = w.selectedPublisherGuid === feed.podcastGuid;
+                  return (
+                    <li key={feed.podcastGuid}>
+                      <button
+                        className={`chooser-item${selected ? ' selected' : ''}`}
+                        aria-pressed={selected}
+                        onClick={() => w.selectPublisher(feed.podcastGuid)}
+                      >
+                        <strong>{feed.title || 'Untitled publisher'}</strong>
+                        <span> · {releases.length} release{releases.length === 1 ? '' : 's'}</span>
+                        {releases.length > 0 && (
+                          <span className="chooser-item-releases">
+                            {releases.map((ri, i) => (
+                              <span key={ri.feedGuid || i} className="chooser-item-release">
+                                {ri.title || 'Untitled release'}
+                              </span>
+                            ))}
+                          </span>
+                        )}
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
-              <button className="btn btn-secondary btn-small" onClick={w.startNewPublisher}>
-                + Start a new publisher
-              </button>
             </div>
           )}
         </>

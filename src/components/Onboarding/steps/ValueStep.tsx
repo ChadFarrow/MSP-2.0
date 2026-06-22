@@ -52,11 +52,13 @@ export function ValueStep({ w }: { w: OnboardingDraft }) {
 
       <h4 style={{ marginTop: isManaged ? 0 : 24, marginBottom: 4, color: 'var(--text-secondary)' }}>Support link</h4>
       <p style={{ color: 'var(--text-secondary)', fontSize: '0.85em', margin: '0 0 8px' }}>
-        A page where fans can support you (Patreon, a tip jar, your site) — works without Lightning.
+        Do you have anything like Patreon, PayPal or Cashapp that you would also like to add so fans can support you directly?
       </p>
       <FundingFields
         funding={state.album.funding}
         onUpdate={(funding) => dispatch({ type: 'UPDATE_ALBUM', payload: { funding } })}
+        placeholderUrl="https://paypal.me/yourname"
+        placeholderText="Support me with a donation"
       />
     </Section>
   );

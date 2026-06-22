@@ -8,7 +8,7 @@ export function IntroStep({ w }: { w: OnboardingDraft }) {
       <h2 className="onboarding-heading">Welcome — let's publish your music</h2>
       <p className="onboarding-text">
         MSP 2.0 turns your release into a <strong>Podcasting 2.0 RSS feed</strong> so it
-        can be found in podcast apps, accept Lightning payments, and stay fully under
+        can be found in podcast apps, receive Value from your fans, and stay fully under
         your control. Here's how it works:
       </p>
       <div className="onboarding-workflow">
@@ -17,7 +17,7 @@ export function IntroStep({ w }: { w: OnboardingDraft }) {
           <div>
             <div className="onboarding-workflow-label">🔑 Sign in</div>
             <div className="onboarding-workflow-desc">
-              Connect your Nostr identity so your feed is tied to you and syncs across devices.
+              Sign in so your feed is tied to you and syncs across devices.
             </div>
           </div>
         </div>
@@ -26,7 +26,7 @@ export function IntroStep({ w }: { w: OnboardingDraft }) {
           <div>
             <div className="onboarding-workflow-label">✏️ Build your feed</div>
             <div className="onboarding-workflow-desc">
-              Add your album details, tracks, artwork, and Lightning payment splits.
+              Add your album details, tracks, artwork, and ways for fans to support you.
             </div>
           </div>
         </div>

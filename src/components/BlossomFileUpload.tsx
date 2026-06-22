@@ -8,7 +8,7 @@ interface BlossomFileUploadProps {
   label?: string;
 }
 
-export function BlossomFileUpload({ accept, onUploaded, label = 'Upload to Blossom' }: BlossomFileUploadProps) {
+export function BlossomFileUpload({ accept, onUploaded, label = 'Upload' }: BlossomFileUploadProps) {
   const { state: nostrState } = useNostr();
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -60,7 +60,7 @@ export function BlossomFileUpload({ accept, onUploaded, label = 'Upload to Bloss
       />
       {uploading && (
         <div style={{ color: 'var(--text-secondary)', fontSize: '0.85em', marginTop: '4px' }}>
-          Uploading to Blossom servers…
+          Uploading…
         </div>
       )}
       {error && (

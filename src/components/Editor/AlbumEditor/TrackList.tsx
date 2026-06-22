@@ -183,7 +183,7 @@ export function TrackList({ album, dispatch, isEnabled, showOverrides = true }: 
                       {!isVideo && (
                         <BlossomFileUpload
                           accept="audio/*"
-                          label="Upload audio to Blossom"
+                          label="Upload audio"
                           onUploaded={async ({ url, file }) => {
                             dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { enclosureUrl: url } } });
                             dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { enclosureType: file.type || getAudioMimeType(url) } } });
@@ -380,7 +380,7 @@ export function TrackList({ album, dispatch, isEnabled, showOverrides = true }: 
                           payload: { index, track: { transcriptUrl: e.target.value } }
                         })}
                       />
-                      <BlossomFileUpload accept=".srt,.vtt,text/plain" label="Upload lyrics to Blossom (.srt / .vtt)" onUploaded={({ url }) => dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { transcriptUrl: url } } })} />
+                      <BlossomFileUpload accept=".srt,.vtt,text/plain" label="Upload lyrics (.srt / .vtt)" onUploaded={({ url }) => dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { transcriptUrl: url } } })} />
                     </div>
                     <div className="form-group">
                       <Toggle

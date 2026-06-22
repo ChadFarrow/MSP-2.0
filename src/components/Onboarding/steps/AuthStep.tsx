@@ -33,29 +33,29 @@ export function AuthStep({ w }: { w: OnboardingDraft }) {
       {!isLoggedIn && choice === 'choose' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <p style={{ color: 'var(--text-secondary)', margin: 0 }}>
-            You'll need a Nostr identity to publish — it's what links your feeds to you and
-            lets you host files. Pick whichever is easiest:
+            This site uses Nostr accounts to set up your artist profile, upload media and
+            connect these feeds to you.
           </p>
 
           <button type="button" className="auth-choice-card auth-choice-card-primary" onClick={() => setChoice('google')}>
             <span className="auth-choice-title">Just use Google <span className="auth-choice-badge">Easiest</span></span>
             <span className="auth-choice-desc">
-              Sign in with Google and we'll create and manage a Nostr identity for you. No Nostr
-              knowledge needed — you can export your keys later.
+              Sign in with Google and I'll take care of all the Nostr stuff for you. When you're
+              ready, you have access to these keys so you can manage them yourself.
             </span>
           </button>
 
           <button type="button" className="auth-choice-card" onClick={() => setChoice('new')}>
             <span className="auth-choice-title">Try Nostr — I'm new</span>
             <span className="auth-choice-desc">
-              Set up a real Nostr identity with Primal (works across many apps), then connect.
+              Set up your own Nostr account with Primal and use it on the site yourself.
             </span>
           </button>
 
           <button type="button" className="auth-choice-card" onClick={() => setChoice('have')}>
             <span className="auth-choice-title">I already have Nostr</span>
             <span className="auth-choice-desc">
-              Connect with a browser extension or a remote signer (Amber, nsecBunker, Primal).
+              LET ME IN!!!
             </span>
           </button>
         </div>

@@ -53,11 +53,6 @@ export function ReviewStep({ w, publishError, publisherWarning, feedUrl, piUrl }
               </>
             }
           />
-          <CopyableUrlRow
-            label="Publisher catalog — links all your releases"
-            value={feedUrl}
-            helpText="An index that ties your releases together — apps use it for discovery, but it isn't directly subscribable."
-          />
         </div>
       )}
     </Section>

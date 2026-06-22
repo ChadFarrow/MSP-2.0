@@ -245,10 +245,8 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
 
       <div style={{ flex: 1 }} />
 
-      {/* Right: Skip + primary action (Next / Publish / Open) */}
-      {!feedUrl && (
-        <button className="btn btn-secondary" onClick={handleDismiss} title="Skip wizard and go to editor">Skip</button>
-      )}
+      {/* Right: primary action (Next / Publish / Open). The top-right X handles
+          skip-to-editor, so there's no separate Skip button. */}
       {step === 'review' ? (
         feedUrl ? (
           <button className="btn btn-primary" onClick={onComplete}>Open in Editor →</button>

@@ -53,6 +53,27 @@ export function NewToNostrPanel() {
         <div className="primal-connect-cols">
           <div className="primal-connect-phone">
             <img src={activeShot.img} alt={activeShot.alt} />
+            <div className="primal-shot-nav">
+              <button
+                type="button"
+                className="primal-shot-arrow"
+                onClick={() => setConnectStep((s) => Math.max(0, s - 1))}
+                disabled={connectStep === 0}
+                aria-label="Previous screenshot"
+              >
+                ←
+              </button>
+              <span className="primal-shot-count">{connectStep + 1} of {CONNECT_STEPS.length}</span>
+              <button
+                type="button"
+                className="primal-shot-arrow"
+                onClick={() => setConnectStep((s) => Math.min(CONNECT_STEPS.length - 1, s + 1))}
+                disabled={connectStep === CONNECT_STEPS.length - 1}
+                aria-label="Next screenshot"
+              >
+                →
+              </button>
+            </div>
           </div>
           <ol className="primal-connect-steps">
             {CONNECT_STEPS.map((step, i) => (

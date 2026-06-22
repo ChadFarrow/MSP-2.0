@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { FeatureQuestionnaire } from './FeatureQuestionnaire';
+import mspLogo from '../assets/msp-logo.png';
 
 interface OnboardingPageProps {
   onClose: () => void;
@@ -15,23 +16,28 @@ export function OnboardingPage({ onClose, startAtGate = false, onChooseFirstTime
   // step 0 = "have you used this before?" gate; steps 1-3 = guided tour; step 4 = feature questionnaire
   const [step, setStep] = useState(startAtGate ? 0 : 1);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   // Close on Escape
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      // On the gate (step 0) the user must pick an option — no Escape dismiss.
+      if (e.key === 'Escape' && step !== 0) onClose();
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [onClose, step]);
 
-  // Move focus into the dialog on mount so keyboard users land inside
+  // Move focus into the dialog on mount so keyboard users land inside. The close
+  // button is absent on the gate (step 0), so fall back to the dialog container.
   useEffect(() => {
-    closeRef.current?.focus();
+    (closeRef.current ?? dialogRef.current)?.focus();
   }, []);
 
   return (
     <div
+      ref={dialogRef}
+      tabIndex={-1}
       className="onboarding-page"
       role="dialog"
       aria-modal="true"
@@ -39,15 +45,18 @@ export function OnboardingPage({ onClose, startAtGate = false, onChooseFirstTime
     >
       <header className="onboarding-page-header">
         <h1 id="onboarding-page-title" className="onboarding-page-title">Getting Started with MSP 2.0</h1>
-        <button
-          type="button"
-          ref={closeRef}
-          className="onboarding-page-close"
-          onClick={onClose}
-          aria-label="Close getting started"
-        >
-          ×
-        </button>
+        {/* No close on the gate (step 0) — the user must pick an option. */}
+        {step !== 0 && (
+          <button
+            type="button"
+            ref={closeRef}
+            className="onboarding-page-close"
+            onClick={onClose}
+            aria-label="Close getting started"
+          >
+            ×
+          </button>
+        )}
       </header>
 
       <main className="onboarding-page-content">
@@ -57,7 +66,8 @@ export function OnboardingPage({ onClose, startAtGate = false, onChooseFirstTime
             <h2 className="onboarding-heading">Have you used MSP 2.0 before?</h2>
             <p className="onboarding-text">
               If you're returning, you can skip the intro and jump straight into the app.
-              First time here? We'll show you around in about 30 seconds.
+              <br />
+              First time here? We'll show you around.
             </p>
             <div className="onboarding-gate-actions">
               <button
@@ -75,6 +85,12 @@ export function OnboardingPage({ onClose, startAtGate = false, onChooseFirstTime
                 No, give me the tour
               </button>
             </div>
+            <img
+              src={mspLogo}
+              alt="MSP 2.0"
+              className="onboarding-gate-logo"
+              style={{ width: 200, height: 200, borderRadius: 24, marginTop: 32 }}
+            />
           </div>
         )}
 

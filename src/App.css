@@ -2790,6 +2790,46 @@ body {
   background: var(--bg-tertiary);
 }
 
+.primal-shot-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.primal-shot-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.primal-shot-arrow:hover:not(:disabled) {
+  border-color: var(--accent-primary);
+  background: var(--accent-bg-light);
+}
+
+.primal-shot-arrow:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.primal-shot-count {
+  font-size: 0.85em;
+  color: var(--text-secondary);
+  min-width: 44px;
+  text-align: center;
+}
+
 .primal-connect-steps {
   list-style: none;
   margin: 0;

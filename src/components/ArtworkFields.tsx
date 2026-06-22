@@ -74,7 +74,23 @@ export function ArtworkFields({
                 Paste a URL
               </label>
             </div>
-            {source === 'url' ? urlInput : uploadInput}
+            {source === 'url' ? urlInput : (
+              <>
+                {uploadInput}
+                {imageUrl && (
+                  <input
+                    type="url"
+                    className="form-input"
+                    value={imageUrl}
+                    readOnly
+                    aria-label="Uploaded image URL"
+                    title="Uploaded image URL"
+                    onFocus={e => e.currentTarget.select()}
+                    style={{ marginTop: 6, fontSize: '0.85em', color: 'var(--text-secondary)' }}
+                  />
+                )}
+              </>
+            )}
           </>
         ) : (
           <>
@@ -108,7 +124,8 @@ export function ArtworkFields({
           <img
             src={imageUrl}
             alt={previewAlt}
-            style={{ maxWidth: '200px', borderRadius: '8px', border: '1px solid var(--border-color)' }}
+            // Square + cover so the preview matches how podcast apps crop cover art.
+            style={{ width: '200px', height: '200px', objectFit: 'cover', borderRadius: '8px', border: '1px solid var(--border-color)' }}
             onError={e => (e.target as HTMLImageElement).style.display = 'none'}
           />
         </div>

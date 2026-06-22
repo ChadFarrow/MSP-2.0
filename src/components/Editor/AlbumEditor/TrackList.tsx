@@ -30,9 +30,6 @@ export function TrackList({ album, dispatch, isEnabled, showOverrides = true }: 
   const [resolvingNaddr, setResolvingNaddr] = useState<Record<number, boolean>>({});
   const [naddrError, setNaddrError] = useState<Record<number, string>>({});
 
-  // Bulk add: append a track per selected file, then upload each to Blossom and
-  // pull its duration locally. Tracks appear immediately; enclosure/duration fill
-  // in as each upload/probe completes (index-based, matching the editor model).
   const toggleTrackCollapse = (trackId: string) => {
     setCollapsedTracks(prev => ({ ...prev, [trackId]: !prev[trackId] }));
   };

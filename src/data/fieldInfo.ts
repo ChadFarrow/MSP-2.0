@@ -17,7 +17,7 @@ export const FIELD_INFO = {
   op3: "Enable OP3 (Open Podcast Prefix Project) analytics. Adds a transparent prefix to track URLs for open, privacy-respecting download stats. Free, no signup required. Save/update your hosted feed after toggling for changes to take effect.",
 
   // Artwork
-  imageUrl: "Direct link to your cover art image (JPG or PNG). Make sure it's publicly accessible.",
+  imageUrl: "Direct link to your cover art image (JPG or PNG). Square is preferred — 3000×3000 px is ideal (1400×1400 minimum). Make sure it's publicly accessible.",
   imageTitle: "Title/alt text for the album artwork.",
   imageDescription: "Optional description of the artwork or album.",
 

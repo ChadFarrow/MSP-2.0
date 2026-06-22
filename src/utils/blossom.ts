@@ -5,6 +5,7 @@ import { generateRssFeed, generatePublisherRssFeed } from './xmlGenerator';
 import { hexToNpub } from './nostr';
 import { DEFAULT_RELAYS, publishEventToRelays } from './nostrRelay';
 import { hasSigner, signEventWithTimeout, getPublicKeyWithTimeout } from './nostrSigner';
+import { stripImageMetadata } from './imageMetadata';
 
 // Blossom auth event kind
 const BLOSSOM_AUTH_KIND = 24242;
@@ -83,7 +84,11 @@ export async function uploadMediaToBlossom(
 
   try {
     const pubkey = await getPublicKeyWithTimeout();
-    const arrayBuffer = await file.arrayBuffer();
+    // Strip EXIF/GPS/XMP from images before hashing — these go to public,
+    // content-addressed servers, so the hash must be of the cleaned bytes.
+    // No-ops on non-images and fails open (returns the original file) on error.
+    const cleaned = await stripImageMetadata(file);
+    const arrayBuffer = await cleaned.arrayBuffer();
     const hash = await sha256HashBinary(arrayBuffer);
 
     const timeoutMs = opts?.timeoutMs ?? 180000;
@@ -107,7 +112,7 @@ export async function uploadMediaToBlossom(
           method: 'PUT',
           headers: {
             'Authorization': authHeader,
-            'Content-Type': file.type || 'application/octet-stream',
+            'Content-Type': cleaned.type || 'application/octet-stream',
           },
           body: arrayBuffer,
           signal: controller.signal,

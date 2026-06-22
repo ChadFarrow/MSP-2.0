@@ -19,6 +19,28 @@ function makeFile(): File {
   return new File([new Uint8Array([1, 2, 3, 4])], 'track.mp3', { type: 'audio/mpeg' });
 }
 
+// Minimal JPEG: SOI + APP1/EXIF (with fake GPS) + SOS/entropy + EOI.
+function jpegWithExif(): Uint8Array {
+  const enc = (s: string) => new TextEncoder().encode(s);
+  const exif = enc('Exif\0\0GPSsecretlocation');
+  const len = exif.length + 2;
+  return new Uint8Array([
+    0xff, 0xd8,                              // SOI
+    0xff, 0xe1, (len >> 8) & 0xff, len & 0xff, ...exif, // APP1/EXIF
+    0xff, 0xda, 0x00, 0x04, 0x01, 0x02,      // SOS + entropy
+    0xff, 0xd9,                              // EOI
+  ]);
+}
+
+function bytesContain(hay: Uint8Array, needle: string): boolean {
+  const n = new TextEncoder().encode(needle);
+  outer: for (let i = 0; i + n.length <= hay.length; i++) {
+    for (let j = 0; j < n.length; j++) if (hay[i + j] !== n[j]) continue outer;
+    return true;
+  }
+  return false;
+}
+
 function okResponse(url: string): Response {
   return {
     ok: true,
@@ -93,6 +115,29 @@ describe('uploadMediaToBlossom', () => {
     expect(result.serversTotal).toBe(2);
     expect(result.message).toContain('401');
     expect(result.message).toContain('503');
+  });
+
+  it('strips EXIF/GPS metadata from image uploads before sending bytes', async () => {
+    let capturedBody: ArrayBuffer | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: string | URL, init?: RequestInit) => {
+        capturedBody = init?.body as ArrayBuffer;
+        return okResponse('https://good.example/clean');
+      })
+    );
+
+    const file = new File([jpegWithExif()], 'art.jpg', { type: 'image/jpeg' });
+    const result = await uploadMediaToBlossom(file);
+
+    expect(result.success).toBe(true);
+    expect(capturedBody).toBeTruthy();
+    const sent = new Uint8Array(capturedBody!);
+    expect(bytesContain(sent, 'Exif')).toBe(false);
+    expect(bytesContain(sent, 'GPSsecretlocation')).toBe(false);
+    // still a JPEG
+    expect(sent[0]).toBe(0xff);
+    expect(sent[1]).toBe(0xd8);
   });
 
   it('not logged in', async () => {

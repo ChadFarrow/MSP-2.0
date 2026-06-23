@@ -32,15 +32,23 @@ npm run dev
 
 ## Deployment
 
-- Hosted on Vercel at msp.podtards.com (primary, runs `master`)
-- Also served on the custom domain **musicsideproject.com** (apex + `www`) and **new.musicsideproject.com** — all point to MSP 2.0 on Vercel. DNS is managed at Squarespace (Google Domains nameservers)
+- Hosted on Vercel; **musicsideproject.com** (apex + `www`) is the canonical domain and runs `master`
+- Also answers on **new.musicsideproject.com** and the legacy **msp.podtards.com** alias — all the same Vercel project. DNS is managed at Squarespace (Google Domains nameservers). `msp.podtards.com` still resolves but must not appear in newly generated URLs
 - API functions in `/api/` directory are Vercel serverless functions
-- Dev server proxies `/api/*` to production
+- Dev server proxies `/api/*` to production (`musicsideproject.com`)
 - Build: `npm run build` (tsc + vite)
 - Build auto-unshallows Vercel's git clone for accurate version computation
 
+### Typechecking — use `npm run build`, not `tsc --noEmit`
+The root `tsconfig.json` is **references-only** (`files: []` + references to `tsconfig.app.json` / `tsconfig.node.json`), so `tsc --noEmit` against it checks **zero files** and always passes — a false green. Always verify types with `npm run build` (`tsc -b && vite build`) or at minimum `npx tsc -b`. (Lint is separate: `npm run lint`.)
+
 ### Domains & canonical URL
-`VITE_CANONICAL_URL` is the stable host stamped into **Host-on-MSP feed URLs** (`buildHostedUrl()` in `src/utils/hostedFeed.ts` → `{canonical}/api/hosted/{feedId}.xml`, the URL submitted to Podcast Index). It's a **build-time** Vite var (`import.meta.env`), so changing it requires a redeploy. **Critical when one Vercel project answers on multiple domains**: if unset it falls back to the current `window.location.origin`, so the same project would mint *different* "permanent" feed URLs depending on which domain the user visited (apex vs `new.`). Set it explicitly to one host. The project serving the apex uses `https://musicsideproject.com`.
+Hosted feed URLs (album/video/publisher) **always** use the canonical domain, never the request host:
+- `getBaseUrl()` (`api/_utils/feedUtils.ts`) returns `process.env.CANONICAL_URL` (default `https://musicsideproject.com`), ignoring the request host — so a feed created via any alias/preview deploy still reports the canonical URL.
+- `buildHostedUrl()` (`src/utils/hostedFeed.ts`) uses `VITE_CANONICAL_URL` (default `https://musicsideproject.com`) → `{canonical}/api/hosted/{feedId}.xml` (the URL submitted to Podcast Index). It's a **build-time** Vite var (`import.meta.env`), so changing it needs a redeploy. It no longer falls back to `window.location.origin`.
+- MSP-hosted detection (`isMspUrl` in `xmlParser.ts`, `isMspHosted` in `publisherPublish.ts`) and the `/api/proxy-feed` allowlist match both `musicsideproject.com` and the legacy `msp.podtards.com`.
+- `/api/hosted/[feedId].xml` GET serves `Content-Type: application/xml` so browsers render feeds inline in a tab instead of downloading (podcast apps parse either XML content-type identically).
+- Changing the canonical only affects **newly generated/re-saved** URLs; feeds already registered in Podcast Index keep their original URL until re-saved.
 
 ### Legacy site decommissioning (June 2026)
 `musicsideproject.com` previously served the **original MSP Studio** — thebells1111's Svelte feed *generator* (https://github.com/thebells1111/msp-studio), unrelated to this codebase. It was decommissioned and the apex repointed to MSP 2.0. Notes:
@@ -122,7 +130,7 @@ gh issue view <number>     # View issue details
 ## Commands
 
 ```bash
-npm run dev          # Start Vite dev server (proxies /api to msp.podtards.com)
+npm run dev          # Start Vite dev server (proxies /api to musicsideproject.com)
 npm run build        # TypeScript compile + Vite build
 npm run lint         # ESLint
 npm run test         # Run tests with Vitest
@@ -190,7 +198,7 @@ The Save modal (`src/components/modals/SaveModal.tsx`) offers nine destinations.
 | Local Storage | Album/Video/Publisher state | Browser localStorage | No |
 | Download XML | Generated RSS XML | User's filesystem | No |
 | Copy to Clipboard | Generated RSS XML | Clipboard | No |
-| Host on MSP | Generated RSS XML | Vercel Blob (`feeds/{feedId}.xml`) | Yes — `https://msp.podtards.com/api/hosted/{feedId}` |
+| Host on MSP | Generated RSS XML | Vercel Blob (`feeds/{feedId}.xml`) | Yes — `https://musicsideproject.com/api/hosted/{feedId}.xml` |
 | Submit to PodcastIndex | Feed URL (not the bytes) submitted to PI via `/api/pubnotify` | — (registration only) | Indirectly — PI indexes the URL so apps like Fountain/Castamatic can discover it |
 | Save RSS feed to Nostr | Full RSS XML embedded in a kind 30054 event | Nostr relays only | No — only MSP reads kind 30054 (cross-device sync) |
 | Publish to Nostr Music | Per-track events (kind 36787) + playlist event (kind 34139) | Nostr relays | No — Nostr-native music clients only (Wavlake, Fountain, etc.). Audio files must already be hosted elsewhere; the events just reference enclosure URLs |

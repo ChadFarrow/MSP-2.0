@@ -49,6 +49,7 @@ Hosted feed URLs (album/video/publisher) **always** use the canonical domain, ne
 - MSP-hosted detection (`isMspUrl` in `xmlParser.ts`, `isMspHosted` in `publisherPublish.ts`) and the `/api/proxy-feed` allowlist match both `musicsideproject.com` and the legacy `msp.podtards.com`.
 - `/api/hosted/[feedId].xml` GET serves `Content-Type: application/xml` so browsers render feeds inline in a tab instead of downloading (podcast apps parse either XML content-type identically).
 - Changing the canonical only affects **newly generated/re-saved** URLs; feeds already registered in Podcast Index keep their original URL until re-saved.
+- **Legacy 301 redirect**: the `/api/hosted/[feedId].xml` GET returns a literal `301` to `{canonical}/api/hosted/{feedId}.xml` when the request `Host` is exactly `msp.podtards.com`, so feeds first registered under the old domain migrate to the canonical URL in podcast apps / Podcast Index. Exact-host match + canonical target is loop-safe (canonical and `*.vercel.app` previews never match). Done in code (not `vercel.json` `redirects`, which emit 308 — Apple/PI don't treat 308 the same as 301 for feed migration). GET-only; management verbs (PUT/DELETE/POST) come from the app on the canonical host.
 
 ### Legacy site decommissioning (June 2026)
 `musicsideproject.com` previously served the **original MSP Studio** — thebells1111's Svelte feed *generator* (https://github.com/thebells1111/msp-studio), unrelated to this codebase. It was decommissioned and the apex repointed to MSP 2.0. Notes:

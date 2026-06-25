@@ -313,9 +313,17 @@ function AppContent() {
             setShowNostrConnectModal(true);
           }
         }}
-        onChooseFirstTime={() => {
-          // First-timers flow through the dead-simple wizard. Mark the onboarding
-          // gate complete, drop them into Artist mode, and open the wizard.
+        onChooseSelfHost={() => {
+          // Self-host: no account, no wizard — straight to the editor. They make the
+          // feed, download the XML, and host it themselves. Nostr/Lightning stay
+          // optional. Force album mode so a brand-new user lands on the album editor.
+          onboardingStorage.markComplete();
+          setShowOnboarding(false);
+          dispatch({ type: 'SET_FEED_TYPE', payload: 'album' });
+        }}
+        onChooseMspHost={() => {
+          // MSP-host: the guided wizard (account via Google/Nostr), ends with a
+          // hosted feed. Mark the gate complete, enter Artist mode, open the wizard.
           onboardingStorage.markComplete();
           setShowOnboarding(false);
           handleSwitchFeedType('artist');

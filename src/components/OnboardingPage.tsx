@@ -5,20 +5,22 @@ import mspLogo from '../assets/msp-logo.png';
 interface OnboardingPageProps {
   onClose: () => void;
   startAtGate?: boolean;
-  /** Fired when a first-time user picks the tour, so the app can drop them
-      into Artist (Album + Publisher) setup behind the tour overlay. */
-  onChooseFirstTime?: () => void;
-  /** Fired when a returning user picks "Yes, I've used this before" on the gate,
-      so the app can route them toward their profile (prompting Nostr sign-in
-      first when they're logged out). Falls back to onClose when not provided. */
+  /** Fired when a returning user picks "Yes, I've used this before" on the gate. */
   onChooseReturning?: () => void;
+  /** Fired from the "Where will your feed live?" screen — self-host goes straight
+      to the editor (no account, no wizard); MSP-host launches the guided wizard. */
+  onChooseSelfHost?: () => void;
+  onChooseMspHost?: () => void;
 }
 
 const TOTAL_STEPS = 4;
 
-export function OnboardingPage({ onClose, startAtGate = false, onChooseFirstTime, onChooseReturning }: OnboardingPageProps) {
+export function OnboardingPage({ onClose, startAtGate = false, onChooseReturning, onChooseSelfHost, onChooseMspHost }: OnboardingPageProps) {
   // step 0 = "have you used this before?" gate; steps 1-3 = guided tour; step 4 = feature questionnaire
   const [step, setStep] = useState(startAtGate ? 0 : 1);
+  // Within the gate (step 0): 'ask' = the "used before?" question; 'hosting' =
+  // the "where will your feed live?" follow-up shown after picking "I'm new".
+  const [gateView, setGateView] = useState<'ask' | 'hosting'>('ask');
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
@@ -64,14 +66,14 @@ export function OnboardingPage({ onClose, startAtGate = false, onChooseFirstTime
       </header>
 
       <main className="onboarding-page-content">
-        {step === 0 && (
+        {step === 0 && gateView === 'ask' && (
           <div className="onboarding-step onboarding-gate">
             <div className="onboarding-welcome-icon">👋</div>
             <h2 className="onboarding-heading">Have you used MSP 2.0 before?</h2>
             <p className="onboarding-text">
-              If you're returning, you can skip the intro and jump straight into the app.
+              If you're returning, jump straight into the app.
               <br />
-              First time here? We'll show you around.
+              First time here? We'll point you the right way.
             </p>
             <div className="onboarding-gate-actions">
               <button
@@ -84,9 +86,9 @@ export function OnboardingPage({ onClose, startAtGate = false, onChooseFirstTime
               <button
                 type="button"
                 className="btn btn-secondary onboarding-gate-btn"
-                onClick={() => { onChooseFirstTime?.(); setStep(1); }}
+                onClick={() => setGateView('hosting')}
               >
-                No, give me the tour
+                No, I'm new
               </button>
             </div>
             <img
@@ -95,6 +97,41 @@ export function OnboardingPage({ onClose, startAtGate = false, onChooseFirstTime
               className="onboarding-gate-logo"
               style={{ width: 200, height: 200, borderRadius: 24, marginTop: 32 }}
             />
+          </div>
+        )}
+
+        {step === 0 && gateView === 'hosting' && (
+          <div className="onboarding-step onboarding-gate">
+            <div className="onboarding-welcome-icon">🎵</div>
+            <h2 className="onboarding-heading">Where will your feed live?</h2>
+            <p className="onboarding-text">
+              Let MSP host your feed for you, or make the feed and host it on your
+              own website. You can change your mind anytime.
+            </p>
+            <div className="onboarding-gate-actions">
+              <button
+                type="button"
+                className="btn btn-primary onboarding-gate-btn"
+                onClick={() => onChooseMspHost?.()}
+              >
+                Let MSP host it for me →
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary onboarding-gate-btn"
+                onClick={() => onChooseSelfHost?.()}
+              >
+                I'll host it myself
+              </button>
+            </div>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ marginTop: 24 }}
+              onClick={() => setGateView('ask')}
+            >
+              ← Back
+            </button>
           </div>
         )}
 

@@ -135,6 +135,11 @@ export function OnboardingPage({ onClose, startAtGate = false, onChooseReturning
           </div>
         )}
 
+        {/* DEAD UNTIL RE-WIRED: steps 1-4 (the guided tour + FeatureQuestionnaire) are
+            currently unreachable — the gate's only exits set showOnboarding=false and
+            unmount this page before any setStep(>=1) runs, and the page always mounts at
+            step 0 (startAtGate). Kept intentionally per the Phase 1 plan; slated for a
+            follow-up cleanup once Phase 2 confirms they aren't repurposed. */}
         {step === 1 && (
           <div className="onboarding-step">
             <div className="onboarding-welcome-icon">🎵</div>

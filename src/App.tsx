@@ -312,7 +312,8 @@ function AppContent() {
         onChooseSelfHost={() => {
           // Self-host: no account, no wizard — straight to the editor. They make the
           // feed, download the XML, and host it themselves. Nostr/Lightning stay
-          // optional. Force album mode so a brand-new user lands on the album editor.
+          // optional. Force plain album mode (not artist mode, which scaffolds
+          // publisher/V4V setup via buildArtistSetupActions) so self-host stays minimal.
           onboardingStorage.markComplete();
           setShowOnboarding(false);
           dispatch({ type: 'SET_FEED_TYPE', payload: 'album' });

@@ -302,16 +302,12 @@ function AppContent() {
         startAtGate={onboardingStartAtGate}
         onClose={handleOnboardingClose}
         onChooseReturning={() => {
-          // Returning artist: close the gate and head for their profile. If logged
-          // out, prompt Nostr sign-in first — the auto-route effect then moves them
-          // to the profile once authenticated (or leaves them in the editor if they
-          // own no feeds). If already logged in, the same effect handles the routing.
+          // Returning artist: close the gate and land in the editor. Sign-in is
+          // OFFERED via the header (not forced) so a self-host returner isn't walled.
+          // If a session restores (or they sign in) and owns >=1 hosted feed, the
+          // auto-route effect moves them to their Profile.
           onboardingStorage.markComplete();
           setShowOnboarding(false);
-          if (!nostrState.isLoggedIn) {
-            setNostrConnectReturning(true);
-            setShowNostrConnectModal(true);
-          }
         }}
         onChooseSelfHost={() => {
           // Self-host: no account, no wizard — straight to the editor. They make the

@@ -22,11 +22,13 @@ import { NostrConnectModal } from './components/modals/NostrConnectModal';
 import { ManagedKeyModal } from './components/modals/ManagedKeyModal';
 import { NewFeedChoiceModal } from './components/modals/NewFeedChoiceModal';
 import { OnboardingPage } from './components/OnboardingPage';
-import { FeaturePreferencesModal } from './components/modals/FeaturePreferencesModal';
 import { Editor } from './components/Editor/Editor';
 import { PublisherEditor } from './components/Editor/PublisherEditor';
 import { ArtistEditor } from './components/Editor/ArtistEditor';
+import { ArtistProfile } from './components/Profile/ArtistProfile';
 import { AdminPage } from './components/admin/AdminPage';
+import { useMyHostedFeeds } from './utils/useMyHostedFeeds';
+import { buildHostedUrl, buildHostedInfoForEdit, saveHostedFeedInfo } from './utils/hostedFeed';
 import type { Album } from './types/feed';
 import mspLogo from './assets/msp-logo.png';
 import './App.css';
@@ -41,8 +43,10 @@ function AppContent() {
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showPodpingModal, setShowPodpingModal] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
-  const [showFeaturePrefsModal, setShowFeaturePrefsModal] = useState(false);
   const [showNostrConnectModal, setShowNostrConnectModal] = useState(false);
+  // True when the Sign In modal was opened from the returning-artist gate, so its
+  // copy welcomes them back rather than describing first-time setup.
+  const [nostrConnectReturning, setNostrConnectReturning] = useState(false);
   const [showManagedKeyModal, setShowManagedKeyModal] = useState(false);
   const [showNewFeedChoiceModal, setShowNewFeedChoiceModal] = useState(false);
   const [pendingNewFeedType, setPendingNewFeedType] = useState<FeedType>('album');
@@ -69,9 +73,10 @@ function AppContent() {
   const [showOnboarding, setShowOnboarding] = useState(
     () => forceOnboarding || (!onboardingStorage.isComplete() && !wizardStorage.isComplete())
   );
-  const [onboardingStartAtGate, setOnboardingStartAtGate] = useState(
-    () => forceOnboarding || (!onboardingStorage.isComplete() && !wizardStorage.isComplete())
-  );
+  // Whether the onboarding overlay opens at the "have you used this before?" gate.
+  // Only relevant on first visit / forced testing — the menu entry that re-opened it
+  // mid-step was removed, so this is now a one-shot derived value.
+  const onboardingStartAtGate = forceOnboarding || (!onboardingStorage.isComplete() && !wizardStorage.isComplete());
   // The dead-simple artist wizard (#67) — opened from the onboarding gate's
   // first-time branch and from the "New Artist (Guided)" choice in NewFeedChoiceModal.
   // Initialized from the in-progress flag so the Google OAuth full-page redirect
@@ -81,9 +86,89 @@ function AppContent() {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { state: nostrState, logout: nostrLogout } = useNostr();
 
+  // Returning-artist home. `view === 'profile'` swaps the editor body for the
+  // Artist Profile page. The hosted-feeds state is lifted here so the one-shot
+  // auto-route lookup and the profile page share a single fetch.
+  const [view, setView] = useState<'profile' | 'editor'>('editor');
+  const [profileDecided, setProfileDecided] = useState(false);
+  const myFeeds = useMyHostedFeeds();
+  const { refetch: refetchMyFeeds } = myFeeds;
+
+  // Auto-route a logged-in owner of ≥1 hosted feed to their profile on load.
+  // Runs once per session (profileDecided). Bails while the onboarding gate /
+  // wizard own the screen, or while the Nostr session is still restoring.
+  useEffect(() => {
+    if (profileDecided) return;
+    if (showOnboarding || showArtistWizard || forceOnboarding) return;
+    if (nostrState.isLoading) return;
+    if (!nostrState.isLoggedIn || !nostrState.user?.pubkey) return;
+
+    let cancelled = false;
+    setProfileDecided(true);
+    refetchMyFeeds().then(feeds => {
+      if (!cancelled && feeds.length >= 1) setView('profile');
+    });
+    return () => { cancelled = true; };
+    // forceOnboarding is derived once per render and stable enough for this gate.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileDecided, showOnboarding, showArtistWizard, nostrState.isLoading, nostrState.isLoggedIn, nostrState.user?.pubkey, refetchMyFeeds]);
+
   const handleOnboardingClose = () => {
     onboardingStorage.markComplete();
     setShowOnboarding(false);
+  };
+
+  // Open an already-hosted feed for editing from the profile. Persists hosted
+  // credentials (keyed by podcastGuid === feedId) so the next Save does a PUT
+  // (update) rather than a POST that would 409. See buildHostedInfoForEdit.
+  const handleEditHostedFeed = async (feedId: string) => {
+    try {
+      const res = await fetch(`/api/hosted/${feedId}.xml`);
+      if (!res.ok) throw new Error('Could not load feed');
+      const xml = await res.text();
+      handleImport(xml, buildHostedUrl(feedId));
+      if (nostrState.user?.pubkey) {
+        saveHostedFeedInfo(feedId, buildHostedInfoForEdit(feedId, nostrState.user.pubkey));
+      }
+      setView('editor');
+    } catch (err) {
+      alert('Failed to open feed: ' + (err instanceof Error ? err.message : 'Unknown error'));
+    }
+  };
+
+  // Start a fresh album attached to the artist's existing publisher. Passing only
+  // the publisher (not the full state) makes buildArtistSetupActions mint a NEW
+  // album GUID and link it — preserving the one-publisher-per-npub constraint.
+  // If no publisher is in local state (e.g. new device / cleared storage), load the
+  // artist's existing hosted publisher first so we never mint a SECOND publisher.
+  const handleAddAlbumToProfile = async () => {
+    // Starting a new album replaces the current working album in the editor. Only
+    // warn when there are unsaved local edits to lose (hosted feeds are untouched).
+    if (state.isDirty && !confirm('Start a new album? Unsaved changes to the album currently open in the editor will be discarded.')) {
+      return;
+    }
+    let publisherFeed = state.publisherFeed;
+    if (!publisherFeed) {
+      const hostedPublisher = myFeeds.feeds.find(f => f.medium === 'publisher');
+      if (hostedPublisher) {
+        try {
+          const res = await fetch(`/api/hosted/${hostedPublisher.feedId}.xml`);
+          if (res.ok) {
+            publisherFeed = parsePublisherRssFeed(await res.text());
+            // Load it into state and keep its hosted creds so a later Save PUTs.
+            dispatch({ type: 'SET_PUBLISHER_FEED', payload: publisherFeed });
+            if (nostrState.user?.pubkey) {
+              saveHostedFeedInfo(hostedPublisher.feedId, buildHostedInfoForEdit(hostedPublisher.feedId, nostrState.user.pubkey));
+            }
+          }
+        } catch {
+          // Fall through — buildArtistSetupActions will create a blank publisher.
+        }
+      }
+    }
+    pendingHostedStorage.clear();
+    buildArtistSetupActions({ publisherFeed }, { regenerateGuids: false }).forEach(dispatch);
+    setView('editor');
   };
 
   // Close dropdown when clicking outside
@@ -216,6 +301,18 @@ function AppContent() {
       <OnboardingPage
         startAtGate={onboardingStartAtGate}
         onClose={handleOnboardingClose}
+        onChooseReturning={() => {
+          // Returning artist: close the gate and head for their profile. If logged
+          // out, prompt Nostr sign-in first — the auto-route effect then moves them
+          // to the profile once authenticated (or leaves them in the editor if they
+          // own no feeds). If already logged in, the same effect handles the routing.
+          onboardingStorage.markComplete();
+          setShowOnboarding(false);
+          if (!nostrState.isLoggedIn) {
+            setNostrConnectReturning(true);
+            setShowNostrConnectModal(true);
+          }
+        }}
         onChooseFirstTime={() => {
           // First-timers flow through the dead-simple wizard. Mark the onboarding
           // gate complete, drop them into Artist mode, and open the wizard.
@@ -263,18 +360,14 @@ function AppContent() {
               </button>
               {showDropdown && (
                 <div className="dropdown-menu">
-                  <button
-                    className="dropdown-item"
-                    onClick={() => { setOnboardingStartAtGate(false); setShowOnboarding(true); setShowDropdown(false); }}
-                  >
-                    🚀 Getting Started
-                  </button>
-                  <button
-                    className="dropdown-item"
-                    onClick={() => { setShowFeaturePrefsModal(true); setShowDropdown(false); }}
-                  >
-                    ⚙️ Feature Preferences
-                  </button>
+                  {nostrState.isLoggedIn && (
+                    <button
+                      className="dropdown-item"
+                      onClick={() => { setView('profile'); setShowDropdown(false); }}
+                    >
+                      👤 My Profile
+                    </button>
+                  )}
                   <button
                     className="dropdown-item"
                     onClick={() => { setShowInfoModal(true); setShowDropdown(false); }}
@@ -332,7 +425,7 @@ function AppContent() {
                   ) : (
                     <button
                       className="dropdown-item"
-                      onClick={() => { setShowNostrConnectModal(true); setShowDropdown(false); }}
+                      onClick={() => { setNostrConnectReturning(false); setShowNostrConnectModal(true); setShowDropdown(false); }}
                     >
                       🔑 Sign In
                     </button>
@@ -376,7 +469,15 @@ function AppContent() {
             </div>
           </div>
         </header>
-        {state.feedType === 'publisher' ? <PublisherEditor />
+        {view === 'profile' ? (
+          <ArtistProfile
+            feedsState={myFeeds}
+            fallbackName={state.publisherFeed?.title}
+            onEditFeed={handleEditHostedFeed}
+            onAddAlbum={handleAddAlbumToProfile}
+            onOpenEditor={() => setView('editor')}
+          />
+        ) : state.feedType === 'publisher' ? <PublisherEditor />
           : state.feedType === 'artist' ? <ArtistEditor />
           : <Editor key={`${state.feedType}-${state.album?.podcastGuid}-${state.videoFeed?.podcastGuid}`} />}
         <div className="bottom-toolbar">
@@ -478,12 +579,12 @@ function AppContent() {
         <InfoModal onClose={() => setShowInfoModal(false)} />
       )}
 
-      {showFeaturePrefsModal && (
-        <FeaturePreferencesModal onClose={() => setShowFeaturePrefsModal(false)} />
-      )}
 
       {showNostrConnectModal && (
-        <NostrConnectModal onClose={() => setShowNostrConnectModal(false)} />
+        <NostrConnectModal
+          returning={nostrConnectReturning}
+          onClose={() => { setShowNostrConnectModal(false); setNostrConnectReturning(false); }}
+        />
       )}
       {showManagedKeyModal && (
         <ManagedKeyModal onClose={() => setShowManagedKeyModal(false)} />

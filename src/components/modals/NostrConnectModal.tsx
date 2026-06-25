@@ -4,15 +4,17 @@ import { useNostr } from '../../store/nostrStore';
 import { hasNip07Extension } from '../../utils/nostrSigner';
 import { ModalWrapper } from './ModalWrapper';
 import { GoogleSignInButton } from '../Onboarding/GoogleSignInButton';
-import { NewToNostrPanel } from '../Onboarding/NewToNostrPanel';
 
 interface NostrConnectModalProps {
   onClose: () => void;
+  /** When true, the modal was opened from the returning-artist flow, so the
+      Quick Sign In copy welcomes them back instead of describing first-time setup. */
+  returning?: boolean;
 }
 
-type Tab = 'google' | 'primal' | 'extension' | 'remote';
+type Tab = 'google' | 'extension' | 'remote';
 
-export function NostrConnectModal({ onClose }: NostrConnectModalProps) {
+export function NostrConnectModal({ onClose, returning = false }: NostrConnectModalProps) {
   const { state, login, loginWithNip46 } = useNostr();
   const [tab, setTab] = useState<Tab>('google');
   const [bunkerUri, setBunkerUri] = useState('');
@@ -126,9 +128,6 @@ export function NostrConnectModal({ onClose }: NostrConnectModalProps) {
         <button className={`modal-tab ${tab === 'google' ? 'active' : ''}`} onClick={() => changeTab('google')}>
           Quick Sign In
         </button>
-        <button className={`modal-tab ${tab === 'primal' ? 'active' : ''}`} onClick={() => changeTab('primal')}>
-          New to Nostr?
-        </button>
         <button className={`modal-tab ${tab === 'extension' ? 'active' : ''}`} onClick={() => changeTab('extension')}>
           Extension
         </button>
@@ -137,20 +136,24 @@ export function NostrConnectModal({ onClose }: NostrConnectModalProps) {
         </button>
       </div>
 
+      <p className="connect-note">
+        You only need to sign in to use your MSP account — hosting and managing your feeds.
+        You can create, edit, and download feeds without signing in.
+      </p>
+
       {tab === 'google' && (
         <div className="nostr-connect-google">
           <p className="connect-description">
-            Sign in with Google and we'll create a Nostr identity for you automatically.
-            No Nostr knowledge required.
+            {returning
+              ? "Welcome back! Sign in with the same Google account to get back into your identity and feeds."
+              : "Sign in with Google and we'll create a Nostr identity for you automatically. No Nostr knowledge required."}
           </p>
           <GoogleSignInButton />
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '12px', textAlign: 'center' }}>
+          <p className="connect-footnote">
             You can always export your Nostr keys later from the menu.
           </p>
         </div>
       )}
-
-      {tab === 'primal' && <NewToNostrPanel />}
 
       {tab === 'extension' && (
         <div className="nostr-connect-extension">

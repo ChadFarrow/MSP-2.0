@@ -1827,6 +1827,10 @@ body {
   margin: 0 -20px 20px -20px;
   padding: 0 20px;
   overflow-x: auto;
+  /* overflow-x:auto makes overflow-y compute to auto, and the tabs' -1px
+     margin-bottom overflows the row by a pixel → spurious vertical scrollbar.
+     Pin it hidden so only horizontal scroll (for narrow screens) can appear. */
+  overflow-y: hidden;
   gap: 0;
 }
 
@@ -2526,6 +2530,7 @@ body {
   max-width: 480px;
 }
 
+.nostr-connect-google,
 .nostr-connect-extension,
 .nostr-connect-remote {
   display: flex;
@@ -2533,11 +2538,32 @@ body {
   gap: 16px;
 }
 
+/* Quick Sign In is a single centered CTA — center its copy so the description and
+   footnote line up with the Google button instead of clashing alignments. */
+.nostr-connect-google {
+  text-align: center;
+}
+
 .connect-description {
   color: var(--text-secondary);
   font-size: 0.875rem;
   line-height: 1.5;
   margin: 0;
+}
+
+.connect-footnote {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+/* Reassurance shown above every sign-in tab: an account is optional. */
+.connect-note {
+  margin: 0 0 16px;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  text-align: center;
 }
 
 /* Primal signup walkthrough (NewToNostrPanel) — two-column: phone + step list */

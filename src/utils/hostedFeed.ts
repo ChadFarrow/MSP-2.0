@@ -44,6 +44,26 @@ interface UpdateFeedResponse {
 }
 
 /**
+ * Build the HostedFeedInfo to persist when opening an already-hosted feed for editing
+ * from the Artist Profile. SaveModal decides PUT-vs-POST purely from getHostedFeedInfo
+ * (keyed by podcastGuid), so without this the next Save would attempt a POST and hit the
+ * 409 "feed already exists" guard. feedId === podcastGuid for hosted feeds.
+ */
+export function buildHostedInfoForEdit(
+  feedId: string,
+  ownerPubkey: string,
+  now: number = Date.now()
+): HostedFeedInfo {
+  return {
+    feedId,
+    createdAt: now,
+    lastUpdated: now,
+    ownerPubkey,
+    linkedAt: now,
+  };
+}
+
+/**
  * Build the stable URL for a hosted feed.
  * Always uses the canonical domain (VITE_CANONICAL_URL, else musicsideproject.com)
  * so feed URLs never bake in a preview/legacy host like msp.podtards.com.

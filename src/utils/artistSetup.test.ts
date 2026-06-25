@@ -130,5 +130,20 @@ describe('buildArtistSetupActions', () => {
       const actions = buildArtistSetupActions({});
       expect(actions[actions.length - 1]).toEqual({ type: 'SET_FEED_TYPE', payload: 'artist' });
     });
+
+    // Profile "+ New Album" passes only the publisher so a fresh album is minted and
+    // attached — it must NOT create a second publisher (one-publisher-per-npub).
+    it('add-album: keeps the publisher GUID and never mints a second publisher', () => {
+      const publisherFeed: PublisherFeed = { ...createEmptyPublisherFeed(), podcastGuid: 'pub-xyz' };
+      const actions = buildArtistSetupActions({ publisherFeed }, { regenerateGuids: false });
+      // No SET_PUBLISHER_FEED — the existing publisher is preserved, not replaced.
+      expect(actions.some(a => a.type === 'SET_PUBLISHER_FEED')).toBe(false);
+      const albumAction = actions.find(a => a.type === 'SET_ALBUM') as
+        | { type: 'SET_ALBUM'; payload: Album }
+        | undefined;
+      expect(albumAction).toBeDefined();
+      expect(albumAction!.payload.podcastGuid).toBeTruthy();
+      expect(albumAction!.payload.publisher?.feedGuid).toBe('pub-xyz');
+    });
   });
 });

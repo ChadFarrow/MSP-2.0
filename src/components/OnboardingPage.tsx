@@ -8,11 +8,15 @@ interface OnboardingPageProps {
   /** Fired when a first-time user picks the tour, so the app can drop them
       into Artist (Album + Publisher) setup behind the tour overlay. */
   onChooseFirstTime?: () => void;
+  /** Fired when a returning user picks "Yes, I've used this before" on the gate,
+      so the app can route them toward their profile (prompting Nostr sign-in
+      first when they're logged out). Falls back to onClose when not provided. */
+  onChooseReturning?: () => void;
 }
 
 const TOTAL_STEPS = 4;
 
-export function OnboardingPage({ onClose, startAtGate = false, onChooseFirstTime }: OnboardingPageProps) {
+export function OnboardingPage({ onClose, startAtGate = false, onChooseFirstTime, onChooseReturning }: OnboardingPageProps) {
   // step 0 = "have you used this before?" gate; steps 1-3 = guided tour; step 4 = feature questionnaire
   const [step, setStep] = useState(startAtGate ? 0 : 1);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -73,7 +77,7 @@ export function OnboardingPage({ onClose, startAtGate = false, onChooseFirstTime
               <button
                 type="button"
                 className="btn btn-primary onboarding-gate-btn"
-                onClick={onClose}
+                onClick={() => (onChooseReturning ?? onClose)()}
               >
                 Yes, I've used this before →
               </button>

@@ -71,24 +71,24 @@ export function OnboardingPage({ onClose, startAtGate = false, onChooseReturning
             <div className="onboarding-welcome-icon">👋</div>
             <h2 className="onboarding-heading">Have you used MSP 2.0 before?</h2>
             <p className="onboarding-text">
-              If you're returning, jump straight into the app.
-              <br />
               First time here? We'll point you the right way.
+              <br />
+              If you're returning, jump straight into the app.
             </p>
             <div className="onboarding-gate-actions">
-              <button
-                type="button"
-                className="btn btn-primary onboarding-gate-btn"
-                onClick={() => (onChooseReturning ?? onClose)()}
-              >
-                Yes, I've used this before →
-              </button>
               <button
                 type="button"
                 className="btn btn-secondary onboarding-gate-btn"
                 onClick={() => setGateView('hosting')}
               >
                 No, I'm new
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary onboarding-gate-btn"
+                onClick={() => (onChooseReturning ?? onClose)()}
+              >
+                Yes, I've used this before →
               </button>
             </div>
             <img

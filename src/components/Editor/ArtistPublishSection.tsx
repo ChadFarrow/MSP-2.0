@@ -443,7 +443,7 @@ export function ArtistPublishSection() {
         Download Feed Package (host yourself)
       </button>
       <p style={helperText}>
-        Downloads both XML files plus a next-steps guide. Host them anywhere — GitHub Pages, S3, your own CDN.
+        Downloads both XML files plus a next-steps guide. Host them anywhere — your own website, GitHub Pages, or S3.
       </p>
 
       {error && (

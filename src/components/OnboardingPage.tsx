@@ -105,8 +105,8 @@ export function OnboardingPage({ onClose, startAtGate = false, onChooseReturning
             <div className="onboarding-welcome-icon">🎵</div>
             <h2 className="onboarding-heading">Where will your feed live?</h2>
             <p className="onboarding-text">
-              Let MSP host your feed for you, or make the feed and host it on your
-              own website. You can change your mind anytime.
+              Let MSP host your feed and media for you, or make the feed and host it
+              on your own website. You can change your mind anytime.
             </p>
             <div className="onboarding-gate-actions">
               <button

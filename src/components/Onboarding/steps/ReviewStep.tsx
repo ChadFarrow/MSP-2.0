@@ -43,16 +43,36 @@ export function ReviewStep({ w, publishError, publisherWarning, feedUrl, piUrl }
           <CopyableUrlRow
             label="Album feed — subscribe & submit to podcast apps"
             value={albumFeedUrl}
-            helpText={
-              <>
-                This is the feed listeners subscribe to — it's already been submitted to Podcast Index.{' '}
-                <a href={piLink} target="_blank" rel="noopener noreferrer" className="onboarding-link">
-                  View on Podcast Index →
-                </a>{' '}
-                (may take a few minutes to appear after publishing)
-              </>
-            }
+            helpText="This is the feed listeners subscribe to in their podcast app."
           />
+
+          {/* Podcast Index gets its own standout area — it's the key "is it live?" action. */}
+          <div
+            style={{
+              marginTop: 16,
+              padding: '14px 16px',
+              borderRadius: 10,
+              border: '1px solid rgba(99, 102, 241, 0.35)',
+              background: 'rgba(99, 102, 241, 0.10)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 14,
+              flexWrap: 'wrap',
+            }}
+          >
+            <a
+              href={piLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-primary"
+              style={{ textDecoration: 'none', whiteSpace: 'nowrap' }}
+            >
+              🔎 View on Podcast Index →
+            </a>
+            <span style={{ color: 'var(--text-secondary)', fontSize: '0.85em', flex: 1, minWidth: 200 }}>
+              Already submitted automatically — it may take a few minutes to appear after publishing.
+            </span>
+          </div>
         </div>
       )}
     </Section>

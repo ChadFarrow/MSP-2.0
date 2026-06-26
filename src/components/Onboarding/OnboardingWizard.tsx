@@ -236,16 +236,7 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
 
   const footer = (
     <div className="step-nav" style={{ width: '100%' }}>
-      {/* Left: explicit skip-to-editor exit, then Back. Skipping keeps whatever the
-          user has entered (the wizard writes to the same feedStore as the editor). */}
-      <button
-        className="btn btn-secondary"
-        onClick={handleDismiss}
-        disabled={step === 'review' && w.publishing}
-        title="Leave the guided setup and finish in the editor — I'll host the feed myself"
-      >
-        Skip — I'll host it myself
-      </button>
+      {/* Left: Back */}
       {canGoBack && (
         <button className="btn btn-secondary" onClick={w.back} disabled={step === 'review' && w.publishing}>
           Back
@@ -254,8 +245,18 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
 
       <div style={{ flex: 1 }} />
 
-      {/* Right: primary action (Next / Publish / Open). Skip-to-editor lives on the
-          left (and the top-right X does the same). */}
+      {/* Right: explicit skip-to-editor exit, then the primary action
+          (Next / Publish / Open). Skipping keeps whatever the user has entered (the
+          wizard writes to the same feedStore as the editor); the top-right X does the same. */}
+      <button
+        className="btn btn-secondary"
+        onClick={handleDismiss}
+        disabled={step === 'review' && w.publishing}
+        title="Leave the guided setup and finish in the editor — I'll host the feed myself"
+      >
+        Skip to editor — I'll host it myself
+      </button>
+
       {step === 'review' ? (
         feedUrl ? (
           <button className="btn btn-primary" onClick={onComplete}>Open in Editor →</button>

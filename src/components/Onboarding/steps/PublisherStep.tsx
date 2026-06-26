@@ -1,23 +1,30 @@
 // src/components/Onboarding/steps/PublisherStep.tsx
 import type { OnboardingDraft } from '../useOnboardingDraft';
+import { useNostr } from '../../../store/nostrStore';
 import { Section } from '../../Section';
 import { ArtworkFields } from '../../ArtworkFields';
 import { PublisherInfoSection } from '../../Editor/PublisherEditor/PublisherInfoSection';
 
 export function PublisherStep({ w }: { w: OnboardingDraft }) {
   const { state, dispatch } = w;
+  const { state: nostrState } = useNostr();
+  // Managed (Google) keypairs start with no kind-0 profile, so there's nothing to
+  // pull — hide the button for them (mirrors the V4V hide in ValueStep).
+  const isManaged = nostrState.connectionMethod === 'managed';
   if (!state.publisherFeed) return null;
 
   return (
     <>
       <Section title="Your artist identity" icon="🎤" defaultOpen>
-        <button
-          className="btn btn-secondary btn-small"
-          style={{ marginBottom: 12 }}
-          onClick={() => w.pullProfileFromNostr(true)}
-        >
-          Use my Nostr name &amp; photo
-        </button>
+        {!isManaged && (
+          <button
+            className="btn btn-secondary btn-small"
+            style={{ marginBottom: 12 }}
+            onClick={() => w.pullProfileFromNostr(true)}
+          >
+            Use my Nostr name &amp; photo
+          </button>
+        )}
         <PublisherInfoSection publisherFeed={state.publisherFeed} dispatch={dispatch} isArtistMode />
       </Section>
       <Section title="Publisher Artwork" icon="🎨" defaultOpen>

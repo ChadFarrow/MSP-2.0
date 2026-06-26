@@ -81,6 +81,14 @@ export function ReviewSummary({ album, publisher }: { album: Album; publisher: P
                   <span className="review-muted"> · {t.duration}</span>
                 )}
                 {t.explicit && <span className="review-muted"> · Explicit</span>}
+                {t.enclosureUrl && (
+                  <audio
+                    controls
+                    preload="none"
+                    src={t.enclosureUrl}
+                    style={{ display: 'block', marginTop: 6, width: '100%', maxWidth: 360, height: 36 }}
+                  />
+                )}
               </li>
             ))}
           </ol>

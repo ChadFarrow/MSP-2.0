@@ -245,18 +245,9 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
 
       <div style={{ flex: 1 }} />
 
-      {/* Right: explicit skip-to-editor exit, then the primary action
-          (Next / Publish / Open). Skipping keeps whatever the user has entered (the
-          wizard writes to the same feedStore as the editor); the top-right X does the same. */}
-      <button
-        className="btn btn-secondary"
-        onClick={handleDismiss}
-        disabled={step === 'review' && w.publishing}
-        title="Leave the guided setup and finish in the editor — I'll host the feed myself"
-      >
-        Skip to editor — I'll host it myself
-      </button>
-
+      {/* Right: primary action (Next / Publish / Open). Skip-to-editor is the
+          top-right X (handleDismiss → closes the wizard into the editor, keeping
+          whatever was entered since the wizard writes to the same feedStore). */}
       {step === 'review' ? (
         feedUrl ? (
           <button className="btn btn-primary" onClick={onComplete}>Open in Editor →</button>

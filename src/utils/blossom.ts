@@ -19,6 +19,8 @@ const CLIENT_TAG = 'MSP 2.0';
 export const BLOSSOM_MEDIA_SERVERS = [
   'https://blossom.primal.net',
   'https://nostr.download',
+  'https://blossom.band',
+  'https://24242.io',
 ];
 
 export interface MediaUploadResult {

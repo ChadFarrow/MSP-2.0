@@ -13,7 +13,7 @@ export function BlossomFileUpload({ accept, onUploaded, label = 'Upload' }: Blos
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [partial, setPartial] = useState<{ succeeded: number; total: number } | null>(null);
+  const [hosted, setHosted] = useState<{ succeeded: number; total: number } | null>(null);
   const lastFileRef = useRef<File | null>(null);
 
   // The URL field above this control is enough for logged-out users.
@@ -24,15 +24,13 @@ export function BlossomFileUpload({ accept, onUploaded, label = 'Upload' }: Blos
     setUploading(true);
     setError(null);
     setSuccess(false);
-    setPartial(null);
+    setHosted(null);
     try {
       const result = await uploadMediaToBlossom(file);
       if (result.success && result.url) {
         onUploaded({ url: result.url, file });
         setSuccess(true);
-        if (result.serversSucceeded < result.serversTotal) {
-          setPartial({ succeeded: result.serversSucceeded, total: result.serversTotal });
-        }
+        setHosted({ succeeded: result.serversSucceeded, total: result.serversTotal });
       } else {
         setError(result.message);
       }
@@ -87,9 +85,9 @@ export function BlossomFileUpload({ accept, onUploaded, label = 'Upload' }: Blos
       {success && (
         <div style={{ color: 'var(--success, #2d7a2d)', fontSize: '0.85em', marginTop: '4px' }}>
           Uploaded — URL filled in
-          {partial && (
+          {hosted && (
             <span style={{ color: 'var(--text-secondary)' }}>
-              {' '}· Hosted on {partial.succeeded} of {partial.total} servers
+              {' '}· Hosted on {hosted.succeeded} of {hosted.total} servers
             </span>
           )}
         </div>

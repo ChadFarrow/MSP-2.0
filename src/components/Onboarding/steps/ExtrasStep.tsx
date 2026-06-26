@@ -1,11 +1,15 @@
 // src/components/Onboarding/steps/ExtrasStep.tsx
 import type { OnboardingDraft } from '../useOnboardingDraft';
+import { useNostr } from '../../../store/nostrStore';
 import { createEmptyPersonRole } from '../../../types/feed';
 import { Section } from '../../Section';
 import { PersonsSection } from '../../Editor/AlbumEditor/PersonsSection';
 
 export function ExtrasStep({ w }: { w: OnboardingDraft }) {
   const { state, dispatch } = w;
+  const { state: nostrState } = useNostr();
+  // Managed (Google) users have no Nostr context — hide the per-person npub field.
+  const isManaged = nostrState.connectionMethod === 'managed';
 
   return (
     <Section title="Credits & extras" icon="✨" defaultOpen>
@@ -24,6 +28,7 @@ export function ExtrasStep({ w }: { w: OnboardingDraft }) {
         onRemoveRole={(personIndex, roleIndex) => dispatch({ type: 'REMOVE_PERSON_ROLE', payload: { personIndex, roleIndex } })}
         showThumbnailPreview
         showRolesModalButton
+        hideNpub={isManaged}
       />
     </Section>
   );

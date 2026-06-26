@@ -75,6 +75,8 @@ interface PersonsSectionProps {
   showThumbnailPreview?: boolean;
   /** Album-level shows the "View All Roles" button + modal; track-level doesn't. */
   showRolesModalButton?: boolean;
+  /** Hide the per-person Nostr npub field (e.g. for managed/Google users with no Nostr context). */
+  hideNpub?: boolean;
 }
 
 export function PersonsSection({
@@ -87,6 +89,7 @@ export function PersonsSection({
   onRemoveRole,
   showThumbnailPreview = false,
   showRolesModalButton = false,
+  hideNpub = false,
 }: PersonsSectionProps) {
   const [showRolesModal, setShowRolesModal] = useState(false);
 
@@ -127,16 +130,18 @@ export function PersonsSection({
                 />
                 <BlossomFileUpload accept="image/*" onUploaded={({ url }) => onUpdatePerson(personIndex, { ...person, img: url })} />
               </div>
-              <div className="form-group">
-                <label className="form-label">Nostr npub<InfoIcon text={FIELD_INFO.personNpub} /></label>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="npub1..."
-                  value={person.npub || ''}
-                  onChange={e => onUpdatePerson(personIndex, { ...person, npub: e.target.value })}
-                />
-              </div>
+              {!hideNpub && (
+                <div className="form-group">
+                  <label className="form-label">Nostr npub<InfoIcon text={FIELD_INFO.personNpub} /></label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="npub1..."
+                    value={person.npub || ''}
+                    onChange={e => onUpdatePerson(personIndex, { ...person, npub: e.target.value })}
+                  />
+                </div>
+              )}
             </div>
 
             {/* Two-column layout: Roles (left) + optional Thumbnail Preview (right) */}

@@ -29,6 +29,7 @@ export function ExtrasStep({ w }: { w: OnboardingDraft }) {
         showThumbnailPreview
         showRolesModalButton
         hideNpub={isManaged}
+        myNpub={isManaged ? undefined : nostrState.user?.npub}
       />
     </Section>
   );

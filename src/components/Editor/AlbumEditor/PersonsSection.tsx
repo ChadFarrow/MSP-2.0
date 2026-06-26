@@ -77,6 +77,9 @@ interface PersonsSectionProps {
   showRolesModalButton?: boolean;
   /** Hide the per-person Nostr npub field (e.g. for managed/Google users with no Nostr context). */
   hideNpub?: boolean;
+  /** When set, shows a "use mine" button next to each npub field that fills in this npub
+      (the logged-in Nostr user's own) — handy when crediting yourself. */
+  myNpub?: string;
 }
 
 export function PersonsSection({
@@ -90,6 +93,7 @@ export function PersonsSection({
   showThumbnailPreview = false,
   showRolesModalButton = false,
   hideNpub = false,
+  myNpub,
 }: PersonsSectionProps) {
   const [showRolesModal, setShowRolesModal] = useState(false);
 
@@ -133,13 +137,27 @@ export function PersonsSection({
               {!hideNpub && (
                 <div className="form-group">
                   <label className="form-label">Nostr npub<InfoIcon text={FIELD_INFO.personNpub} /></label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="npub1..."
-                    value={person.npub || ''}
-                    onChange={e => onUpdatePerson(personIndex, { ...person, npub: e.target.value })}
-                  />
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="npub1..."
+                      value={person.npub || ''}
+                      onChange={e => onUpdatePerson(personIndex, { ...person, npub: e.target.value })}
+                      style={{ flex: 1 }}
+                    />
+                    {myNpub && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => onUpdatePerson(personIndex, { ...person, npub: myNpub })}
+                        title="Use your logged-in Nostr npub"
+                        style={{ padding: '0 12px', fontSize: '0.8rem' }}
+                      >
+                        use mine
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

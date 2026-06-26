@@ -78,14 +78,14 @@ export function OnboardingPage({ onClose, startAtGate = false, onChooseReturning
             <div className="onboarding-gate-actions">
               <button
                 type="button"
-                className="btn btn-secondary onboarding-gate-btn"
+                className="btn btn-primary onboarding-gate-btn"
                 onClick={() => setGateView('hosting')}
               >
                 No, I'm new
               </button>
               <button
                 type="button"
-                className="btn btn-primary onboarding-gate-btn"
+                className="btn btn-secondary onboarding-gate-btn"
                 onClick={() => (onChooseReturning ?? onClose)()}
               >
                 Yes, I've used this before →

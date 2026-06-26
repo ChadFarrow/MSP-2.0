@@ -19,7 +19,12 @@ export function ReviewStep({ w, publishError, publisherWarning, feedUrl, piUrl }
   // publisher/catalog feed). feedId === podcastGuid for MSP-hosted feeds, so the
   // album URL is deterministic from the album's GUID.
   const albumFeedUrl = buildHostedUrl(state.album.podcastGuid);
-  const piLink = piUrl || `https://podcastindex.org/search?q=${encodeURIComponent(state.album.podcastGuid)}&type=all`;
+  // piUrl (the numeric /podcast/<id> page) is the reliable deep link and gets
+  // polled in after publish. Until it resolves, fall back to a search by ARTIST/
+  // album NAME — PI's web search matches title/author, never the podcast:guid, so a
+  // guid search returns nothing.
+  const piSearchTerm = state.album.author?.trim() || state.album.title?.trim() || '';
+  const piLink = piUrl || `https://podcastindex.org/search?q=${encodeURIComponent(piSearchTerm)}&type=all`;
 
   return (
     <Section title="Review & publish" icon="🚀" defaultOpen>

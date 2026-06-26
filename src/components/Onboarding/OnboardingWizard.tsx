@@ -13,7 +13,6 @@ import { useNostr } from '../../store/nostrStore';
 import { wizardStorage } from '../../utils/storage';
 import { loadPublisherFeedsFromNostr } from '../../utils/nostrSync';
 import { checkSignerConnection } from '../../utils/nostrSigner';
-import { buildHostedUrl } from '../../utils/hostedFeed';
 import type { PublisherFeed } from '../../types/feed';
 import { IntroStep } from './steps/IntroStep';
 import { AuthStep } from './steps/AuthStep';
@@ -61,6 +60,9 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
 
   const closeRef = useRef<HTMLButtonElement>(null);
   const strippedSeedTrack = useRef(false);
+  // Cancels the post-publish Podcast Index resolve poll when the wizard unmounts.
+  const piResolveCancelRef = useRef<{ cancelled: boolean } | null>(null);
+  useEffect(() => () => { if (piResolveCancelRef.current) piResolveCancelRef.current.cancelled = true; }, []);
 
   // Publish result / status (review step).
   const [publishError, setPublishError] = useState('');
@@ -150,19 +152,32 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
         setPublisherWarning(result.error);
       }
       wizardStorage.markComplete();
-      // Resolve the album's numeric Podcast Index page URL (add/byfeedurl returns
-      // the ID on submission). Best-effort — leaves piUrl empty if PI hasn't
-      // registered it yet, in which case the link falls back to a search.
-      try {
-        const albumUrl = buildHostedUrl(state.album.podcastGuid);
-        const params = new URLSearchParams({ url: albumUrl, guid: state.album.podcastGuid });
-        if (state.album.medium) params.set('medium', state.album.medium);
-        const piRes = await fetch(`/api/pubnotify?${params}`);
-        const piData = await piRes.json();
-        if (piData?.podcastIndexUrl) setPiUrl(piData.podcastIndexUrl);
-      } catch {
-        // ignore — link falls back to a Podcast Index search
-      }
+      // Resolve the album's numeric Podcast Index page (/podcast/<id>) — the ONLY
+      // reliable deep link, since PI's web /search?q= matches title/author, never
+      // the podcast:guid. byguid can lag a few minutes after publish, so poll the
+      // side-effect-free /api/pi-resolve with backoff and upgrade the link (the
+      // ReviewStep card re-renders) once it appears. Cancelled on unmount.
+      const guid = state.album.podcastGuid;
+      const cancel = { cancelled: false };
+      piResolveCancelRef.current = cancel;
+      void (async () => {
+        const delaysMs = [0, 15000, 30000, 60000, 90000, 120000];
+        for (const delay of delaysMs) {
+          if (cancel.cancelled) return;
+          if (delay) await new Promise((r) => setTimeout(r, delay));
+          if (cancel.cancelled) return;
+          try {
+            const piRes = await fetch(`/api/pi-resolve?guid=${encodeURIComponent(guid)}`);
+            const piData = await piRes.json();
+            if (piData?.podcastIndexUrl) {
+              if (!cancel.cancelled) setPiUrl(piData.podcastIndexUrl);
+              return;
+            }
+          } catch {
+            // keep trying — PI may still be indexing
+          }
+        }
+      })();
     } catch (e) {
       setPublishError(e instanceof Error ? e.message : 'Publishing failed');
     }

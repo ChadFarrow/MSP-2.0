@@ -47,7 +47,7 @@ const SAVE_DESTINATIONS: SaveDestination[] = [
   { value: 'clipboard', label: 'Copy to Clipboard', blurb: 'Copy the RSS XML to your clipboard' },
   { value: 'hosted', label: 'Host on MSP', blurb: 'Permanent URL hosted on MSP — use in any podcast app' },
   { value: 'podcastIndex', label: 'Submit to PodcastIndex', blurb: 'Submit a feed URL so apps can discover it' },
-  { value: 'nostrMusic', label: 'Publish to Nostr Music', blurb: 'Per-track Nostr events for Wavlake / Fountain' },
+  { value: 'nostrMusic', label: 'Publish to Nostr Music', blurb: 'Per-track Nostr events for Nostr-native music apps like Sunami' },
   { value: 'nostr', label: 'Save RSS feed to Nostr', blurb: 'Back up the full RSS inside a Nostr event', experimental: true },
   { value: 'blossom', label: 'Publish RSS feed to a Blossom server', blurb: 'Host the RSS on a Blossom server', experimental: true },
   { value: 'nsite', label: 'Publish RSS feed to nsite', blurb: 'Publish the RSS as an nsite web URL', experimental: true },
@@ -68,7 +68,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
   const { showExperimental } = useExperimental();
   const [mode, setMode] = useState<SaveMode>('local');
   const [destOpen, setDestOpen] = useState(false);
-  const [destMenuPos, setDestMenuPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [destMenuPos, setDestMenuPos] = useState<{ left: number; width: number; top?: number; bottom?: number; maxHeight: number } | null>(null);
   const destRef = useRef<HTMLDivElement>(null);
   const destMenuRef = useRef<HTMLUListElement>(null);
   const isPublisherMode = feedType === 'publisher';
@@ -169,23 +169,41 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
       if (destRef.current?.contains(target) || destMenuRef.current?.contains(target)) return;
       setDestOpen(false);
     };
-    // The fixed-positioned menu would detach from the trigger on scroll, so close it.
-    const handleScrollOrResize = () => setDestOpen(false);
+    // The fixed-positioned menu detaches from the trigger when the page/modal
+    // scrolls, so close it — but ignore the menu's OWN internal scroll (capture
+    // phase sees it), otherwise scrolling the option list would close the menu.
+    const handleScroll = (e: Event) => {
+      if (destMenuRef.current && e.target instanceof Node && destMenuRef.current.contains(e.target)) return;
+      setDestOpen(false);
+    };
+    const handleResize = () => setDestOpen(false);
     document.addEventListener('mousedown', handleClickOutside);
-    window.addEventListener('resize', handleScrollOrResize);
-    window.addEventListener('scroll', handleScrollOrResize, true);
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('scroll', handleScroll, true);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
-      window.removeEventListener('resize', handleScrollOrResize);
-      window.removeEventListener('scroll', handleScrollOrResize, true);
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('scroll', handleScroll, true);
     };
   }, [destOpen]);
 
-  // Measure the trigger so the portaled menu can sit directly beneath it.
+  // Measure the trigger so the portaled menu sits beside it, sized to the
+  // available viewport space (flipping above when there's more room there).
   const openDestMenu = () => {
     if (destRef.current) {
       const r = destRef.current.getBoundingClientRect();
-      setDestMenuPos({ top: r.bottom + 4, left: r.left, width: r.width });
+      const margin = 8;
+      const spaceBelow = window.innerHeight - r.bottom - margin;
+      const spaceAbove = r.top - margin;
+      const placeAbove = spaceBelow < 240 && spaceAbove > spaceBelow;
+      // Keep the menu compact (it scrolls internally) but never taller than the
+      // space available on the chosen side.
+      const CAP = 340;
+      setDestMenuPos(
+        placeAbove
+          ? { left: r.left, width: r.width, bottom: window.innerHeight - r.top + 4, maxHeight: Math.min(spaceAbove, CAP) }
+          : { left: r.left, width: r.width, top: r.bottom + 4, maxHeight: Math.min(spaceBelow, CAP) }
+      );
     }
     setDestOpen(true);
   };
@@ -747,7 +765,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                   className="save-dest-menu"
                   role="listbox"
                   aria-labelledby="save-dest-label"
-                  style={{ top: destMenuPos.top, left: destMenuPos.left, width: destMenuPos.width }}
+                  style={{ top: destMenuPos.top, bottom: destMenuPos.bottom, left: destMenuPos.left, width: destMenuPos.width, maxHeight: destMenuPos.maxHeight }}
                 >
                   {visibleDestinations.map((d) => (
                     <li
@@ -1466,7 +1484,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                 <li><strong>Copy to Clipboard</strong> - Copy the RSS XML to your clipboard for pasting elsewhere.</li>
                 <li><strong>Host on MSP</strong> - Host your feed on MSP servers. Get a permanent URL for your RSS feed to use in any app. Enable "Draft mode" to host without notifying Podcast Index or sending a podping.{isLoggedIn && ' You can link your Nostr identity to edit from any device without needing the token.'}</li>
                 <li><strong>Submit to PodcastIndex</strong> - Submit a feed URL to Podcast Index so it gets indexed and becomes discoverable in apps like Fountain, Castamatic, and others.</li>
-                <li><strong>Publish to Nostr Music</strong> - Publishes each track (kind 36787) and the playlist (kind 34139) as Nostr events for Nostr-native music clients like Wavlake and Fountain. Audio files must already be hosted somewhere - these events just point to them. Not a podcast RSS feed.</li>
+                <li><strong>Publish to Nostr Music</strong> - Publishes each track (kind 36787) and the playlist (kind 34139) as Nostr events for Nostr-native music apps like Sunami. Audio files must already be hosted somewhere - these events just point to them. Not a podcast RSS feed.</li>
                 {showExperimental && <li><strong>Save RSS feed to Nostr 🧪</strong> - Stores the entire RSS XML inside a Nostr event (kind 30054) on your relays. Personal cross-device backup tied to your Nostr key. Not readable by podcast apps.</li>}
                 {showExperimental && <li><strong>Publish RSS feed to a Blossom server 🧪</strong> - Uploads the RSS file to a Blossom server and registers a Nostr pointer (kind 1063) so MSP can serve a permanent URL. Subscribable in any podcast app.</li>}
                 {showExperimental && <li><strong>Publish RSS feed to nsite 🧪</strong> - Uploads the RSS file to a Blossom server and publishes an nsite site manifest (NIP-5A). Reachable as a permanent web URL through any nsite gateway. Subscribable in podcast apps.</li>}

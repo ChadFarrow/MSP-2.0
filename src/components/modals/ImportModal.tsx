@@ -3,7 +3,9 @@ import { fetchFeedFromUrl } from '../../utils/xmlParser';
 import { loadAlbumsFromNostr, loadAlbumByDTag, fetchNostrMusicTracks, groupTracksByAlbum } from '../../utils/nostrSync';
 import { convertNostrMusicToAlbum, parseNostrEventJson } from '../../utils/nostrMusicConverter';
 import { type HostedFeedInfo, buildHostedUrl } from '../../utils/hostedFeed';
-import { fetchAdminFeeds } from '../../utils/adminAuth';
+import { fetchAdminFeeds, fetchEmailFeeds } from '../../utils/adminAuth';
+import { isEmailLoggedIn, getEmailSession } from '../../utils/emailSession';
+import { EmailLoginModal } from '../auth/EmailLoginModal';
 import { pendingHostedStorage } from '../../utils/storage';
 import { formatTimestamp } from '../../utils/dateUtils';
 import { checkSignerConnection } from '../../utils/nostrSigner';
@@ -21,6 +23,7 @@ interface HostedFeedListItem {
   createdAt?: string;
   lastUpdated?: string;
   ownerPubkey?: string;
+  ownerEmailHash?: string;
 }
 
 interface ImportModalProps {
@@ -50,6 +53,7 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn, templa
   const [showHelp, setShowHelp] = useState(false);
   const [hostedFeeds, setHostedFeeds] = useState<HostedFeedListItem[]>([]);
   const [loadingHostedFeeds, setLoadingHostedFeeds] = useState(false);
+  const [showEmailLogin, setShowEmailLogin] = useState(false);
 
   // Reset mode if the current selection is an experimental option that just got hidden
   useEffect(() => {
@@ -79,27 +83,34 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn, templa
     }
   };
 
+  const canListFeeds = isLoggedIn || isEmailLoggedIn();
+
   const fetchHostedFeeds = async () => {
-    if (!isLoggedIn || !nostrState.user?.pubkey) return;
+    if (!canListFeeds) return;
 
     setLoadingHostedFeeds(true);
     setError('');
 
-    const health = await checkSignerConnection();
-    if (!health.connected) {
-      setError(health.error ?? 'Nostr signer is not connected.');
-      setLoadingHostedFeeds(false);
-      return;
-    }
-
     try {
-      const result = await fetchAdminFeeds();
-      // Filter to only show feeds owned by the current user
-      const myFeeds = result.feeds.filter(
-        (f: HostedFeedListItem) => f.ownerPubkey === nostrState.user?.pubkey
-      );
-      setHostedFeeds(myFeeds);
-      if (myFeeds.length === 0) {
+      let feeds: HostedFeedListItem[];
+      if (isLoggedIn && nostrState.user?.pubkey) {
+        const health = await checkSignerConnection();
+        if (!health.connected) {
+          setError(health.error ?? 'Nostr signer is not connected.');
+          return;
+        }
+        const result = await fetchAdminFeeds();
+        // Filter to only show feeds owned by the current user
+        feeds = result.feeds.filter(
+          (f: HostedFeedListItem) => f.ownerPubkey === nostrState.user?.pubkey
+        );
+      } else {
+        // Email account: the server already scopes the list to this account.
+        const result = await fetchEmailFeeds();
+        feeds = result.feeds;
+      }
+      setHostedFeeds(feeds);
+      if (feeds.length === 0) {
         setError('No hosted feeds found for your account');
       }
     } catch (err) {
@@ -235,15 +246,22 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn, templa
       }
       const xml = await response.text();
 
-      // Store feed info as pending (linked to Nostr, no token needed)
+      // Store feed info as pending (owned via Nostr or email, no token needed)
       const newInfo: HostedFeedInfo = {
         feedId: feed.feedId,
-        editToken: '', // No token needed - linked to Nostr
+        editToken: '', // No token needed - owned via linked identity
         createdAt: Date.now(),
-        lastUpdated: Date.now(),
-        ownerPubkey: feed.ownerPubkey,
-        linkedAt: Date.now()
+        lastUpdated: Date.now()
       };
+      if (feed.ownerPubkey) {
+        newInfo.ownerPubkey = feed.ownerPubkey;
+        newInfo.linkedAt = Date.now();
+      }
+      const emailHash = feed.ownerEmailHash ?? getEmailSession()?.emailHash;
+      if (emailHash) {
+        newInfo.ownerEmailHash = emailHash;
+        newInfo.emailLinkedAt = Date.now();
+      }
       pendingHostedStorage.save(newInfo);
 
       // Pass the hosted URL as source URL
@@ -333,7 +351,7 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn, templa
               </button>
             ) : mode === 'hosted' ? (
               <>
-                {isLoggedIn && (
+                {canListFeeds && (
                   <button className="btn btn-secondary" onClick={fetchHostedFeeds} disabled={loadingHostedFeeds}>
                     {loadingHostedFeeds ? 'Loading...' : 'Refresh'}
                   </button>
@@ -375,7 +393,7 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn, templa
                 setMode(newMode);
                 if (newMode === 'nostr') fetchSavedAlbums();
                 if (newMode === 'nostrMusic') fetchMusicTracks();
-                if (newMode === 'hosted' && isLoggedIn) fetchHostedFeeds();
+                if (newMode === 'hosted' && canListFeeds) fetchHostedFeeds();
               }}
             >
               <option value="file">Upload File</option>
@@ -535,8 +553,8 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn, templa
             </div>
           ) : mode === 'hosted' ? (
             <div className="form-group">
-              {/* Show user's hosted feeds if logged in */}
-              {isLoggedIn && (
+              {/* Show user's hosted feeds if logged in (Nostr or email) */}
+              {canListFeeds && (
                 <div style={{ marginBottom: '16px' }}>
                   <label className="form-label">My Hosted Feeds</label>
                   <select
@@ -577,10 +595,19 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn, templa
                 </div>
               )}
 
-              {!isLoggedIn && (
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '12px' }}>
-                  Import a feed hosted on MSP. Upload your backup file or enter details manually.
-                </p>
+              {!canListFeeds && (
+                <div style={{ marginBottom: '12px' }}>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '8px' }}>
+                    Import a feed hosted on MSP. Upload your backup file or enter details manually.
+                  </p>
+                  <button
+                    className="btn btn-secondary"
+                    style={{ fontSize: '0.75rem' }}
+                    onClick={() => setShowEmailLogin(true)}
+                  >
+                    Sign in with email to see your feeds
+                  </button>
+                </div>
               )}
 
               {/* Upload backup file */}
@@ -706,6 +733,10 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn, templa
                 {showExperimental && <li><strong>From Nostr 🧪</strong> - Load your previously saved albums from Nostr (requires login)</li>}
               </ul>
             </ModalWrapper>
+      )}
+
+      {showEmailLogin && (
+        <EmailLoginModal onClose={() => setShowEmailLogin(false)} />
       )}
     </>
   );

@@ -19,9 +19,14 @@ import {
   createHostedFeedWithNostr,
   updateHostedFeedWithNostr,
   linkNostrToFeed,
+  createHostedFeedWithEmail,
+  updateHostedFeedWithEmail,
+  linkEmailToFeed,
   type HostedFeedInfo
 } from '../../utils/hostedFeed';
 import { albumStorage, videoStorage, publisherStorage, pendingHostedStorage } from '../../utils/storage';
+import { getEmailSession, isEmailLoggedIn } from '../../utils/emailSession';
+import { EmailLoginModal } from '../auth/EmailLoginModal';
 import { useNostr } from '../../store/nostrStore';
 import { useExperimental } from '../../store/experimentalStore';
 import { checkSignerConnection } from '../../utils/nostrSigner';
@@ -105,6 +110,8 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
   const [pendingToken, setPendingToken] = useState<string | null>(null);
   const [tokenAcknowledged, setTokenAcknowledged] = useState(false);
   const [linkingNostr, setLinkingNostr] = useState(false);
+  const [linkingEmail, setLinkingEmail] = useState(false);
+  const [emailModal, setEmailModal] = useState<null | { mode: 'login' } | { mode: 'claim' }>(null);
   const [podcastIndexPending, setPodcastIndexPending] = useState(false); // True when PI notified but not yet indexed
   const [isDraft, setIsDraft] = useState(false);
   const nsiteSiteId = defaultSiteId(currentFeedGuid);
@@ -117,6 +124,10 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
 
   // Check if feed is linked to current user's Nostr identity
   const isNostrLinked = hostedInfo?.ownerPubkey && nostrState.user?.pubkey === hostedInfo.ownerPubkey;
+
+  // Check if feed is claimed by the current email account
+  const emailSession = getEmailSession();
+  const isEmailLinked = !!(hostedInfo?.ownerEmailHash && emailSession?.emailHash === hostedInfo.ownerEmailHash);
 
   // Helper to get button text based on mode and loading state
   const getButtonText = () => {
@@ -140,7 +151,9 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
   // Helper to determine if button should be disabled
   const isButtonDisabled = () => {
     if (loading) return true;
-    if (mode === 'hosted' && !hostedInfo && !legacyHostedInfo && !tokenAcknowledged) return true;
+    // Email-logged-in users don't need to babysit a token (email is their recovery),
+    // so the "I saved my token" gate only applies to anonymous, non-email hosting.
+    if (mode === 'hosted' && !hostedInfo && !legacyHostedInfo && !tokenAcknowledged && !isEmailLoggedIn()) return true;
     if (mode === 'podcastIndex' && (!podcastIndexSubmitUrl.trim() || !!podcastIndexUrlError)) return true;
     return false;
   };
@@ -527,10 +540,12 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
           }
 
           if (hostedInfo) {
-            // Update existing feed - use Nostr auth if linked, otherwise token
+            // Update existing feed - prefer Nostr, then email session, else token
             let updateResult;
             if (isNostrLinked) {
               updateResult = await updateHostedFeedWithNostr(hostedInfo.feedId, hostedXml, currentFeedTitle, isDraft);
+            } else if (isEmailLinked) {
+              updateResult = await updateHostedFeedWithEmail(hostedInfo.feedId, hostedXml, currentFeedTitle, isDraft);
             } else {
               updateResult = await updateHostedFeed(hostedInfo.feedId, hostedInfo.editToken, hostedXml, currentFeedTitle, isDraft);
             }
@@ -558,6 +573,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
             let hostedResult;
             let newInfo: HostedFeedInfo;
             const shouldLinkNostr = isLoggedIn && nostrState.user?.pubkey;
+            const shouldLinkEmail = !shouldLinkNostr && isEmailLoggedIn();
             if (shouldLinkNostr) {
               hostedResult = await createHostedFeedWithNostr(hostedXml, currentFeedTitle, currentFeedGuid, tokenToUse, isDraft);
               newInfo = {
@@ -567,6 +583,17 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                 lastUpdated: Date.now(),
                 ownerPubkey: nostrState.user!.pubkey,
                 linkedAt: Date.now(),
+                ...(hostedResult.isDraft && { isDraft: true })
+              };
+            } else if (shouldLinkEmail) {
+              hostedResult = await createHostedFeedWithEmail(hostedXml, currentFeedTitle, currentFeedGuid, tokenToUse, isDraft);
+              newInfo = {
+                feedId: hostedResult.feedId,
+                editToken: tokenToUse,
+                createdAt: Date.now(),
+                lastUpdated: Date.now(),
+                ownerEmailHash: emailSession?.emailHash,
+                emailLinkedAt: Date.now(),
                 ...(hostedResult.isDraft && { isDraft: true })
               };
             } else {
@@ -592,7 +619,9 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
               // Build success message with PI result
               let successMsg = legacyHostedInfo
                 ? 'Feed migrated to new URL and legacy URL updated!'
-                : (shouldLinkNostr ? 'Feed created and linked to your Nostr identity!' : 'Feed created!');
+                : (shouldLinkNostr
+                    ? 'Feed created and linked to your Nostr identity!'
+                    : (shouldLinkEmail ? 'Feed created and linked to your email!' : 'Feed created!'));
 
               if (hostedResult.podcastIndexId) {
                 setPodcastIndexPending(true);
@@ -679,6 +708,36 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to link Nostr identity' });
     } finally {
       setLinkingNostr(false);
+    }
+  };
+
+  // Claim an existing feed with email. If already signed in with email, link directly;
+  // otherwise open the email modal in claim mode (sends a confirmation link).
+  const handleLinkEmail = async () => {
+    if (!hostedInfo) return;
+
+    if (!isEmailLoggedIn()) {
+      setEmailModal({ mode: 'claim' });
+      return;
+    }
+
+    setLinkingEmail(true);
+    setMessage(null);
+    try {
+      await linkEmailToFeed(hostedInfo.feedId, hostedInfo.editToken);
+      const session = getEmailSession();
+      const updatedInfo = {
+        ...hostedInfo,
+        ownerEmailHash: session?.emailHash,
+        emailLinkedAt: Date.now()
+      };
+      saveHostedFeedInfo(currentFeedGuid, updatedInfo);
+      setHostedInfo(updatedInfo);
+      setMessage({ type: 'success', text: 'Email linked! You can manage this feed from any device.' });
+    } catch (err) {
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to link email' });
+    } finally {
+      setLinkingEmail(false);
     }
   };
 
@@ -1227,6 +1286,29 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                       </button>
                     </div>
                   )}
+                  {/* Claim with email for existing feeds not yet email-linked */}
+                  {hostedInfo && !isEmailLinked && (
+                    <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                        Claim this feed with your email to manage it from any device — no token to keep safe.
+                      </p>
+                      <button
+                        className="btn btn-secondary"
+                        style={{ fontSize: '0.75rem' }}
+                        onClick={handleLinkEmail}
+                        disabled={linkingEmail}
+                      >
+                        {linkingEmail ? 'Linking…' : (isEmailLoggedIn() ? 'Claim with Email' : 'Claim with Email…')}
+                      </button>
+                    </div>
+                  )}
+                  {isEmailLinked && (
+                    <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--success, #10b981)', margin: 0 }}>
+                        ✉️ Claimed with your email — manageable from any device.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
               {!hostedInfo && !pendingToken && !legacyHostedInfo && (
@@ -1490,6 +1572,14 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                 {showExperimental && <li><strong>Publish RSS feed to nsite 🧪</strong> - Uploads the RSS file to a Blossom server and publishes an nsite site manifest (NIP-5A). Reachable as a permanent web URL through any nsite gateway. Subscribable in podcast apps.</li>}
               </ul>
             </ModalWrapper>
+      )}
+      {emailModal && (
+        <EmailLoginModal
+          onClose={() => setEmailModal(null)}
+          claim={emailModal.mode === 'claim' && hostedInfo
+            ? { feedId: hostedInfo.feedId, editToken: hostedInfo.editToken, feedTitle: currentFeedTitle }
+            : undefined}
+        />
       )}
     </>
   );

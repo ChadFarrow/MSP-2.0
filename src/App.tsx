@@ -21,6 +21,7 @@ import { NewFeedChoiceModal } from './components/modals/NewFeedChoiceModal';
 import { Editor } from './components/Editor/Editor';
 import { PublisherEditor } from './components/Editor/PublisherEditor';
 import { AdminPage } from './components/admin/AdminPage';
+import { VerifyMagicLink } from './pages/VerifyMagicLink';
 import type { Album } from './types/feed';
 import mspLogo from './assets/msp-logo.png';
 import './App.css';
@@ -386,6 +387,15 @@ function AppContent() {
 // Main App
 function App() {
   const isAdminRoute = window.location.pathname === '/admin';
+  const isVerifyRoute = window.location.pathname === '/auth/verify';
+
+  if (isVerifyRoute) {
+    return (
+      <ThemeProvider>
+        <VerifyMagicLink />
+      </ThemeProvider>
+    );
+  }
 
   if (isAdminRoute) {
     return (

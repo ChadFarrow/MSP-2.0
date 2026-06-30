@@ -1,5 +1,6 @@
 // Admin authentication utilities for frontend
 import { hasSigner, signEventWithTimeout } from './nostrSigner';
+import { withEmailAuth, isEmailLoggedIn } from './emailSession';
 
 interface NostrEvent {
   id?: string;
@@ -101,6 +102,24 @@ export async function fetchAdminFeeds(): Promise<ListFeedsResponse> {
 
   if (!response.ok) {
     const error = await response.json();
+    throw new Error(error.error || 'Failed to fetch feeds');
+  }
+
+  return response.json();
+}
+
+// Fetch the feeds owned by the current email account
+export async function fetchEmailFeeds(): Promise<ListFeedsResponse> {
+  if (!isEmailLoggedIn()) {
+    throw new Error('Not logged in with email');
+  }
+
+  const response = await fetch('/api/account/feeds', {
+    headers: withEmailAuth()
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to fetch feeds' }));
     throw new Error(error.error || 'Failed to fetch feeds');
   }
 

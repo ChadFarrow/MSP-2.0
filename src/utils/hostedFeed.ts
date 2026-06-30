@@ -2,6 +2,7 @@
 import { hostedFeedStorage, type HostedFeedInfo } from './storage';
 import { createAdminAuthHeader } from './adminAuth';
 import { hasSigner } from './nostrSigner';
+import { withEmailAuth, isEmailLoggedIn } from './emailSession';
 
 // Re-export type for backward compatibility
 export type { HostedFeedInfo };
@@ -251,6 +252,113 @@ export async function updateHostedFeedWithNostr(
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Failed to update feed' }));
     throw new Error(error.error || 'Failed to update feed');
+  }
+
+  return response.json();
+}
+
+// ============================================
+// Email-session-authenticated API functions
+// ============================================
+
+/**
+ * Create a hosted feed authenticated by the current email session (if any).
+ * Falls back to an anonymous create when not logged in with email.
+ */
+export async function createHostedFeedWithEmail(
+  xml: string,
+  title: string,
+  podcastGuid: string,
+  editToken?: string,
+  isDraft?: boolean
+): Promise<CreateFeedResponse> {
+  const response = await fetch('/api/hosted', {
+    method: 'POST',
+    headers: withEmailAuth({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ xml, title, podcastGuid, editToken, isDraft })
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to create feed' }));
+    throw new Error(error.error || 'Failed to create feed');
+  }
+
+  return response.json();
+}
+
+/**
+ * Update a hosted feed using the current email session.
+ */
+export async function updateHostedFeedWithEmail(
+  feedId: string,
+  xml: string,
+  title: string,
+  isDraft?: boolean
+): Promise<UpdateFeedResponse> {
+  if (!isEmailLoggedIn()) {
+    throw new Error('Not logged in with email');
+  }
+
+  const response = await fetch(`/api/hosted/${feedId}`, {
+    method: 'PUT',
+    headers: withEmailAuth({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ xml, title, isDraft })
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to update feed' }));
+    throw new Error(error.error || 'Failed to update feed');
+  }
+
+  return response.json();
+}
+
+/**
+ * Delete a hosted feed using the current email session.
+ */
+export async function deleteHostedFeedWithEmail(feedId: string): Promise<void> {
+  if (!isEmailLoggedIn()) {
+    throw new Error('Not logged in with email');
+  }
+
+  const response = await fetch(`/api/hosted/${feedId}`, {
+    method: 'DELETE',
+    headers: withEmailAuth()
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to delete feed' }));
+    throw new Error(error.error || 'Failed to delete feed');
+  }
+}
+
+interface LinkEmailResponse {
+  success: boolean;
+  message: string;
+  emailLinked: boolean;
+}
+
+/**
+ * Claim an existing feed with the current email session.
+ * Requires the edit token (proves ownership); the session supplies the identity to attach.
+ * Mirrors linkNostrToFeed.
+ */
+export async function linkEmailToFeed(
+  feedId: string,
+  editToken: string
+): Promise<LinkEmailResponse> {
+  if (!isEmailLoggedIn()) {
+    throw new Error('Not logged in with email');
+  }
+
+  const response = await fetch(`/api/hosted/${feedId}`, {
+    method: 'PATCH',
+    headers: withEmailAuth({ 'X-Edit-Token': editToken })
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to link email identity' }));
+    throw new Error(error.error || 'Failed to link email identity');
   }
 
   return response.json();

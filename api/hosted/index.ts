@@ -4,12 +4,12 @@ import { randomBytes } from 'crypto';
 import { parseAuthHeader, parseFeedAuthHeader } from '../_utils/adminAuth.js';
 import {
   notifyPodcastIndex,
-  lookupPodcastIndexId,
   getBaseUrl,
   hashToken,
   isValidFeedId
 } from '../_utils/feedUtils.js';
 import { extractPodcastMedium } from '../_utils/xmlUtils.js';
+import { hydrateFeed } from '../_utils/feedHydrate.js';
 
 // Generate a secure edit token
 function generateEditToken(): string {
@@ -41,53 +41,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const xmlBlobs = blobs.filter(b => b.pathname.endsWith('.xml') && !b.pathname.includes('.backup.'));
 
       let feeds = await Promise.all(
-        metaBlobs.map(async (blob) => {
-          const response = await fetch(blob.url);
-          const text = await response.text();
-          const meta = text ? JSON.parse(text) : {};
+        metaBlobs.map((blob) => {
           const feedId = blob.pathname.replace('feeds/', '').replace('.meta.json', '');
-
-          // Try to extract author and medium from the XML feed
-          let author: string | undefined;
-          let medium: string | undefined;
           const xmlBlob = xmlBlobs.find(b => b.pathname === `feeds/${feedId}.xml`);
-          if (xmlBlob) {
-            try {
-              const xmlResponse = await fetch(xmlBlob.url);
-              const xml = await xmlResponse.text();
-              // Extract itunes:author using regex
-              const authorMatch = xml.match(/<itunes:author>([^<]+)<\/itunes:author>/);
-              if (authorMatch) {
-                author = authorMatch[1];
-              }
-              const extractedMedium = extractPodcastMedium(xml);
-              if (extractedMedium) {
-                medium = extractedMedium;
-              }
-            } catch {
-              // Ignore errors extracting metadata
-            }
-          }
-
-          // Look up PI ID if missing and update metadata in background
-          let podcastIndexId = meta.podcastIndexId;
-          if (!podcastIndexId) {
-            // feedId is the podcast GUID, use it to lookup on PI
-            podcastIndexId = await lookupPodcastIndexId(feedId);
-            if (podcastIndexId) {
-              // Update metadata with PI ID (don't await - fire and forget)
-              put(`feeds/${feedId}.meta.json`, JSON.stringify({
-                ...meta,
-                podcastIndexId
-              }), {
-                access: 'public',
-                contentType: 'application/json',
-                addRandomSuffix: false
-              }).catch(err => console.warn('Failed to update metadata with PI ID:', err));
-            }
-          }
-
-          return { feedId, author, medium, ...meta, podcastIndexId };
+          return hydrateFeed(feedId, blob.url, xmlBlob?.url);
         })
       );
 

@@ -10,6 +10,8 @@ import {
 } from '../_utils/feedUtils.js';
 import { extractPodcastMedium } from '../_utils/xmlUtils.js';
 import { hydrateFeed } from '../_utils/feedHydrate.js';
+import { parseEmailAuthHeader } from '../_utils/emailAuth.js';
+import { addFeedToAccount } from '../_utils/accountStore.js';
 
 // Generate a secure edit token
 function generateEditToken(): string {
@@ -125,6 +127,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
+    // Check for an email session - if provided, set the email owner immediately
+    const emailSessionHeader = req.headers['x-email-session'] as string | undefined;
+    let ownerEmailHash: string | undefined;
+    let emailLinkedAt: string | undefined;
+
+    if (emailSessionHeader) {
+      const emailAuth = parseEmailAuthHeader(emailSessionHeader);
+      if (emailAuth.valid && emailAuth.emailHash) {
+        ownerEmailHash = emailAuth.emailHash;
+        emailLinkedAt = Date.now().toString();
+      }
+    }
+
     // Store feed XML in Vercel Blob
     // allowOverwrite handles orphaned blobs from incomplete deletions
     const blob = await put(`feeds/${feedId}.xml`, xml, {
@@ -150,6 +165,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       title: (typeof title === 'string' ? title : 'Untitled Feed').slice(0, 200),
       ownerPubkey,
       linkedAt,
+      ownerEmailHash,
+      emailLinkedAt,
       podcastIndexId,
       ...(isDraft === true && { isDraft: true })
     }), {
@@ -158,6 +175,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       addRandomSuffix: false,
       allowOverwrite: true
     });
+
+    // Index the new feed to the email account so it appears in "My Feeds"
+    if (ownerEmailHash) {
+      await addFeedToAccount(ownerEmailHash, feedId).catch(() => { /* best-effort */ });
+    }
 
     return res.status(201).json({
       feedId,

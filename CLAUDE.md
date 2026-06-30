@@ -21,8 +21,15 @@ A `.env` file is required with the following variables:
 - `VITE_CANONICAL_URL` - Canonical URL for the application
 - `PODPING_ENDPOINT_URL` - Full URL to MSP's self-hosted podping-hivepinger Railway service, trailing slash (optional; podping notifications are skipped when unset)
 - `PODPING_BEARER_TOKEN` - Bearer token shared with the Railway service (optional; podping notifications are skipped when unset)
+- `RESEND_API_KEY` - Resend API key for sending email magic links (optional; email auth no-ops when unset, gated by `isEmailConfigured()` in `api/_utils/sendEmail.ts`)
+- `MSP_EMAIL_FROM` - Verified Resend sender address, e.g. `noreply@musicsideproject.com` (optional; required alongside `RESEND_API_KEY` for email auth)
+- `MSP_SESSION_SECRET` - HMAC secret signing email session JWTs (server-only). Rotating it invalidates all email sessions
+- `MSP_EMAIL_HASH_KEY` - HMAC key for `ownerEmailHash`. Kept separate from `MSP_SESSION_SECRET` so sessions can rotate without orphaning feed ownership. **Rotating this breaks email→feed ownership matching**
+- `MSP_MAGIC_LINK_TTL_MIN` - Magic-link lifetime in minutes (optional; default 15)
 
 No `.env.example` exists - request credentials from the team.
+
+**Email auth DNS** (for magic-link deliverability on `musicsideproject.com`): add the SPF (`include:_spf.resend.com`, merged into a single SPF TXT), Resend DKIM records, and a DMARC TXT (`p=none` to start) — verify the domain in the Resend dashboard. MX is **not** required (send-only).
 
 ### Getting Started
 ```bash
@@ -239,6 +246,18 @@ The modern singular `<podcast:image>` tag (supersedes the deprecated plural `<po
 - Parser (`xmlParser.ts`): `stripOp3Prefix()` detects and removes OP3 prefix on import, sets `album.op3 = true`
 - Stats link shown in Save modal (hosted section) — OP3 needs a few days of downloads before stats page is available
 - Tests in `xmlGenerator.test.ts` and `xmlParser.test.ts` cover prefix generation, stripping, and round-trip
+
+### Email Magic-Link Feed Ownership
+A non-Nostr, password-free way to **own and recover MSP-hosted feeds** (for self-hosting musicians who avoid Nostr/Google — e.g. Blossom/nostr.build users whose media is content-addressed so MSP hosts their static feed XML). It's a **third owner type alongside the edit token and Nostr** — every hosted feed write tries token → Nostr owner → email owner.
+- **Auth model**: passwordless magic link. The raw email is **never persisted** — only `emailHash` (keyed HMAC via `MSP_EMAIL_HASH_KEY`) is stored. Sessions are stateless HS256 JWTs (`MSP_SESSION_SECRET`), sent as `X-Email-Session: Bearer <jwt>`. Helpers in `api/_utils/emailAuth.ts` (mirrors `adminAuth.ts`'s `{valid, ...}` shape).
+- **Blob storage** (`api/_utils/accountStore.ts`): `@vercel/blob` has no private mode, so both namespaces are public blobs with **unguessable paths** — single-use link records at `accounts/links/<sha256(token)>.json` (deleted on redeem) and the per-account feed index at `accounts/index/<emailHash>.json` (contents are just public feed GUIDs). External callers can't `list()` or guess the store subdomain + high-entropy path.
+- **Endpoints**: `api/auth/magic-link.ts` (POST, rate-limited per IP+emailHash, enumeration-safe `{sent:true}`, claim requires proving the edit token first), `api/auth/verify.ts` (POST, single-use redeem → session; a `claim` link also stamps `ownerEmailHash` onto the feed + indexes it), `api/account/feeds.ts` (GET, lists the account's feeds via the shared `feedHydrate.ts` helper).
+- **Hosted writes** (`api/hosted/[feedId].ts`): `FeedMetadata.ownerEmailHash`/`emailLinkedAt`; PUT/DELETE accept an email-session owner (DELETE previously had no owner path at all — fixed for both Nostr and email); PATCH generalized to link either a Nostr or email identity (`emailSessionOwns()` helper).
+- **Email send** (`api/_utils/sendEmail.ts`): Resend, send-only, no-ops via `isEmailConfigured()` when unconfigured (mirrors `isPodpingConfigured()`).
+- **Frontend**: `EmailLoginModal.tsx` (login + claim), `VerifyMagicLink.tsx` at route `/auth/verify`, `emailSession.ts` (request/verify + `withEmailAuth()`), `emailSessionStorage` in `storage.ts`. `hostedFeed.ts` has `*WithEmail` variants + `linkEmailToFeed` (analog of `linkNostrToFeed`). SaveModal prefers Nostr → email → token and drops the "save your token" gate for email users; ImportModal "My Hosted Feeds" works for email accounts. **This is a production feature — not gated behind the experimental flag.**
+- **Setup prerequisites** (must be done before it works end-to-end): a Resend account + verified domain, the env vars above, and the SPF/DKIM/DMARC DNS records. Until then it cleanly no-ops.
+- **Known follow-ups** (not yet done): the publisher `CatalogFeedsSection.tsx` "Browse My MSP Feeds" and the `/admin` `AdminPage.tsx` dashboard are still Nostr-only (not generalized to email); NIP-98 events still aren't bound to URL/method (pre-existing).
+- Tests: `api/_utils/emailAuth.test.ts`, `sendEmail.test.ts`, `accountStore.test.ts`, `api/auth/*.test.ts`, `api/account/feeds.test.ts`, `api/hosted/feedId-email-auth.test.ts`.
 
 ### Nostr Integration
 - NIP-07 browser extension support for signing

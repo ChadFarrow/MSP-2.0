@@ -4,12 +4,14 @@ import { randomBytes } from 'crypto';
 import { parseAuthHeader, parseFeedAuthHeader } from '../_utils/adminAuth.js';
 import {
   notifyPodcastIndex,
-  lookupPodcastIndexId,
   getBaseUrl,
   hashToken,
   isValidFeedId
 } from '../_utils/feedUtils.js';
 import { extractPodcastMedium } from '../_utils/xmlUtils.js';
+import { hydrateFeed } from '../_utils/feedHydrate.js';
+import { parseEmailAuthHeader } from '../_utils/emailAuth.js';
+import { addFeedToAccount } from '../_utils/accountStore.js';
 
 // Generate a secure edit token
 function generateEditToken(): string {
@@ -41,59 +43,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const xmlBlobs = blobs.filter(b => b.pathname.endsWith('.xml') && !b.pathname.includes('.backup.'));
 
       let feeds = await Promise.all(
-        metaBlobs.map(async (blob) => {
-          const response = await fetch(blob.url);
-          const text = await response.text();
-          const meta = text ? JSON.parse(text) : {};
+        metaBlobs.map((blob) => {
           const feedId = blob.pathname.replace('feeds/', '').replace('.meta.json', '');
-
-          // Try to extract author and medium from the XML feed
-          let author: string | undefined;
-          let medium: string | undefined;
           const xmlBlob = xmlBlobs.find(b => b.pathname === `feeds/${feedId}.xml`);
-          if (xmlBlob) {
-            try {
-              const xmlResponse = await fetch(xmlBlob.url);
-              const xml = await xmlResponse.text();
-              // Extract itunes:author using regex
-              const authorMatch = xml.match(/<itunes:author>([^<]+)<\/itunes:author>/);
-              if (authorMatch) {
-                author = authorMatch[1];
-              }
-              const extractedMedium = extractPodcastMedium(xml);
-              if (extractedMedium) {
-                medium = extractedMedium;
-              }
-            } catch {
-              // Ignore errors extracting metadata
-            }
-          }
-
-          // Look up PI ID if missing and update metadata in background
-          let podcastIndexId = meta.podcastIndexId;
-          if (!podcastIndexId) {
-            // feedId is the podcast GUID, use it to lookup on PI
-            podcastIndexId = await lookupPodcastIndexId(feedId);
-            if (podcastIndexId) {
-              // Update metadata with PI ID (don't await - fire and forget)
-              put(`feeds/${feedId}.meta.json`, JSON.stringify({
-                ...meta,
-                podcastIndexId
-              }), {
-                access: 'public',
-                contentType: 'application/json',
-                addRandomSuffix: false
-              }).catch(err => console.warn('Failed to update metadata with PI ID:', err));
-            }
-          }
-
-          return { feedId, author, medium, ...meta, podcastIndexId };
+          return hydrateFeed(feedId, blob.url, xmlBlob?.url);
         })
       );
 
       // If not admin, filter to only show user's own feeds
       if (!isAdmin && userPubkey) {
-        feeds = feeds.filter((feed: { ownerPubkey?: string }) => feed.ownerPubkey === userPubkey);
+        feeds = feeds.filter((feed) => feed.ownerPubkey === userPubkey);
       }
 
       return res.status(200).json({ feeds, count: feeds.length });
@@ -168,6 +127,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
+    // Check for an email session - if provided, set the email owner immediately
+    const emailSessionHeader = req.headers['x-email-session'] as string | undefined;
+    let ownerEmailHash: string | undefined;
+    let emailLinkedAt: string | undefined;
+
+    if (emailSessionHeader) {
+      const emailAuth = parseEmailAuthHeader(emailSessionHeader);
+      if (emailAuth.valid && emailAuth.emailHash) {
+        ownerEmailHash = emailAuth.emailHash;
+        emailLinkedAt = Date.now().toString();
+      }
+    }
+
     // Store feed XML in Vercel Blob
     // allowOverwrite handles orphaned blobs from incomplete deletions
     const blob = await put(`feeds/${feedId}.xml`, xml, {
@@ -193,6 +165,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       title: (typeof title === 'string' ? title : 'Untitled Feed').slice(0, 200),
       ownerPubkey,
       linkedAt,
+      ownerEmailHash,
+      emailLinkedAt,
       podcastIndexId,
       ...(isDraft === true && { isDraft: true })
     }), {
@@ -201,6 +175,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       addRandomSuffix: false,
       allowOverwrite: true
     });
+
+    // Index the new feed to the email account so it appears in "My Feeds"
+    if (ownerEmailHash) {
+      await addFeedToAccount(ownerEmailHash, feedId).catch(() => { /* best-effort */ });
+    }
 
     return res.status(201).json({
       feedId,

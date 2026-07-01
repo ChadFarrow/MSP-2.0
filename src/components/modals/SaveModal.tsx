@@ -14,14 +14,19 @@ import {
   createHostedFeed,
   updateHostedFeed,
   buildHostedUrl,
-  downloadHostedFeedBackup,
   generateEditToken,
   createHostedFeedWithNostr,
   updateHostedFeedWithNostr,
   linkNostrToFeed,
+  createHostedFeedWithEmail,
+  updateHostedFeedWithEmail,
+  linkEmailToFeed,
   type HostedFeedInfo
 } from '../../utils/hostedFeed';
 import { albumStorage, videoStorage, publisherStorage, pendingHostedStorage } from '../../utils/storage';
+import { getEmailSession, isEmailLoggedIn } from '../../utils/emailSession';
+import { EmailLoginModal } from '../auth/EmailLoginModal';
+import { NostrConnectModal } from './NostrConnectModal';
 import { useNostr } from '../../store/nostrStore';
 import { useExperimental } from '../../store/experimentalStore';
 import { checkSignerConnection } from '../../utils/nostrSigner';
@@ -105,6 +110,9 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
   const [pendingToken, setPendingToken] = useState<string | null>(null);
   const [tokenAcknowledged, setTokenAcknowledged] = useState(false);
   const [linkingNostr, setLinkingNostr] = useState(false);
+  const [linkingEmail, setLinkingEmail] = useState(false);
+  const [emailModal, setEmailModal] = useState<null | { mode: 'login' } | { mode: 'claim' }>(null);
+  const [showNostrConnect, setShowNostrConnect] = useState(false);
   const [podcastIndexPending, setPodcastIndexPending] = useState(false); // True when PI notified but not yet indexed
   const [isDraft, setIsDraft] = useState(false);
   const nsiteSiteId = defaultSiteId(currentFeedGuid);
@@ -117,6 +125,10 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
 
   // Check if feed is linked to current user's Nostr identity
   const isNostrLinked = hostedInfo?.ownerPubkey && nostrState.user?.pubkey === hostedInfo.ownerPubkey;
+
+  // Check if feed is claimed by the current email account
+  const emailSession = getEmailSession();
+  const isEmailLinked = !!(hostedInfo?.ownerEmailHash && emailSession?.emailHash === hostedInfo.ownerEmailHash);
 
   // Helper to get button text based on mode and loading state
   const getButtonText = () => {
@@ -140,7 +152,9 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
   // Helper to determine if button should be disabled
   const isButtonDisabled = () => {
     if (loading) return true;
-    if (mode === 'hosted' && !hostedInfo && !legacyHostedInfo && !tokenAcknowledged) return true;
+    // Signed-in users (email or Nostr) don't need to babysit a token — their identity
+    // is the recovery — so the "I saved my token" gate only applies to anonymous hosting.
+    if (mode === 'hosted' && !hostedInfo && !legacyHostedInfo && !tokenAcknowledged && !isEmailLoggedIn() && !isLoggedIn) return true;
     if (mode === 'podcastIndex' && (!podcastIndexSubmitUrl.trim() || !!podcastIndexUrlError)) return true;
     return false;
   };
@@ -527,10 +541,12 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
           }
 
           if (hostedInfo) {
-            // Update existing feed - use Nostr auth if linked, otherwise token
+            // Update existing feed - prefer Nostr, then email session, else token
             let updateResult;
             if (isNostrLinked) {
               updateResult = await updateHostedFeedWithNostr(hostedInfo.feedId, hostedXml, currentFeedTitle, isDraft);
+            } else if (isEmailLinked) {
+              updateResult = await updateHostedFeedWithEmail(hostedInfo.feedId, hostedXml, currentFeedTitle, isDraft);
             } else {
               updateResult = await updateHostedFeed(hostedInfo.feedId, hostedInfo.editToken, hostedXml, currentFeedTitle, isDraft);
             }
@@ -558,6 +574,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
             let hostedResult;
             let newInfo: HostedFeedInfo;
             const shouldLinkNostr = isLoggedIn && nostrState.user?.pubkey;
+            const shouldLinkEmail = !shouldLinkNostr && isEmailLoggedIn();
             if (shouldLinkNostr) {
               hostedResult = await createHostedFeedWithNostr(hostedXml, currentFeedTitle, currentFeedGuid, tokenToUse, isDraft);
               newInfo = {
@@ -567,6 +584,17 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                 lastUpdated: Date.now(),
                 ownerPubkey: nostrState.user!.pubkey,
                 linkedAt: Date.now(),
+                ...(hostedResult.isDraft && { isDraft: true })
+              };
+            } else if (shouldLinkEmail) {
+              hostedResult = await createHostedFeedWithEmail(hostedXml, currentFeedTitle, currentFeedGuid, tokenToUse, isDraft);
+              newInfo = {
+                feedId: hostedResult.feedId,
+                editToken: tokenToUse,
+                createdAt: Date.now(),
+                lastUpdated: Date.now(),
+                ownerEmailHash: emailSession?.emailHash,
+                emailLinkedAt: Date.now(),
                 ...(hostedResult.isDraft && { isDraft: true })
               };
             } else {
@@ -592,7 +620,9 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
               // Build success message with PI result
               let successMsg = legacyHostedInfo
                 ? 'Feed migrated to new URL and legacy URL updated!'
-                : (shouldLinkNostr ? 'Feed created and linked to your Nostr identity!' : 'Feed created!');
+                : (shouldLinkNostr
+                    ? 'Feed created and linked to your Nostr identity!'
+                    : (shouldLinkEmail ? 'Feed created and linked to your email!' : 'Feed created!'));
 
               if (hostedResult.podcastIndexId) {
                 setPodcastIndexPending(true);
@@ -679,6 +709,36 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to link Nostr identity' });
     } finally {
       setLinkingNostr(false);
+    }
+  };
+
+  // Claim an existing feed with email. If already signed in with email, link directly;
+  // otherwise open the email modal in claim mode (sends a confirmation link).
+  const handleLinkEmail = async () => {
+    if (!hostedInfo) return;
+
+    if (!isEmailLoggedIn()) {
+      setEmailModal({ mode: 'claim' });
+      return;
+    }
+
+    setLinkingEmail(true);
+    setMessage(null);
+    try {
+      await linkEmailToFeed(hostedInfo.feedId, hostedInfo.editToken);
+      const session = getEmailSession();
+      const updatedInfo = {
+        ...hostedInfo,
+        ownerEmailHash: session?.emailHash,
+        emailLinkedAt: Date.now()
+      };
+      saveHostedFeedInfo(currentFeedGuid, updatedInfo);
+      setHostedInfo(updatedInfo);
+      setMessage({ type: 'success', text: 'Email linked! You can manage this feed from any device.' });
+    } catch (err) {
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to link email' });
+    } finally {
+      setLinkingEmail(false);
     }
   };
 
@@ -1032,9 +1092,11 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                   ? 'Your feed is already hosted. Click Save to update it with your latest changes.'
                   : legacyHostedInfo
                     ? 'Your feed URL will be migrated to match the Podcast GUID. Both old and new URLs will be updated.'
-                    : pendingToken
-                      ? 'Save your edit token before uploading!'
-                      : 'Host your RSS feed on MSP. No account required - just save your edit token!'}
+                    : isEmailLoggedIn()
+                      ? 'Host your RSS feed on MSP — it will be owned by your email account, manageable from any device.'
+                      : isLoggedIn
+                        ? 'Host your RSS feed on MSP — it will be linked to your Nostr identity, manageable from any device.'
+                        : 'Host your RSS feed on MSP — get a permanent URL for any podcast app.'}
               </p>
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.875rem', marginTop: '12px' }}>
                 <input
@@ -1058,83 +1120,51 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                   </p>
                 </div>
               )}
-              {pendingToken && !hostedInfo && !legacyHostedInfo && (
-                <div style={{ marginTop: '16px', padding: '12px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--warning, #f59e0b)' }}>
-                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.875rem', fontWeight: 600, color: 'var(--warning, #f59e0b)' }}>
-                    {isLoggedIn ? 'Backup Token (save this!)' : 'Edit Token (save this!)'}
-                  </label>
-                  <input
-                    type="text"
-                    value={pendingToken}
-                    readOnly
-                    onClick={(e) => (e.target as HTMLInputElement).select()}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: '4px',
-                      border: '1px solid var(--warning, #f59e0b)',
-                      backgroundColor: 'var(--bg-secondary)',
-                      color: 'var(--text-primary)',
-                      fontSize: '0.75rem',
-                      fontFamily: 'monospace'
-                    }}
-                  />
-                  <p style={{ color: 'var(--warning, #f59e0b)', fontSize: '0.75rem', marginTop: '8px', marginBottom: '12px' }}>
-                    You need this token to edit your feed later. Save it somewhere safe!
+              {/* Logged-out users must sign in to host a NEW feed. Tokens are no longer offered for new feeds. */}
+              {!hostedInfo && !legacyHostedInfo && !isEmailLoggedIn() && !isLoggedIn && !showRestore && (
+                <div style={{ marginTop: '16px', padding: '16px', backgroundColor: 'rgba(124, 58, 237, 0.08)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <p style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)', marginTop: 0, marginBottom: '4px' }}>
+                    Sign in to host your feed
                   </p>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+                    Sign in with your email or Nostr so this feed is owned by your account — manage it from any device, nothing to keep safe.
+                  </p>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
                     <button
-                      className="btn btn-secondary"
-                      onClick={() => {
-                        navigator.clipboard.writeText(pendingToken);
-                        setMessage({ type: 'success', text: 'Token copied to clipboard' });
-                      }}
+                      className="btn btn-primary"
+                      style={{ fontSize: '0.8rem' }}
+                      onClick={() => setEmailModal({ mode: 'login' })}
                     >
-                      Copy Token
+                      Sign in with email
                     </button>
                     <button
                       className="btn btn-secondary"
-                      onClick={() => {
-                        downloadHostedFeedBackup(currentFeedGuid, pendingToken, currentFeedTitle, currentFeedGuid);
-                        setMessage({ type: 'success', text: 'Backup file downloaded' });
-                      }}
+                      style={{ fontSize: '0.8rem' }}
+                      onClick={() => setShowNostrConnect(true)}
                     >
-                      Download Backup
+                      Sign in with Nostr
                     </button>
                   </div>
-                  <label style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    cursor: 'pointer',
-                    fontSize: '0.75rem',
-                    color: 'var(--text-primary)',
-                    padding: '8px',
-                    backgroundColor: tokenAcknowledged ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
-                    borderRadius: '4px',
-                    border: tokenAcknowledged ? '1px solid var(--success, #10b981)' : '1px solid var(--border-color)'
-                  }}>
-                    <input
-                      type="checkbox"
-                      checked={tokenAcknowledged}
-                      onChange={(e) => setTokenAcknowledged(e.target.checked)}
-                      style={{ width: '16px', height: '16px' }}
-                    />
-                    <span>I have saved my edit token</span>
-                  </label>
                   <button
-                    className="btn btn-secondary"
-                    style={{ fontSize: '0.75rem', padding: '6px 12px', marginTop: '12px', width: '100%' }}
-                    onClick={() => {
-                      setPendingToken(null);
-                      setTokenAcknowledged(false);
-                      setShowRestore(true);
-                    }}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: '0.7rem', textDecoration: 'underline', cursor: 'pointer', marginTop: '10px', padding: 0 }}
+                    onClick={() => { setPendingToken(null); setTokenAcknowledged(false); setShowRestore(true); }}
                   >
-                    Already have a token? Restore existing feed
+                    Already have a feed with an edit token? Restore it
                   </button>
                 </div>
               )}
+              {/* Calm "owned by your account" note for signed-in users — no token to manage. */}
+              {pendingToken && !hostedInfo && !legacyHostedInfo && (isEmailLoggedIn() || isLoggedIn) && (
+                <div style={{ marginTop: '16px', padding: '12px', backgroundColor: 'rgba(16, 185, 129, 0.08)', borderRadius: '8px', border: '1px solid var(--success, #10b981)' }}>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--success, #10b981)', fontWeight: 600, margin: 0 }}>
+                    {isEmailLoggedIn() ? '✉️ This feed will be owned by your email account.' : '🔑 This feed will be linked to your Nostr identity.'}
+                  </p>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '6px', marginBottom: 0 }}>
+                    You can manage it from any device — nothing to keep safe.
+                  </p>
+                </div>
+              )}
+              {/* New feeds no longer show an edit-token panel — a signed-in identity (email/Nostr) owns the feed. */}
               {hostedUrl && (
                 <div style={{ marginTop: '16px', padding: '12px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--success)' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', fontSize: '0.875rem', fontWeight: 600, color: 'var(--success)' }}>
@@ -1211,20 +1241,57 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                       </p>
                     </div>
                   )}
-                  {/* Link Nostr button for existing feeds without Nostr link */}
-                  {isLoggedIn && hostedInfo && !isNostrLinked && (
+                  {/* Token-owned feed (e.g. just restored): offer to switch it to an account so the token isn't needed. */}
+                  {hostedInfo && !isNostrLinked && !isEmailLinked && (
                     <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>
-                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                        Link your Nostr identity to manage this feed without needing the token.
+                      <p style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' }}>
+                        Switch this feed to your account
                       </p>
-                      <button
-                        className="btn btn-secondary"
-                        style={{ fontSize: '0.75rem' }}
-                        onClick={handleLinkNostr}
-                        disabled={linkingNostr}
-                      >
-                        {linkingNostr ? 'Linking...' : 'Link Nostr Identity'}
-                      </button>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                        Link your email or Nostr so you can manage this feed from any device — no token to keep safe.
+                      </p>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <button
+                          className="btn btn-secondary"
+                          style={{ fontSize: '0.75rem' }}
+                          onClick={handleLinkEmail}
+                          disabled={linkingEmail}
+                        >
+                          {linkingEmail ? 'Linking…' : (isEmailLoggedIn() ? 'Claim with Email' : 'Claim with Email…')}
+                        </button>
+                        {isLoggedIn ? (
+                          <button
+                            className="btn btn-secondary"
+                            style={{ fontSize: '0.75rem' }}
+                            onClick={handleLinkNostr}
+                            disabled={linkingNostr}
+                          >
+                            {linkingNostr ? 'Linking…' : 'Link Nostr Identity'}
+                          </button>
+                        ) : (
+                          <button
+                            className="btn btn-secondary"
+                            style={{ fontSize: '0.75rem' }}
+                            onClick={() => setShowNostrConnect(true)}
+                          >
+                            Sign in with Nostr
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {isNostrLinked && (
+                    <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--success, #10b981)', margin: 0 }}>
+                        🔑 Linked to your Nostr identity — manageable from any device.
+                      </p>
+                    </div>
+                  )}
+                  {isEmailLinked && (
+                    <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--success, #10b981)', margin: 0 }}>
+                        ✉️ Claimed with your email — manageable from any device.
+                      </p>
                     </div>
                   )}
                 </div>
@@ -1490,6 +1557,17 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                 {showExperimental && <li><strong>Publish RSS feed to nsite 🧪</strong> - Uploads the RSS file to a Blossom server and publishes an nsite site manifest (NIP-5A). Reachable as a permanent web URL through any nsite gateway. Subscribable in podcast apps.</li>}
               </ul>
             </ModalWrapper>
+      )}
+      {emailModal && (
+        <EmailLoginModal
+          onClose={() => setEmailModal(null)}
+          claim={emailModal.mode === 'claim' && hostedInfo
+            ? { feedId: hostedInfo.feedId, editToken: hostedInfo.editToken, feedTitle: currentFeedTitle }
+            : undefined}
+        />
+      )}
+      {showNostrConnect && (
+        <NostrConnectModal onClose={() => setShowNostrConnect(false)} />
       )}
     </>
   );

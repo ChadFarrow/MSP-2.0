@@ -60,7 +60,37 @@ export function RecipientsList({ recipients, onUpdate, onRemove, onAdd }: Recipi
             />
           </div>
           <div className="form-group">
-            <label className="form-label">Address{!isSupport && <InfoIcon text={FIELD_INFO.recipientAddress} />}</label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+              <label className="form-label" style={{ marginBottom: 0 }}>Address{!isSupport && <InfoIcon text={FIELD_INFO.recipientAddress} />}</label>
+              {!isSupport && nostrLud16 && (
+                recipient.address.trim().toLowerCase() === nostrLud16.toLowerCase() ? (
+                  <span
+                    title="This is your Nostr profile's lightning address"
+                    style={{ fontSize: '12px', color: 'var(--success, #10b981)', whiteSpace: 'nowrap' }}
+                  >
+                    ✓ Your Nostr wallet
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => fillWithNostrWallet(recipient, originalIndex)}
+                    title={`Fill in ${nostrLud16} from your Nostr profile`}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--accent-color, #f59e0b)',
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                      padding: 0,
+                      whiteSpace: 'nowrap',
+                      textDecoration: 'underline'
+                    }}
+                  >
+                    ⚡ Use my Nostr wallet
+                  </button>
+                )
+              )}
+            </div>
             <input
               type="text"
               className="form-input"
@@ -74,25 +104,6 @@ export function RecipientsList({ recipients, onUpdate, onRemove, onAdd }: Recipi
               readOnly={isSupport}
               style={isSupport ? { opacity: 0.7, cursor: 'default' } : undefined}
             />
-            {!isSupport && nostrLud16 && recipient.address.trim().toLowerCase() !== nostrLud16.toLowerCase() && (
-              <button
-                type="button"
-                onClick={() => fillWithNostrWallet(recipient, originalIndex)}
-                title={`Use ${nostrLud16} from your Nostr profile`}
-                style={{
-                  marginTop: '6px',
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--accent-color, #f59e0b)',
-                  fontSize: '12px',
-                  cursor: 'pointer',
-                  padding: 0,
-                  textDecoration: 'underline'
-                }}
-              >
-                ⚡ Use my Lightning wallet
-              </button>
-            )}
           </div>
           <div className="form-group">
             <label className="form-label">Split %<InfoIcon text={FIELD_INFO.recipientSplit} /></label>

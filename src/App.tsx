@@ -330,6 +330,14 @@ function AppContent() {
           </button>
           <button
             className="bottom-toolbar-btn"
+            onClick={() => setShowPreviewModal(true)}
+            title="View Feed"
+          >
+            <span className="bottom-toolbar-icon">👁️</span>
+            <span className="bottom-toolbar-label">View Feed</span>
+          </button>
+          <button
+            className="bottom-toolbar-btn"
             onClick={() => piFeedId && window.open(`https://podcastindex.org/podcast/${piFeedId}`, '_blank', 'noopener,noreferrer')}
             disabled={!piFeedId}
             title={piFeedId ? 'View this feed on Podcast Index' : "This feed isn't in Podcast Index yet"}
@@ -341,14 +349,6 @@ function AppContent() {
           >
             <PodcastIndexIcon className="bottom-toolbar-icon-img" />
             <span className="bottom-toolbar-label">Podcast Index</span>
-          </button>
-          <button
-            className="bottom-toolbar-btn"
-            onClick={() => setShowPreviewModal(true)}
-            title="View Feed"
-          >
-            <span className="bottom-toolbar-icon">👁️</span>
-            <span className="bottom-toolbar-label">View Feed</span>
           </button>
         </div>
       </div>

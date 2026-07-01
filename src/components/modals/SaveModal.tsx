@@ -26,6 +26,7 @@ import {
 import { albumStorage, videoStorage, publisherStorage, pendingHostedStorage } from '../../utils/storage';
 import { getEmailSession, isEmailLoggedIn } from '../../utils/emailSession';
 import { EmailLoginModal } from '../auth/EmailLoginModal';
+import { SignInPrompt } from '../auth/SignInPrompt';
 import { NostrConnectModal } from './NostrConnectModal';
 import { useNostr } from '../../store/nostrStore';
 import { useExperimental } from '../../store/experimentalStore';
@@ -556,13 +557,20 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
           if (hostedInfo) {
             // Saving changes to an existing hosted feed now requires being signed in.
             // The edit token alone no longer authorizes an update here.
-            const useNostr = isLoggedIn && !!nostrState.user?.pubkey;
-            const useEmail = !useNostr && isEmailLoggedIn();
-            if (!useNostr && !useEmail) {
+            const nostrAvailable = isLoggedIn && !!nostrState.user?.pubkey;
+            const emailAvailable = isEmailLoggedIn();
+            if (!nostrAvailable && !emailAvailable) {
               setMessage({ type: 'error', text: 'Sign in with email or Nostr to save changes to your hosted feed.' });
               setLoading(false);
               return;
             }
+
+            // Pick the update path by which identity actually OWNS the feed
+            // (matching the server's auth ladder) — a feed claimed by email must
+            // update via the email session even if the user is also Nostr-logged-in,
+            // and vice versa. Only unclaimed feeds fall back to the login method.
+            const useNostr = isNostrLinked ? true : isEmailLinked ? false : nostrAvailable;
+            const useEmail = !useNostr && emailAvailable;
 
             // If the feed is still token-owned, saving auto-claims it onto the
             // signed-in account (best-effort) so the token is retired going forward.
@@ -583,15 +591,27 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
               }
             }
 
-            const updateResult = useNostr
-              ? await updateHostedFeedWithNostr(hostedInfo.feedId, hostedXml, currentFeedTitle, isDraft)
-              : await updateHostedFeedWithEmail(hostedInfo.feedId, hostedXml, currentFeedTitle, isDraft);
+            let updateResult;
+            try {
+              updateResult = useNostr
+                ? await updateHostedFeedWithNostr(hostedInfo.feedId, hostedXml, currentFeedTitle, isDraft)
+                : await updateHostedFeedWithEmail(hostedInfo.feedId, hostedXml, currentFeedTitle, isDraft);
+            } catch (updateErr) {
+              // The account-owned path can fail while a valid edit token is in hand:
+              // the auto-claim above failed (signer rejected, network blip), the feed
+              // predates .meta.json (PATCH 404s, PUT demands the raw token), or the
+              // claim's metadata write hasn't propagated yet. Fall back to the token
+              // so a legitimate token holder can always save.
+              if (!hostedInfo.editToken) throw updateErr;
+              console.warn('Account-owned update failed, retrying with edit token:', updateErr);
+              updateResult = await updateHostedFeed(hostedInfo.feedId, hostedInfo.editToken, hostedXml, currentFeedTitle, isDraft);
+            }
             const updatedInfo: HostedFeedInfo = {
               ...hostedInfo,
               lastUpdated: Date.now(),
               isDraft: updateResult.isDraft || undefined,
               ...(claimed === 'nostr' ? { ownerPubkey: nostrState.user!.pubkey, linkedAt: Date.now() } : {}),
-              ...(claimed === 'email' ? { ownerEmailHash: emailSession?.emailHash, emailLinkedAt: Date.now() } : {}),
+              ...(claimed === 'email' ? { ownerEmailHash: getEmailSession()?.emailHash, emailLinkedAt: Date.now() } : {}),
             };
             saveHostedFeedInfo(currentFeedGuid, updatedInfo);
             setHostedInfo(updatedInfo);
@@ -635,7 +655,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                 editToken: tokenToUse,
                 createdAt: Date.now(),
                 lastUpdated: Date.now(),
-                ownerEmailHash: emailSession?.emailHash,
+                ownerEmailHash: getEmailSession()?.emailHash,
                 emailLinkedAt: Date.now(),
                 ...(hostedResult.isDraft && { isDraft: true })
               };
@@ -1139,32 +1159,15 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                         ? 'Host your RSS feed on MSP — it will be linked to your Nostr identity, manageable from any device.'
                         : 'Host your RSS feed on MSP — get a permanent URL for any podcast app.'}
               </p>
-              {/* Updating an existing (e.g. imported token-owned) feed now requires signing in. */}
-              {hostedInfo && !isLoggedIn && !isEmailLoggedIn() && (
-                <div style={{ marginTop: '12px', padding: '16px', backgroundColor: 'rgba(124, 58, 237, 0.08)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  <p style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)', marginTop: 0, marginBottom: '4px' }}>
-                    Sign in to save changes
-                  </p>
-                  <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '12px' }}>
-                    Saving updates to an MSP-hosted feed requires signing in. If this feed used an edit token, signing in claims it to your account so you won't need the token again.
-                  </p>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    <button
-                      className="btn btn-primary"
-                      style={{ fontSize: '0.8rem' }}
-                      onClick={() => setEmailModal({ mode: 'login' })}
-                    >
-                      Sign in with email
-                    </button>
-                    <button
-                      className="btn btn-secondary"
-                      style={{ fontSize: '0.8rem' }}
-                      onClick={() => setShowNostrConnect(true)}
-                    >
-                      Sign in with Nostr
-                    </button>
-                  </div>
-                </div>
+              {/* Updating an existing (e.g. imported token-owned or legacy) feed now requires signing in. */}
+              {(hostedInfo || legacyHostedInfo) && !isLoggedIn && !isEmailLoggedIn() && (
+                <SignInPrompt
+                  style={{ marginTop: '12px' }}
+                  title="Sign in to save changes"
+                  blurb="Saving updates to an MSP-hosted feed requires signing in. If this feed used an edit token, signing in claims it to your account so you won't need the token again."
+                  onEmail={() => setEmailModal({ mode: 'login' })}
+                  onNostr={() => setShowNostrConnect(true)}
+                />
               )}
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.875rem', marginTop: '12px' }}>
                 <input
@@ -1190,36 +1193,20 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
               )}
               {/* Logged-out users must sign in to host a NEW feed. Tokens are no longer offered for new feeds. */}
               {!hostedInfo && !legacyHostedInfo && !isEmailLoggedIn() && !isLoggedIn && !showRestore && (
-                <div style={{ marginTop: '16px', padding: '16px', backgroundColor: 'rgba(124, 58, 237, 0.08)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  <p style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)', marginTop: 0, marginBottom: '4px' }}>
-                    Sign in to host your feed
-                  </p>
-                  <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '12px' }}>
-                    Sign in with your email or Nostr so this feed is owned by your account — manage it from any device, nothing to keep safe.
-                  </p>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-                    <button
-                      className="btn btn-primary"
-                      style={{ fontSize: '0.8rem' }}
-                      onClick={() => setEmailModal({ mode: 'login' })}
-                    >
-                      Sign in with email
-                    </button>
-                    <button
-                      className="btn btn-secondary"
-                      style={{ fontSize: '0.8rem' }}
-                      onClick={() => setShowNostrConnect(true)}
-                    >
-                      Sign in with Nostr
-                    </button>
-                  </div>
+                <SignInPrompt
+                  style={{ marginTop: '16px' }}
+                  title="Sign in to host your feed"
+                  blurb="Sign in with your email or Nostr so this feed is owned by your account — manage it from any device, nothing to keep safe."
+                  onEmail={() => setEmailModal({ mode: 'login' })}
+                  onNostr={() => setShowNostrConnect(true)}
+                >
                   <button
                     style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: '0.7rem', textDecoration: 'underline', cursor: 'pointer', marginTop: '10px', padding: 0 }}
                     onClick={() => { setPendingToken(null); setShowRestore(true); }}
                   >
                     Already have a feed with an edit token? Restore it
                   </button>
-                </div>
+                </SignInPrompt>
               )}
               {/* Calm "owned by your account" note for signed-in users — no token to manage. */}
               {pendingToken && !hostedInfo && !legacyHostedInfo && (isEmailLoggedIn() || isLoggedIn) && (

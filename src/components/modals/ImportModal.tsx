@@ -6,6 +6,7 @@ import { type HostedFeedInfo, buildHostedUrl } from '../../utils/hostedFeed';
 import { fetchAdminFeeds, fetchEmailFeeds } from '../../utils/adminAuth';
 import { isEmailLoggedIn, getEmailSession } from '../../utils/emailSession';
 import { EmailLoginModal } from '../auth/EmailLoginModal';
+import { SignInPrompt } from '../auth/SignInPrompt';
 import { NostrConnectModal } from './NostrConnectModal';
 import { pendingHostedStorage } from '../../utils/storage';
 import { formatTimestamp } from '../../utils/dateUtils';
@@ -67,9 +68,14 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn, templa
     }
   }, [showExperimental, mode]);
 
-  // Once the user signs in (Nostr) while on the MSP Hosted tab, load their feeds.
+  // Load the account's feeds when the MSP Hosted tab is active — fires on
+  // switching to the tab (any sign-in type) and on Nostr sign-in while on it.
+  // This is the single trigger for the tab switch; the select onChange must not
+  // also call fetchHostedFeeds or Nostr users get two signer prompts. Email
+  // sign-in while on the tab is handled by the EmailLoginModal onClose below
+  // (isEmailLoggedIn() reads localStorage, so it can't be an effect dep).
   useEffect(() => {
-    if (mode === 'hosted' && isLoggedIn) fetchHostedFeeds();
+    if (mode === 'hosted' && canListFeeds) fetchHostedFeeds();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, isLoggedIn]);
 
@@ -406,7 +412,7 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn, templa
                 setMode(newMode);
                 if (newMode === 'nostr') fetchSavedAlbums();
                 if (newMode === 'nostrMusic') fetchMusicTracks();
-                if (newMode === 'hosted' && canListFeeds) fetchHostedFeeds();
+                // 'hosted' fetch happens in the mode/isLoggedIn effect above
               }}
             >
               <option value="file">Upload File</option>
@@ -603,30 +609,13 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn, templa
 
               {/* Logged out: signing in is the primary way to find your hosted feeds. */}
               {!canListFeeds && (
-                <div style={{ marginBottom: '16px', padding: '16px', backgroundColor: 'rgba(124, 58, 237, 0.08)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  <p style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)', marginTop: 0, marginBottom: '4px' }}>
-                    Sign in to see your feeds
-                  </p>
-                  <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '12px' }}>
-                    Sign in with email or Nostr to browse and import every feed you've hosted on MSP — no Feed ID needed.
-                  </p>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    <button
-                      className="btn btn-primary"
-                      style={{ fontSize: '0.8rem' }}
-                      onClick={() => setShowEmailLogin(true)}
-                    >
-                      Sign in with email
-                    </button>
-                    <button
-                      className="btn btn-secondary"
-                      style={{ fontSize: '0.8rem' }}
-                      onClick={() => setShowNostrConnect(true)}
-                    >
-                      Sign in with Nostr
-                    </button>
-                  </div>
-                </div>
+                <SignInPrompt
+                  style={{ marginBottom: '16px' }}
+                  title="Sign in to see your feeds"
+                  blurb="Sign in with email or Nostr to browse and import every feed you've hosted on MSP — no Feed ID needed."
+                  onEmail={() => setShowEmailLogin(true)}
+                  onNostr={() => setShowNostrConnect(true)}
+                />
               )}
 
               {/* Advanced / token path: collapsed by default. */}

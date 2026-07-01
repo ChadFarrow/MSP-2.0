@@ -2,7 +2,7 @@
 import { createContext, useContext, useReducer, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import type { Album, Track, Person, PersonRole, ValueRecipient, Funding, PublisherFeed, RemoteItem, FeedType } from '../types/feed';
-import { createEmptyAlbum, createEmptyTrack, createEmptyPerson, createEmptyPersonRole, createEmptyRecipient, createEmptyFunding, createEmptyPublisherFeed, createEmptyRemoteItem, createEmptyVideoAlbum, createSupportRecipients, isCommunitySupport, hasUserRecipients } from '../types/feed';
+import { createEmptyAlbum, createEmptyTrack, createEmptyPerson, createEmptyPersonRole, createEmptyRecipient, createEmptyFunding, createEmptyPublisherFeed, createEmptyRemoteItem, createEmptyVideoAlbum, createSupportRecipients, isCommunitySupport, hasUserRecipients, fillPersonalSplitDefault, rebalancePersonalForSupport } from '../types/feed';
 import { albumStorage, videoStorage, publisherStorage, feedTypeStorage } from '../utils/storage';
 
 export type { FeedType };
@@ -87,6 +87,30 @@ function updateActiveFeed(state: FeedState, albumUpdate: Album): FeedState {
     return { ...state, videoFeed: albumUpdate, isDirty: true };
   }
   return { ...state, album: albumUpdate, isDirty: true };
+}
+
+// Keep a value block's splits summing to 100 after a recipient edit. Editing a
+// community-support row rebalances the (single) personal recipient; editing a
+// personal row only fills a blank Lightning-address split. Shared by the album,
+// track, and publisher recipient reducers.
+function applyUpdateSplitRules(
+  recipients: ValueRecipient[],
+  editedIndex: number,
+  editedRecipient: ValueRecipient
+): ValueRecipient[] {
+  return isCommunitySupport(editedRecipient)
+    ? rebalancePersonalForSupport(recipients)
+    : fillPersonalSplitDefault(recipients, editedIndex);
+}
+
+// Rebalance the personal recipient only when the removed row was a support split.
+function applyRemoveSplitRules(
+  recipients: ValueRecipient[],
+  removed: ValueRecipient | undefined
+): ValueRecipient[] {
+  return removed && isCommunitySupport(removed)
+    ? rebalancePersonalForSupport(recipients)
+    : recipients;
 }
 
 // Reducer
@@ -193,9 +217,10 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
       const hadUserRecipients = hasUserRecipients(currentRecipients);
       const nowHasUserRecipients = hasUserRecipients(updatedRecipients);
       const shouldAddSupport = !hadUserRecipients && nowHasUserRecipients;
-      const finalRecipients = shouldAddSupport
+      const withSupport = shouldAddSupport
         ? [...updatedRecipients, ...createSupportRecipients()]
         : updatedRecipients;
+      const finalRecipients = applyUpdateSplitRules(withSupport, action.payload.index, updatedRecipient);
       return updateActiveFeed(state, {
         ...activeAlbum,
         value: {
@@ -205,14 +230,18 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
       });
     }
 
-    case 'REMOVE_RECIPIENT':
+    case 'REMOVE_RECIPIENT': {
+      const currentRecipients = activeAlbum.value.recipients;
+      const removed = currentRecipients[action.payload];
+      const remaining = currentRecipients.filter((_, i) => i !== action.payload);
       return updateActiveFeed(state, {
         ...activeAlbum,
         value: {
           ...activeAlbum.value,
-          recipients: activeAlbum.value.recipients.filter((_, i) => i !== action.payload)
+          recipients: applyRemoveSplitRules(remaining, removed)
         }
       });
+    }
 
     case 'ADD_FUNDING':
       return updateActiveFeed(state, {
@@ -401,9 +430,10 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
         const hadUserRecipients = hasUserRecipients(currentRecipients);
         const nowHasUserRecipients = hasUserRecipients(updatedRecipients);
         const shouldAddSupport = !hadUserRecipients && nowHasUserRecipients;
-        const finalRecipients = shouldAddSupport
+        const withSupport = shouldAddSupport
           ? [...updatedRecipients, ...createSupportRecipients()]
           : updatedRecipients;
+        const finalRecipients = applyUpdateSplitRules(withSupport, action.payload.recipientIndex, updatedRecipient);
         tracks[action.payload.trackIndex] = {
           ...track,
           value: {
@@ -419,11 +449,13 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
       const tracks = [...activeAlbum.tracks];
       const track = tracks[action.payload.trackIndex];
       if (track && track.value) {
+        const removed = track.value.recipients[action.payload.recipientIndex];
+        const remaining = track.value.recipients.filter((_, i) => i !== action.payload.recipientIndex);
         tracks[action.payload.trackIndex] = {
           ...track,
           value: {
             ...track.value,
-            recipients: track.value.recipients.filter((_, i) => i !== action.payload.recipientIndex)
+            recipients: applyRemoveSplitRules(remaining, removed)
           }
         };
       }
@@ -549,9 +581,10 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
       const hadUserRecipients = hasUserRecipients(currentRecipients);
       const nowHasUserRecipients = hasUserRecipients(updatedRecipients);
       const shouldAddSupport = !hadUserRecipients && nowHasUserRecipients;
-      const finalRecipients = shouldAddSupport
+      const withSupport = shouldAddSupport
         ? [...updatedRecipients, ...createSupportRecipients()]
         : updatedRecipients;
+      const finalRecipients = applyUpdateSplitRules(withSupport, action.payload.index, updatedRecipient);
       return {
         ...state,
         publisherFeed: {
@@ -565,19 +598,23 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
       };
     }
 
-    case 'REMOVE_PUBLISHER_RECIPIENT':
+    case 'REMOVE_PUBLISHER_RECIPIENT': {
       if (!state.publisherFeed) return state;
+      const currentRecipients = state.publisherFeed.value.recipients;
+      const removed = currentRecipients[action.payload];
+      const remaining = currentRecipients.filter((_, i) => i !== action.payload);
       return {
         ...state,
         publisherFeed: {
           ...state.publisherFeed,
           value: {
             ...state.publisherFeed.value,
-            recipients: state.publisherFeed.value.recipients.filter((_, i) => i !== action.payload)
+            recipients: applyRemoveSplitRules(remaining, removed)
           }
         },
         isDirty: true
       };
+    }
 
     // Video feed actions
     case 'SET_VIDEO_FEED':

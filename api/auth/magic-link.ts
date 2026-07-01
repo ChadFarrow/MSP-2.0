@@ -20,6 +20,27 @@ function magicLinkTtlMs(): number {
   return min * 60 * 1000;
 }
 
+/**
+ * Origin to send the user back to. A magic link should return you to the site you're
+ * actually using (the canonical domain in prod, or a Vercel preview during testing) —
+ * NOT a hardcoded domain. The host is allowlisted (canonical host or a *.vercel.app
+ * preview) to prevent host-header injection pointing the link at an attacker domain;
+ * anything else falls back to the canonical URL.
+ */
+function getVerifyOrigin(req: VercelRequest): string {
+  const canonical = getBaseUrl();
+  const rawHost = req.headers['x-forwarded-host'] || req.headers.host;
+  const host = (Array.isArray(rawHost) ? rawHost[0] : rawHost)?.split(',')[0]?.trim();
+  if (host) {
+    const canonicalHost = new URL(canonical).host;
+    if (host === canonicalHost || host.endsWith('.vercel.app')) {
+      const proto = (req.headers['x-forwarded-proto'] as string)?.split(',')[0]?.trim() || 'https';
+      return `${proto}://${host}`;
+    }
+  }
+  return canonical;
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -77,7 +98,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       feedId: resolvedPurpose === 'claim' ? feedId : undefined,
       ttlMs: magicLinkTtlMs()
     });
-    const link = `${getBaseUrl()}/auth/verify?token=${encodeURIComponent(rawToken)}`;
+    const link = `${getVerifyOrigin(req)}/auth/verify?token=${encodeURIComponent(rawToken)}`;
     await sendMagicLinkEmail(normalized, link, { purpose: resolvedPurpose, feedTitle });
   } catch (err) {
     console.error('magic-link error:', err instanceof Error ? err.message : err);

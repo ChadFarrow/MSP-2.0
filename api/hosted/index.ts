@@ -52,7 +52,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       // If not admin, filter to only show user's own feeds
       if (!isAdmin && userPubkey) {
-        feeds = feeds.filter((feed: { ownerPubkey?: string }) => feed.ownerPubkey === userPubkey);
+        feeds = feeds.filter((feed) => feed.ownerPubkey === userPubkey);
       }
 
       return res.status(200).json({ feeds, count: feeds.length });

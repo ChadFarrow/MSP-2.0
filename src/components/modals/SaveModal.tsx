@@ -1241,36 +1241,50 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                       </p>
                     </div>
                   )}
-                  {/* Link Nostr button for existing feeds without Nostr link */}
-                  {isLoggedIn && hostedInfo && !isNostrLinked && (
+                  {/* Token-owned feed (e.g. just restored): offer to switch it to an account so the token isn't needed. */}
+                  {hostedInfo && !isNostrLinked && !isEmailLinked && (
                     <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>
-                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                        Link your Nostr identity to manage this feed without needing the token.
+                      <p style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' }}>
+                        Switch this feed to your account
                       </p>
-                      <button
-                        className="btn btn-secondary"
-                        style={{ fontSize: '0.75rem' }}
-                        onClick={handleLinkNostr}
-                        disabled={linkingNostr}
-                      >
-                        {linkingNostr ? 'Linking...' : 'Link Nostr Identity'}
-                      </button>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                        Link your email or Nostr so you can manage this feed from any device — no token to keep safe.
+                      </p>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <button
+                          className="btn btn-secondary"
+                          style={{ fontSize: '0.75rem' }}
+                          onClick={handleLinkEmail}
+                          disabled={linkingEmail}
+                        >
+                          {linkingEmail ? 'Linking…' : (isEmailLoggedIn() ? 'Claim with Email' : 'Claim with Email…')}
+                        </button>
+                        {isLoggedIn ? (
+                          <button
+                            className="btn btn-secondary"
+                            style={{ fontSize: '0.75rem' }}
+                            onClick={handleLinkNostr}
+                            disabled={linkingNostr}
+                          >
+                            {linkingNostr ? 'Linking…' : 'Link Nostr Identity'}
+                          </button>
+                        ) : (
+                          <button
+                            className="btn btn-secondary"
+                            style={{ fontSize: '0.75rem' }}
+                            onClick={() => setShowNostrConnect(true)}
+                          >
+                            Sign in with Nostr
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )}
-                  {/* Claim with email for existing feeds not yet email-linked */}
-                  {hostedInfo && !isEmailLinked && (
+                  {isNostrLinked && (
                     <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>
-                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                        Claim this feed with your email to manage it from any device — no token to keep safe.
+                      <p style={{ fontSize: '0.75rem', color: 'var(--success, #10b981)', margin: 0 }}>
+                        🔑 Linked to your Nostr identity — manageable from any device.
                       </p>
-                      <button
-                        className="btn btn-secondary"
-                        style={{ fontSize: '0.75rem' }}
-                        onClick={handleLinkEmail}
-                        disabled={linkingEmail}
-                      >
-                        {linkingEmail ? 'Linking…' : (isEmailLoggedIn() ? 'Claim with Email' : 'Claim with Email…')}
-                      </button>
                     </div>
                   )}
                   {isEmailLinked && (

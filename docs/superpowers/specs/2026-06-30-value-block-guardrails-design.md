@@ -44,13 +44,12 @@ Every value recipient that is present in a value block must have `split > 0`. Em
 
 ### UI (`src/components/RecipientsList.tsx`)
 - `RecipientsList` gains access to Nostr state via `useNostr()`.
-- A button **"⚡ Add my Lightning wallet"** rendered near `AddRecipientSelect`, shown only when: `nostrState.isLoggedIn && nostrState.user?.lud16` **and** that address is not already among `recipients` (duplicate guard — hidden once added).
-- On click, `onAdd` a recipient:
+- **Inline autofill, not a row-adder.** Each non-support recipient row shows a small **"⚡ Use my Lightning wallet"** link under its Address input, shown only when `nostrState.isLoggedIn && nostrState.user?.lud16` **and** that row's address isn't already the wallet. It's positioned by the address field because it's purely a shortcut for *entering the address* — avoiding typos that would silently misroute sats.
+- On click, `onUpdate` that row with:
   - `address`: `user.lud16`
   - `type`: `detectAddressType(lud16)` (an `@` → `'lnaddress'`)
-  - `name`: `user.displayName` (falls back to empty)
-  - `split`: **remaining unallocated** = `max(0, 100 − sum(existing splits))`
-- Reuses the existing `onAdd` → `ADD_RECIPIENT` flow, so the feed's community-support auto-append logic behaves exactly as for a manually typed address.
+  - `name`: keeps the row's name, or fills `user.displayName` if blank
+- **Deliberately does not set the split.** The user chooses their own split; a fixed value (e.g. "remaining" = 100 on an empty block) would be a surprising guess. If they leave it blank, the empty-split guardrail (Feature 1) catches it before a PI submission.
 
 ### Scope limits (intentional)
 - **`lud16` only.** A raw `lud06` (LNURL) is not a valid Podcasting 2.0 value-recipient address, so a profile with only `lud06` shows no button. Can revisit later.
@@ -64,4 +63,4 @@ Every value recipient that is present in a value block must have `split > 0`. Em
 ## Verification
 - `npm run test` — the new `valueValidation.test.ts` passes.
 - `npm run build` (tsc -b + vite) — the authoritative typecheck per CLAUDE.md.
-- Manual: (a) leave a recipient's split empty → Host on MSP is blocked with a clear error; Download XML still works. (b) Log in with a Nostr profile that has a `lud16` → the "Add my Lightning wallet" button appears, adds the address with the remaining split, and disappears once added.
+- Manual: (a) leave a recipient's split empty → Host on MSP is blocked with a clear error; Download XML still works. (b) Log in with a Nostr profile that has a `lud16` → the inline "⚡ Use my Lightning wallet" link appears under a row's Address field, fills the address (and name if blank) on click without touching the split, and disappears once that row holds the wallet.

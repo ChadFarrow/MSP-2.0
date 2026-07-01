@@ -49,6 +49,23 @@ export function generateEditToken(): string {
 }
 
 /**
+ * Fetch a hosted-feed API endpoint, throwing a friendly error on a non-2xx
+ * (reusing the server's `error` field when present). Shared by every call below.
+ */
+async function hostedRequest<T = unknown>(
+  input: string,
+  init: RequestInit,
+  failMessage: string
+): Promise<T> {
+  const response = await fetch(input, init);
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: failMessage }));
+    throw new Error(error.error || failMessage);
+  }
+  return response.json();
+}
+
+/**
  * Create a new hosted feed
  */
 export async function createHostedFeed(
@@ -58,18 +75,11 @@ export async function createHostedFeed(
   editToken?: string,
   isDraft?: boolean
 ): Promise<CreateFeedResponse> {
-  const response = await fetch('/api/hosted', {
+  return hostedRequest<CreateFeedResponse>('/api/hosted', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ xml, title, podcastGuid, editToken, isDraft })
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Failed to create feed' }));
-    throw new Error(error.error || 'Failed to create feed');
-  }
-
-  return response.json();
+  }, 'Failed to create feed');
 }
 
 interface UpdateFeedResponse {
@@ -88,21 +98,14 @@ export async function updateHostedFeed(
   title: string,
   isDraft?: boolean
 ): Promise<UpdateFeedResponse> {
-  const response = await fetch(`/api/hosted/${feedId}`, {
+  return hostedRequest<UpdateFeedResponse>(`/api/hosted/${feedId}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
       'X-Edit-Token': editToken
     },
     body: JSON.stringify({ xml, title, isDraft })
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Failed to update feed' }));
-    throw new Error(error.error || 'Failed to update feed');
-  }
-
-  return response.json();
+  }, 'Failed to update feed');
 }
 
 /**
@@ -112,15 +115,10 @@ export async function deleteHostedFeed(
   feedId: string,
   editToken: string
 ): Promise<void> {
-  const response = await fetch(`/api/hosted/${feedId}`, {
+  await hostedRequest(`/api/hosted/${feedId}`, {
     method: 'DELETE',
     headers: { 'X-Edit-Token': editToken }
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Failed to delete feed' }));
-    throw new Error(error.error || 'Failed to delete feed');
-  }
+  }, 'Failed to delete feed');
 }
 
 /**
@@ -210,18 +208,11 @@ export async function createHostedFeedWithNostr(
     headers['Authorization'] = await createAdminAuthHeader(url, 'POST');
   }
 
-  const response = await fetch('/api/hosted', {
+  return hostedRequest<CreateFeedResponse>('/api/hosted', {
     method: 'POST',
     headers,
     body: JSON.stringify({ xml, title, podcastGuid, editToken, isDraft })
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Failed to create feed' }));
-    throw new Error(error.error || 'Failed to create feed');
-  }
-
-  return response.json();
+  }, 'Failed to create feed');
 }
 
 /**
@@ -240,21 +231,14 @@ export async function updateHostedFeedWithNostr(
   const url = `${window.location.origin}/api/hosted/${feedId}`;
   const authHeader = await createAdminAuthHeader(url, 'PUT');
 
-  const response = await fetch(`/api/hosted/${feedId}`, {
+  return hostedRequest<UpdateFeedResponse>(`/api/hosted/${feedId}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': authHeader
     },
     body: JSON.stringify({ xml, title, isDraft })
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Failed to update feed' }));
-    throw new Error(error.error || 'Failed to update feed');
-  }
-
-  return response.json();
+  }, 'Failed to update feed');
 }
 
 // ============================================
@@ -272,18 +256,11 @@ export async function createHostedFeedWithEmail(
   editToken?: string,
   isDraft?: boolean
 ): Promise<CreateFeedResponse> {
-  const response = await fetch('/api/hosted', {
+  return hostedRequest<CreateFeedResponse>('/api/hosted', {
     method: 'POST',
     headers: withEmailAuth({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ xml, title, podcastGuid, editToken, isDraft })
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Failed to create feed' }));
-    throw new Error(error.error || 'Failed to create feed');
-  }
-
-  return response.json();
+  }, 'Failed to create feed');
 }
 
 /**
@@ -299,18 +276,11 @@ export async function updateHostedFeedWithEmail(
     throw new Error('Not logged in with email');
   }
 
-  const response = await fetch(`/api/hosted/${feedId}`, {
+  return hostedRequest<UpdateFeedResponse>(`/api/hosted/${feedId}`, {
     method: 'PUT',
     headers: withEmailAuth({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ xml, title, isDraft })
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Failed to update feed' }));
-    throw new Error(error.error || 'Failed to update feed');
-  }
-
-  return response.json();
+  }, 'Failed to update feed');
 }
 
 /**
@@ -321,15 +291,10 @@ export async function deleteHostedFeedWithEmail(feedId: string): Promise<void> {
     throw new Error('Not logged in with email');
   }
 
-  const response = await fetch(`/api/hosted/${feedId}`, {
+  await hostedRequest(`/api/hosted/${feedId}`, {
     method: 'DELETE',
     headers: withEmailAuth()
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Failed to delete feed' }));
-    throw new Error(error.error || 'Failed to delete feed');
-  }
+  }, 'Failed to delete feed');
 }
 
 interface LinkEmailResponse {
@@ -351,17 +316,10 @@ export async function linkEmailToFeed(
     throw new Error('Not logged in with email');
   }
 
-  const response = await fetch(`/api/hosted/${feedId}`, {
+  return hostedRequest<LinkEmailResponse>(`/api/hosted/${feedId}`, {
     method: 'PATCH',
     headers: withEmailAuth({ 'X-Edit-Token': editToken })
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Failed to link email identity' }));
-    throw new Error(error.error || 'Failed to link email identity');
-  }
-
-  return response.json();
+  }, 'Failed to link email identity');
 }
 
 interface LinkNostrResponse {
@@ -385,18 +343,11 @@ export async function linkNostrToFeed(
   const url = `${window.location.origin}/api/hosted/${feedId}`;
   const authHeader = await createAdminAuthHeader(url, 'PATCH');
 
-  const response = await fetch(`/api/hosted/${feedId}`, {
+  return hostedRequest<LinkNostrResponse>(`/api/hosted/${feedId}`, {
     method: 'PATCH',
     headers: {
       'X-Edit-Token': editToken,
       'Authorization': authHeader
     }
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Failed to link Nostr identity' }));
-    throw new Error(error.error || 'Failed to link Nostr identity');
-  }
-
-  return response.json();
+  }, 'Failed to link Nostr identity');
 }

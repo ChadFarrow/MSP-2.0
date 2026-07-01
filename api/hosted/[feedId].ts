@@ -33,6 +33,27 @@ function emailSessionOwns(metadata: { ownerEmailHash?: string }, header: string 
   return auth.valid && auth.emailHash === metadata.ownerEmailHash;
 }
 
+/**
+ * Authorize a write (PUT/DELETE) against a feed that HAS metadata. Accepts, in order:
+ * a matching edit token, the linked Nostr owner, or the linked email owner. The legacy
+ * no-metadata path is handled by callers. Single source of the write-auth ladder so
+ * PUT and DELETE can't drift apart.
+ */
+async function isAuthorizedFeedWrite(
+  metadata: FeedMetadata,
+  creds: { editToken?: string | string[]; authHeader?: string; emailSessionHeader?: string }
+): Promise<boolean> {
+  const token = typeof creds.editToken === 'string' ? creds.editToken : undefined;
+  if (token && timingSafeEqualHex(metadata.editTokenHash, hashToken(token))) {
+    return true;
+  }
+  if (metadata.ownerPubkey && creds.authHeader?.startsWith('Nostr ')) {
+    const nostrAuth = await parseFeedAuthHeader(creds.authHeader);
+    if (nostrAuth.valid && nostrAuth.pubkey === metadata.ownerPubkey) return true;
+  }
+  return emailSessionOwns(metadata, creds.emailSessionHeader);
+}
+
 // Helper to fetch metadata from .meta.json blob
 async function getMetadata(feedId: string): Promise<FeedMetadata | null> {
   const metaPath = `feeds/${feedId}.meta.json`;
@@ -271,30 +292,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           existingPodcastIndexId = metadata.podcastIndexId;
           existingIsDraft = metadata.isDraft;
 
-          // Validate auth: accept token, Nostr owner, or email-session owner.
-          let isAuthorized = false;
-
-          // Try token auth first
-          if (editToken && typeof editToken === 'string') {
-            const providedHash = hashToken(editToken);
-            if (timingSafeEqualHex(storedHash, providedHash)) {
-              isAuthorized = true;
-            }
-          }
-
-          // Try Nostr auth if token didn't work and feed has owner
-          if (!isAuthorized && ownerPubkey && authHeader?.startsWith('Nostr ')) {
-            const nostrAuth = await parseFeedAuthHeader(authHeader);
-            if (nostrAuth.valid && nostrAuth.pubkey === ownerPubkey) {
-              isAuthorized = true;
-            }
-          }
-
-          // Try email-session auth if not yet authorized and feed has an email owner
-          if (!isAuthorized && emailSessionOwns(metadata, emailSessionHeader)) {
-            isAuthorized = true;
-          }
-
+          // Accept a matching edit token, the Nostr owner, or the email-session owner.
+          const isAuthorized = await isAuthorizedFeedWrite(metadata, { editToken, authHeader, emailSessionHeader });
           if (!isAuthorized) {
             return res.status(403).json({ error: 'Invalid credentials' });
           }
@@ -454,29 +453,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return res.status(401).json({ error: 'Missing credentials' });
           }
 
-          // Accept token, Nostr owner, or email-session owner (mirrors PUT).
-          let authorized = false;
-
-          if (hasTokenHeader) {
-            const providedHash = hashToken(editToken as string);
-            if (!metadata) {
-              // Legacy feed without metadata: can't verify, but it's unusable anyway.
-              authorized = true;
-            } else if (timingSafeEqualHex(metadata.editTokenHash, providedHash)) {
-              authorized = true;
-            }
-          }
-
-          if (!authorized && metadata?.ownerPubkey && hasNostr) {
-            const na = await parseFeedAuthHeader(authHeader);
-            if (na.valid && na.pubkey === metadata.ownerPubkey) {
-              authorized = true;
-            }
-          }
-
-          if (!authorized && emailSessionOwns(metadata ?? {}, emailSessionHeader)) {
-            authorized = true;
-          }
+          // Legacy feeds without metadata can't be verified (unusable anyway) — any token deletes.
+          // Otherwise: matching token, Nostr owner, or email-session owner (mirrors PUT).
+          const authorized = metadata
+            ? await isAuthorizedFeedWrite(metadata, { editToken, authHeader, emailSessionHeader })
+            : hasTokenHeader;
 
           if (!authorized) {
             return res.status(403).json({ error: 'Invalid credentials' });

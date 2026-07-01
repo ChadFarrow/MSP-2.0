@@ -174,20 +174,8 @@ export function NostrProvider({ children }: { children: ReactNode }) {
             if (pubkey === storedUser.pubkey) {
               dispatch({ type: 'RESTORE_SESSION', payload: { user: storedUser, method: 'nip07' } });
 
-              // Refresh profile in background
-              fetchNostrProfile(pubkey).then((profile) => {
-                if (profile) {
-                  dispatch({
-                    type: 'UPDATE_PROFILE',
-                    payload: {
-                      displayName: profile.display_name || profile.name,
-                      picture: profile.picture,
-                      nip05: profile.nip05,
-                      lud16: profile.lud16
-                    }
-                  });
-                }
-              });
+              // Refresh profile in background (single source of the profile→user mapping)
+              refreshProfile(pubkey);
               return;
             } else {
               // Different account, clear stored session

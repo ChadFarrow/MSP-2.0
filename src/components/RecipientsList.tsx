@@ -2,6 +2,7 @@ import type { ValueRecipient } from '../types/feed';
 import { createSupportRecipients, isCommunitySupport } from '../types/feed';
 import { FIELD_INFO } from '../data/fieldInfo';
 import { detectAddressType } from '../utils/addressUtils';
+import { useNostr } from '../store/nostrStore';
 import { InfoIcon } from './InfoIcon';
 import { AddRecipientSelect } from './AddRecipientSelect';
 
@@ -13,6 +14,23 @@ interface RecipientsListProps {
 }
 
 export function RecipientsList({ recipients, onUpdate, onRemove, onAdd }: RecipientsListProps) {
+  const { state: nostrState } = useNostr();
+
+  // Lightning address from the logged-in user's Nostr profile (kind-0 lud16), if any.
+  const nostrLud16 = nostrState.isLoggedIn ? nostrState.user?.lud16?.trim() : undefined;
+
+  // Fill a recipient row's address with the user's Nostr lightning address — a shortcut
+  // so they don't have to type it out. Also fills the name if it's still blank.
+  const fillWithNostrWallet = (recipient: ValueRecipient, index: number) => {
+    if (!nostrLud16) return;
+    onUpdate(index, {
+      ...recipient,
+      address: nostrLud16,
+      type: detectAddressType(nostrLud16),
+      name: recipient.name?.trim() || nostrState.user?.displayName || ''
+    });
+  };
+
   // Separate user recipients from platform recipients, preserving original indices
   const userRecipients: { recipient: ValueRecipient; originalIndex: number }[] = [];
   const platformRecipients: { recipient: ValueRecipient; originalIndex: number }[] = [];
@@ -56,6 +74,25 @@ export function RecipientsList({ recipients, onUpdate, onRemove, onAdd }: Recipi
               readOnly={isSupport}
               style={isSupport ? { opacity: 0.7, cursor: 'default' } : undefined}
             />
+            {!isSupport && nostrLud16 && recipient.address.trim().toLowerCase() !== nostrLud16.toLowerCase() && (
+              <button
+                type="button"
+                onClick={() => fillWithNostrWallet(recipient, originalIndex)}
+                title={`Use ${nostrLud16} from your Nostr profile`}
+                style={{
+                  marginTop: '6px',
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--accent-color, #f59e0b)',
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  padding: 0,
+                  textDecoration: 'underline'
+                }}
+              >
+                ⚡ Use my Lightning wallet
+              </button>
+            )}
           </div>
           <div className="form-group">
             <label className="form-label">Split %<InfoIcon text={FIELD_INFO.recipientSplit} /></label>

@@ -497,7 +497,9 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
       </div>
 
       <div className="repeatable-list">
-        {publisherFeed.remoteItems.map((item, index) => (
+        {publisherFeed.remoteItems.map((item, index) => {
+          const feedUrlError = item.feedUrl ? getFeedUrlError(item.feedUrl) : null;
+          return (
           <div key={index} className="repeatable-item">
             <div className="repeatable-item-content" style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
               {/* Album Art Preview */}
@@ -594,8 +596,18 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
                       className="form-input"
                       value={item.feedUrl || ''}
                       disabled
-                      style={{ backgroundColor: 'var(--bg-secondary)', cursor: 'default', opacity: 1 }}
+                      style={{
+                        backgroundColor: 'var(--bg-secondary)',
+                        cursor: 'default',
+                        opacity: 1,
+                        borderColor: feedUrlError ? 'var(--error, #ef4444)' : undefined
+                      }}
                     />
+                    {feedUrlError && (
+                      <p style={{ color: 'var(--error, #ef4444)', fontSize: '12px', marginTop: '4px' }}>
+                        ⚠ This feed's URL (as registered in Podcast Index) has a problem: {feedUrlError} Some apps may fail to fetch it — consider re-hosting the feed at a clean URL and re-submitting.
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -609,7 +621,8 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
               </button>
             </div>
           </div>
-        ))}
+          );
+        })}
         <button
           className="add-item-btn"
           onClick={() => dispatch({ type: 'ADD_REMOTE_ITEM', payload: { ...createEmptyRemoteItem(), medium: 'music' } })}

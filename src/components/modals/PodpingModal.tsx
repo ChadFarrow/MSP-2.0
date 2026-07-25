@@ -17,9 +17,6 @@ const VERIFY_MAX_ATTEMPTS = 6;
 
 interface VerifyState {
   status: 'idle' | 'checking' | 'landed' | 'not-seen' | 'unavailable';
-  account?: string;
-  trxId?: string;
-  block?: number;
   /** True when we couldn't reach Hive at all — distinct from "not configured". */
   unreachable?: boolean;
 }
@@ -29,7 +26,7 @@ export function PodpingModal({ onClose, feedGuid, medium }: PodpingModalProps) {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [verify, setVerify] = useState<VerifyState>({ status: 'idle' });
-  const [verifyJob, setVerifyJob] = useState<{ url: string; id: number } | null>(null);
+  const [verifyJob, setVerifyJob] = useState<{ url: string; id: number; since: number } | null>(null);
   const verifyJobId = useRef(0);
 
   useEffect(() => {
@@ -53,8 +50,10 @@ export function PodpingModal({ onClose, feedGuid, medium }: PodpingModalProps) {
       if (cancelled) return;
 
       try {
+        // `since` scopes the check to this send — without it a podping for the same
+        // feed from an hour ago would match on the first poll and report success.
         const response = await fetch(
-          `/api/podping-verify?url=${encodeURIComponent(verifyJob.url)}`,
+          `/api/podping-verify?url=${encodeURIComponent(verifyJob.url)}&since=${verifyJob.since}`,
           { signal: controller.signal }
         );
         if (cancelled) return;
@@ -74,17 +73,12 @@ export function PodpingModal({ onClose, feedGuid, medium }: PodpingModalProps) {
         if (cancelled) return;
 
         if (data.landed) {
-          setVerify({
-            status: 'landed',
-            account: data.account,
-            trxId: data.trxId,
-            block: data.block
-          });
+          setVerify({ status: 'landed' });
           return;
         }
 
         if (attempt >= VERIFY_MAX_ATTEMPTS) {
-          setVerify({ status: 'not-seen', account: data.account });
+          setVerify({ status: 'not-seen' });
           return;
         }
       } catch {
@@ -143,7 +137,7 @@ export function PodpingModal({ onClose, feedGuid, medium }: PodpingModalProps) {
       setMessage({ type: 'success', text: 'Podping sent.' });
       verifyJobId.current += 1;
       setVerify({ status: 'checking' });
-      setVerifyJob({ url, id: verifyJobId.current });
+      setVerifyJob({ url, id: verifyJobId.current, since: Date.now() });
     } catch (err) {
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Podping failed' });
     } finally {
@@ -208,7 +202,7 @@ export function PodpingModal({ onClose, feedGuid, medium }: PodpingModalProps) {
           marginTop: '12px',
           fontSize: '0.875rem'
         }}>
-          {message.text}
+          {message.type === 'success' ? `✅ ${message.text}` : message.text}
         </div>
       )}
       {verify.status === 'checking' && (
@@ -216,38 +210,12 @@ export function PodpingModal({ onClose, feedGuid, medium }: PodpingModalProps) {
       )}
       {verify.status === 'landed' && (
         <div style={{ ...noteStyle, color: 'var(--success)' }}>
-          ✅ Landed on Hive{verify.block ? ` · block ${verify.block}` : ''}
-          {verify.trxId && (
-            <>
-              {' · '}
-              <a
-                href={`https://hiveblocks.com/tx/${verify.trxId}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ color: 'inherit' }}
-              >
-                view tx ↗
-              </a>
-            </>
-          )}
+          ✅ Podping received
         </div>
       )}
       {verify.status === 'not-seen' && (
         <div style={noteStyle}>
-          Not seen on Hive yet — it may still be queued.
-          {verify.account && (
-            <>
-              {' '}
-              <a
-                href={`https://hiveblocks.com/@${verify.account}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ color: 'inherit' }}
-              >
-                Check @{verify.account} ↗
-              </a>
-            </>
-          )}
+          Not received yet — it may still be queued.
         </div>
       )}
       {verify.status === 'unavailable' && verify.unreachable && (

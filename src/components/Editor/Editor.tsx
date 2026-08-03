@@ -5,7 +5,7 @@ import { LANGUAGES, PERSON_GROUPS, PERSON_ROLES, createEmptyPersonRole, createEm
 import type { PersonGroup } from '../../types/feed';
 import { FIELD_INFO } from '../../data/fieldInfo';
 import { detectAddressType } from '../../utils/addressUtils';
-import { getMediaDuration, secondsToHHMMSS, formatDuration, getAudioMimeType, isKnownAudioFormat } from '../../utils/audioUtils';
+import { getMediaDuration, secondsToHHMMSS, formatDuration, getAudioMimeType, isKnownAudioFormat, resolveMediaSize, hhmmssToSeconds } from '../../utils/audioUtils';
 import { getVideoMimeType } from '../../utils/videoUtils';
 import { isNaddrString, resolveNostrVideo } from '../../utils/nostrVideoConverter';
 import { getFeedUrlError } from '../../utils/urlValidation';
@@ -834,6 +834,7 @@ export function Editor() {
                             try {
                               const videoData = await resolveNostrVideo(pastedText);
                               if (videoData) {
+                                const bytes = await resolveMediaSize(videoData.url, hhmmssToSeconds(videoData.duration));
                                 dispatch({
                                   type: 'UPDATE_TRACK',
                                   payload: {
@@ -841,7 +842,7 @@ export function Editor() {
                                     track: {
                                       enclosureUrl: videoData.url,
                                       enclosureType: videoData.mimeType,
-                                      enclosureLength: '33',
+                                      enclosureLength: String(bytes),
                                       ...(videoData.duration && { duration: videoData.duration }),
                                     }
                                   }
@@ -870,20 +871,22 @@ export function Editor() {
                               payload: { index, track: { enclosureType: mimeType } }
                             });
                             // Fetch duration using unified Media API (works for both audio and video)
+                            let durationSeconds: number | null = null;
                             if (isNewUrl || !track.duration) {
-                              const duration = await getMediaDuration(url);
-                              if (duration !== null) {
+                              durationSeconds = await getMediaDuration(url);
+                              if (durationSeconds !== null) {
                                 dispatch({
                                   type: 'UPDATE_TRACK',
-                                  payload: { index, track: { duration: secondsToHHMMSS(duration) } }
+                                  payload: { index, track: { duration: secondsToHHMMSS(durationSeconds) } }
                                 });
                               }
                             }
-                            // Set placeholder file size
+                            // Measure the real file size; falls back to an estimate if the host blocks us
                             if (isNewUrl || !track.enclosureLength) {
+                              const bytes = await resolveMediaSize(url, durationSeconds ?? hhmmssToSeconds(track.duration));
                               dispatch({
                                 type: 'UPDATE_TRACK',
-                                payload: { index, track: { enclosureLength: '33' } }
+                                payload: { index, track: { enclosureLength: String(bytes) } }
                               });
                             }
                           }
@@ -892,20 +895,22 @@ export function Editor() {
                           const url = e.target.value;
                           if (url && url.startsWith('http')) {
                             // Fetch duration using unified Media API (works for both audio and video)
+                            let durationSeconds: number | null = null;
                             if (!track.duration) {
-                              const duration = await getMediaDuration(url);
-                              if (duration !== null) {
+                              durationSeconds = await getMediaDuration(url);
+                              if (durationSeconds !== null) {
                                 dispatch({
                                   type: 'UPDATE_TRACK',
-                                  payload: { index, track: { duration: secondsToHHMMSS(duration) } }
+                                  payload: { index, track: { duration: secondsToHHMMSS(durationSeconds) } }
                                 });
                               }
                             }
-                            // Set placeholder file size
+                            // Measure the real file size; falls back to an estimate if the host blocks us
                             if (!track.enclosureLength) {
+                              const bytes = await resolveMediaSize(url, durationSeconds ?? hhmmssToSeconds(track.duration));
                               dispatch({
                                 type: 'UPDATE_TRACK',
-                                payload: { index, track: { enclosureLength: '33' } }
+                                payload: { index, track: { enclosureLength: String(bytes) } }
                               });
                             }
                           }

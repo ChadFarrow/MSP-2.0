@@ -8,6 +8,7 @@ import {
   timingSafeEqualHex,
   isValidFeedId
 } from '../_utils/feedUtils.js';
+import type { PodcastIndexAddResult } from '../_utils/feedUtils.js';
 import { extractPodcastMedium } from '../_utils/xmlUtils.js';
 import { parseEmailAuthHeader } from '../_utils/emailAuth.js';
 import { addFeedToAccount, removeFeedFromAccount } from '../_utils/accountStore.js';
@@ -341,9 +342,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const stableUrl = `${getBaseUrl()}/api/hosted/${feedId}.xml`;
         const medium = extractPodcastMedium(xml);
         let podcastIndexId: number | undefined;
+        let addResult: PodcastIndexAddResult | undefined;
         if (!effectiveIsDraft) {
-          const newPodcastIndexId = await notifyPodcastIndex(stableUrl, { medium });
-          podcastIndexId = newPodcastIndexId || existingPodcastIndexId;
+          const piResult = await notifyPodcastIndex(stableUrl, { medium });
+          podcastIndexId = piResult.podcastIndexId || existingPodcastIndexId;
+          // Only explain a failure when we ended up with no id at all — a feed that
+          // was already registered keeps its existing id and needs no explanation.
+          if (!podcastIndexId) addResult = piResult.addResult;
         } else {
           podcastIndexId = existingPodcastIndexId;
         }
@@ -365,7 +370,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           addRandomSuffix: false
         });
 
-        return res.status(200).json({ success: true, podcastIndexId, isDraft: effectiveIsDraft });
+        return res.status(200).json({
+          success: true,
+          podcastIndexId,
+          // Present only when PI declined to register the feed — lets the UI say why.
+          ...(addResult ? { addResult } : {}),
+          isDraft: effectiveIsDraft
+        });
       }
 
       case 'PATCH': {

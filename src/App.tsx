@@ -7,9 +7,10 @@ import { ThemeProvider, useTheme } from './store/themeStore.tsx';
 import { ExperimentalProvider, useExperimental } from './store/experimentalStore.tsx';
 import { parseRssFeed, isPublisherFeed, isVideoFeed, parsePublisherRssFeed } from './utils/xmlParser';
 import { createEmptyAlbum, createEmptyPublisherFeed, createEmptyVideoAlbum } from './types/feed';
-import { pendingHostedStorage } from './utils/storage';
+import { pendingHostedStorage, hostedFeedStorage } from './utils/storage';
 import { generateTestAlbum } from './utils/testData';
 import { regenerateAlbumGuids } from './utils/regenerateGuids';
+import { resolveMediaSize, hhmmssToSeconds } from './utils/audioUtils';
 import { NostrLoginButton } from './components/NostrLoginButton';
 import { ImportModal } from './components/modals/ImportModal';
 import { SaveModal } from './components/modals/SaveModal';
@@ -22,7 +23,7 @@ import { Editor } from './components/Editor/Editor';
 import { PublisherEditor } from './components/Editor/PublisherEditor';
 import { AdminPage } from './components/admin/AdminPage';
 import { VerifyMagicLink } from './pages/VerifyMagicLink';
-import type { Album } from './types/feed';
+import type { Album, Track } from './types/feed';
 import mspLogo from './assets/msp-logo.png';
 import { PodcastIndexIcon } from './components/PodcastIndexIcon';
 import './App.css';
@@ -58,6 +59,17 @@ function AppContent() {
     const guid = currentFeedGuid?.trim();
     // Only look up well-formed GUIDs (avoids junk queries on empty/new feeds).
     if (!guid || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(guid)) return;
+
+    // For MSP-hosted feeds we already know the id: /api/hosted returns it at save
+    // time and it's cached alongside the hosted-feed credentials. Prefer it — PI's
+    // search only knows a feed's podcastGuid AFTER it crawls the feed, so a freshly
+    // registered feed is invisible to the lookup below for hours.
+    const cachedId = hostedFeedStorage.load(guid)?.podcastIndexId;
+    if (typeof cachedId === 'number') {
+      setPiFeedId(cachedId);
+      return;
+    }
+
     let cancelled = false;
     fetch(`/api/pisearch?q=${encodeURIComponent(guid)}`)
       .then(r => (r.ok ? r.json() : null))
@@ -79,6 +91,19 @@ function AppContent() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Imported feeds routinely arrive with no usable enclosure length — the parser drops
+  // `0` and generator placeholders like MSP's old literal `33`. Measure the real sizes
+  // in the background so the feed is publishable without hand-typing byte counts.
+  // Dispatched by index like the Editor's own async duration/size handlers.
+  const backfillEnclosureSizes = (tracks: Track[]) => {
+    tracks.forEach((track, index) => {
+      if (track.enclosureLength || !track.enclosureUrl?.startsWith('http')) return;
+      void resolveMediaSize(track.enclosureUrl, hhmmssToSeconds(track.duration)).then(bytes => {
+        dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { enclosureLength: String(bytes) } } });
+      });
+    });
+  };
 
   // regenerateGuids: used by the template/"duplicate this feed" flow so a new feed
   // gets fresh feed + per-track GUIDs instead of inheriting the source's identities.
@@ -104,6 +129,7 @@ function AppContent() {
       if (isVideoFeed(xml)) {
         const videoFeed = parseRssFeed(xml);
         dispatch({ type: 'SET_VIDEO_FEED', payload: regenerateGuids ? regenerateAlbumGuids(videoFeed) : videoFeed });
+        backfillEnclosureSizes(videoFeed.tracks);
         return;
       }
 
@@ -123,6 +149,7 @@ function AppContent() {
       }
 
       dispatch({ type: 'SET_ALBUM', payload: regenerateGuids ? regenerateAlbumGuids(album) : album });
+      backfillEnclosureSizes(album.tracks);
     } catch (err) {
       alert('Failed to parse feed: ' + (err instanceof Error ? err.message : 'Unknown error'));
     }
@@ -132,6 +159,7 @@ function AppContent() {
     // Clear stale hosted credentials - Nostr/music imports don't use pending hosted storage
     pendingHostedStorage.clear();
     dispatch({ type: 'SET_ALBUM', payload: album });
+    backfillEnclosureSizes(album.tracks);
   };
 
   const handleNew = (feedType: FeedType = 'album') => {
@@ -372,6 +400,7 @@ function AppContent() {
           isDirty={state.isDirty}
           isLoggedIn={nostrState.isLoggedIn}
           onImport={handleImport}
+          onPodcastIndexId={setPiFeedId}
         />
       )}
 

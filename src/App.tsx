@@ -147,14 +147,18 @@ function AppContent() {
       // Check if this is a publisher feed
       if (isPublisherFeed(xml)) {
         const publisherFeed = parsePublisherRssFeed(xml);
-        // Attach source URL if provided (for auto-populating Publisher Feed URL field)
+        // Attach source URL if provided (for auto-populating Publisher Feed URL field).
+        // The parser may already have set it from the feed's own <atom:link rel="self">;
+        // an explicit import URL is the better answer, so it wins.
         if (sourceUrl) {
           publisherFeed.sourceUrl = sourceUrl;
         }
         // Only the feed GUID is renewed for templates — remoteItems reference real
-        // external feeds and must keep their feedGuids.
+        // external feeds and must keep their feedGuids. A template is a new feed, so
+        // it must not inherit the source feed's URL either.
         if (regenerateGuids) {
           publisherFeed.podcastGuid = crypto.randomUUID();
+          delete publisherFeed.sourceUrl;
         }
         dispatch({ type: 'SET_PUBLISHER_FEED', payload: publisherFeed });
         return;

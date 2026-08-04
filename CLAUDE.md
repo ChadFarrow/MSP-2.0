@@ -165,6 +165,8 @@ Uses React Context + useReducer pattern (not Redux). Three separate stores:
 
 Actions are dispatched via reducer pattern. The `FeedAction` union type in `feedStore.tsx` defines all available actions.
 
+**`publisherFeedInstance` — feed-scoped local state must reset on import.** The publisher editor sections stay mounted across an import (`SET_PUBLISHER_FEED` swaps the data, nothing unmounts), so any `useState` they hold survives into the next feed. That's what made an imported feed show the *previous* feed's Publisher Feed URL in "Add Publisher to Catalog Feeds" — and that URL gets stamped into every catalog feed's `<podcast:publisher>` tag, so it's not just cosmetic. `FeedState.publisherFeedInstance` is a counter bumped by `SET_PUBLISHER_FEED` / `CREATE_NEW_PUBLISHER_FEED`; `PublisherEditor/index.tsx` passes it to `DownloadCatalogSection` and `PublisherFeedReminderSection`, which clear their URL fields and result banners when it changes (`useRef` compare, so it fires on change only). **`podcastGuid` can't serve as that key** — it's an editable text input, so keying on it would wipe the field on every keystroke there. Any new publisher section that holds feed-scoped local state (a URL, a "hosted!" banner, a submission result) needs the same reset.
+
 ### Core Data Types (src/types/feed.ts)
 - `FeedType` - `'album' | 'video' | 'publisher'` (canonical definition, re-exported from `feedStore.tsx`)
 - `Album` - Feed metadata + array of `Track`s
@@ -233,6 +235,9 @@ Most experimental/power-user options are additionally gated behind a "Show Exper
 ### XML Handling
 - `xmlParser.ts` - Uses fast-xml-parser to parse RSS feeds, preserves unknown elements, detects and strips OP3 prefixes on import
 - `xmlGenerator.ts` - Generates Podcasting 2.0 compliant RSS XML, applies OP3 prefix to enclosure URLs when enabled
+
+#### Publisher `sourceUrl` (auto-filled Publisher Feed URL)
+`PublisherFeed.sourceUrl` is what auto-fills the "Publisher Feed URL" field in the Download Catalog section, which is the URL written into each catalog feed's `<podcast:publisher>` tag. Resolution order, highest first: the URL the feed was actually imported from (set in `handleImport`, only present for URL / "My Hosted Feeds" imports) → the feed's own `<atom:link rel="self">` (read by `parseSelfLink()` in `xmlParser.ts`, which covers file/paste imports) → an MSP hosted URL looked up by `podcastGuid`. Empty is a legitimate outcome for a self-hosted feed with no self-link — the field stays blank with a warning rather than guessing. `parseSelfLink` deliberately does **not** add `atom:link` to `KNOWN_CHANNEL_KEYS`, so the element still round-trips through `unknownChannelElements`. Template imports (`regenerateGuids`) `delete` the parsed `sourceUrl` — a template is a new feed and must not inherit the source's URL.
 
 #### Value recipient normalization on import
 `parseRecipient()` in `xmlParser.ts` does not trust the feed's `<podcast:valueRecipient>` `type` attribute — it normalizes every recipient at parse time (the single choke point covering channel- and track-level value blocks):

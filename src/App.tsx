@@ -81,6 +81,41 @@ function AppContent() {
     return () => { cancelled = true; };
   }, [currentFeedGuid]);
 
+  // Bumped by the Save modal when a save leaves the feed not yet indexed.
+  const [piWatch, setPiWatch] = useState(0);
+
+  // PI crawls asynchronously, and the Save modal's own poll dies with the modal — so a
+  // feed that lands a minute after the user clicks Done would leave this button dark
+  // until a page refresh. Pick the watch back up once the modal is out of the way
+  // (skipped while it's open, since its poll is already covering the same ground).
+  useEffect(() => {
+    if (!piWatch || piFeedId || showSaveModal) return;
+    const guid = currentFeedGuid?.trim();
+    if (!guid) return;
+    let cancelled = false;
+    let attempts = 0;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      attempts += 1;
+      try {
+        const response = await fetch(`/api/pisearch?q=${encodeURIComponent(guid)}`);
+        const data = response.ok ? await response.json() : null;
+        const id = data?.feeds?.[0]?.id;
+        if (cancelled) return;
+        if (typeof id === 'number') {
+          setPiFeedId(id);
+          const info = hostedFeedStorage.load(guid);
+          if (info) hostedFeedStorage.save(guid, { ...info, podcastIndexId: id });
+          return;
+        }
+      } catch { /* offline — fall through and retry */ }
+      if (cancelled || attempts >= 12) return;
+      timer = setTimeout(poll, 15000);
+    };
+    timer = setTimeout(poll, 5000);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [piWatch, piFeedId, showSaveModal, currentFeedGuid]);
+
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -401,6 +436,7 @@ function AppContent() {
           isLoggedIn={nostrState.isLoggedIn}
           onImport={handleImport}
           onPodcastIndexId={setPiFeedId}
+          onPodcastIndexPending={() => setPiWatch(n => n + 1)}
         />
       )}
 

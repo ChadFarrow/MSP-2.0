@@ -80,9 +80,11 @@ interface SaveModalProps {
   onImport?: (xml: string) => void;
   /** Reports the feed's Podcast Index id so the toolbar button can light up without a reload. */
   onPodcastIndexId?: (id: number) => void;
+  /** Signals a save left the feed not yet indexed, so the watch can outlive this modal. */
+  onPodcastIndexPending?: () => void;
 }
 
-export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', isDirty, isLoggedIn, onImport, onPodcastIndexId }: SaveModalProps) {
+export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', isDirty, isLoggedIn, onImport, onPodcastIndexId, onPodcastIndexPending }: SaveModalProps) {
   const { state: nostrState } = useNostr();
   const { showExperimental } = useExperimental();
   const [mode, setMode] = useState<SaveMode>('local');
@@ -518,7 +520,12 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
       setPublished(result);
       setPiLookupId(null);
       setPiCheckExhausted(false);
-      if (result.podcastIndexId) onPodcastIndexId?.(result.podcastIndexId);
+      if (result.podcastIndexId) {
+        onPodcastIndexId?.(result.podcastIndexId);
+      } else if (!result.isDraft) {
+        // Hand the watch to App so it survives this modal being closed.
+        onPodcastIndexPending?.();
+      }
     };
 
     // Helper to show success and auto-close

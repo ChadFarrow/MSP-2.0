@@ -247,6 +247,16 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
     return () => { cancelled = true; clearTimeout(timer); };
   }, [published, lookUpPodcastIndex]);
 
+  // The poll above only runs right after an upload, so a user who closed the modal
+  // before the feed landed would reopen it to no Podcast Index section at all. Check
+  // once when the hosted panel opens on a feed whose id we don't already know, so
+  // "your feed is in the index" is answerable at any time, not just post-save.
+  useEffect(() => {
+    if (mode !== 'hosted' || published || piLookupId) return;
+    if (!hostedInfo || hostedInfo.podcastIndexId) return;
+    void lookUpPodcastIndex();
+  }, [mode, published, piLookupId, hostedInfo, lookUpPodcastIndex]);
+
   // Close the destination dropdown when clicking outside it. The menu is
   // portaled to <body> (to escape the modal's overflow clipping), so the
   // outside check has to ignore the portaled menu too.

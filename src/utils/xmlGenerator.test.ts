@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { generateRssFeed } from './xmlGenerator';
+import { generateRssFeed, generatePublisherRssFeed, stripXmlComments } from './xmlGenerator';
 import { parseRssFeed } from './xmlParser';
-import { createEmptyAlbum } from '../types/feed';
+import { createEmptyAlbum, createEmptyPublisherFeed } from '../types/feed';
 
 describe('xmlGenerator publisher reference', () => {
   it('includes podcast:publisher tag when publisher is set', () => {
@@ -282,5 +282,120 @@ describe('podcast:image generation', () => {
     album.tracks[0].trackArtWidth = 3000;
     const xml = generateRssFeed(album);
     expect(xml).not.toContain('<podcast:images');
+  });
+});
+
+describe('DeMu-style educational comments', () => {
+  it('emits the DeMu template attribution and per-tag comments on album feeds', () => {
+    const album = createEmptyAlbum();
+    album.title = 'Test Album';
+    album.author = 'Test Artist';
+    album.description = 'Test description';
+
+    const xml = generateRssFeed(album);
+
+    expect(xml).toContain('This feed follows the Demu feed template format.');
+    // Album-centric wording for shared channel comments
+    expect(xml).toContain('<!-- The "title" tag will contain the name of your album. -->');
+    expect(xml).toContain('describes the author of the content in the feed. For a music release, we put the album\'s artist here.');
+    expect(xml).toContain('this feed contains music');
+  });
+
+  it('rewords album-centric comments for publisher feeds (no "music"/"album" wording)', () => {
+    const publisher = createEmptyPublisherFeed();
+    publisher.title = 'Test Label';
+    publisher.author = 'Test Label';
+    publisher.description = 'A record label';
+
+    const xml = generatePublisherRssFeed(publisher);
+
+    // The medium comment must NOT claim the publisher feed contains music
+    expect(xml).not.toContain('this feed contains music');
+    expect(xml).toContain('identifies this as a publisher feed');
+    expect(xml).toContain('<!-- The "title" tag will contain the name of your publisher or label catalog. -->');
+    expect(xml).toContain('<!-- The "itunes:author" tag describes the label or publisher name. -->');
+  });
+
+  it('never emits an illegal double-hyphen inside a comment body', () => {
+    const album = createEmptyAlbum();
+    album.title = 'Test Album';
+    album.tracks[0].title = 'Song';
+    const xml = generateRssFeed(album);
+
+    // XML forbids "--" inside comment bodies; only the closing "-->" may contain it.
+    for (const comment of xml.match(/<!--[\s\S]*?-->/g) ?? []) {
+      expect(comment.slice(4, -3)).not.toContain('--');
+    }
+  });
+
+  it('stripXmlComments removes every comment line but leaves tags and content intact', () => {
+    const album = createEmptyAlbum();
+    album.title = 'Strip Test';
+    album.author = 'Artist';
+    album.description = 'A test album';
+    album.tracks[0].title = 'Song';
+    album.tracks[0].enclosureUrl = 'https://example.com/track1.mp3';
+
+    const xml = generateRssFeed(album);
+    expect(xml).toContain('<!--'); // sanity: the feed has comments
+    const commentLines = (xml.match(/^[ \t]*<!--.*?-->[ \t]*$/gm) ?? []).length;
+
+    const stripped = stripXmlComments(xml);
+    expect(stripped).not.toContain('<!--');
+    expect(stripped).not.toContain('-->');
+    // Tags and content survive
+    expect(stripped).toContain('<title>Strip Test</title>');
+    expect(stripped).toContain('<rss');
+    expect(stripped).toContain('</rss>');
+    // Still parses back to the same album
+    const reparsed = parseRssFeed(stripped);
+    expect(reparsed.title).toBe('Strip Test');
+    expect(reparsed.tracks[0].title).toBe('Song');
+    // Exactly the comment lines were removed — no blank lines left behind
+    expect(stripped.split('\n').length).toBe(xml.split('\n').length - commentLines);
+  });
+
+  it('drops comments on round-trip (parser does not capture or re-emit them)', () => {
+    const album = createEmptyAlbum();
+    album.title = 'Roundtrip Album';
+    album.author = 'Artist';
+    album.tracks[0].title = 'Track One';
+    album.tracks[0].enclosureUrl = 'https://example.com/track1.mp3';
+
+    const xml1 = generateRssFeed(album);
+    const reparsed = parseRssFeed(xml1);
+    const xml2 = generateRssFeed(reparsed);
+
+    // No comment should be duplicated on re-export (parser must not capture them as unknown elements)
+    const count = (s: string) => (s.match(/<!--/g) ?? []).length;
+    expect(count(xml2)).toBe(count(xml1));
+  });
+
+  it('groups tags with single blank lines — never two blank lines in a row (comments on OR off)', () => {
+    const album = createEmptyAlbum();
+    album.title = 'Spacing Test';
+    album.author = 'Artist';
+    album.description = 'A test album';
+    album.link = 'https://example.com';
+    album.keywords = 'rock';
+    album.imageUrl = 'https://example.com/cover.jpg';
+    album.ownerName = 'Owner';
+    album.persons = [{ name: 'P', roles: [{ group: 'music', role: 'band' }] }];
+    album.value = { type: 'lightning', method: 'keysend', suggested: '0', recipients: [{ name: 'N', address: 'n@getalby.com', split: 100, type: 'lnaddress' }] };
+    album.tracks = [
+      { ...album.tracks[0], title: 'One', enclosureUrl: 'https://example.com/1.mp3' },
+      { ...album.tracks[0], title: 'Two', enclosureUrl: 'https://example.com/2.mp3' },
+    ];
+
+    const xml = generateRssFeed(album);
+    const doubleBlank = /\n[ \t]*\n[ \t]*\n/;
+    // Has blank-line grouping at all
+    expect(xml).toMatch(/\n\n/);
+    // ...but never two consecutive blank lines, with comments on or off
+    expect(xml).not.toMatch(doubleBlank);
+    expect(stripXmlComments(xml)).not.toMatch(doubleBlank);
+    // No leading/trailing blank lines
+    expect(xml.startsWith('\n')).toBe(false);
+    expect(xml.endsWith('\n')).toBe(false);
   });
 });

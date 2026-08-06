@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { generateRssFeed, generatePublisherRssFeed, downloadXml, copyToClipboard } from '../../utils/xmlGenerator';
+import { generateRssFeed, generatePublisherRssFeed, downloadXml, copyToClipboard, stripXmlComments } from '../../utils/xmlGenerator';
 import type { Album, PublisherFeed } from '../../types/feed';
 import type { FeedType } from '../../store/feedStore';
 import { ModalWrapper } from './ModalWrapper';
@@ -143,6 +143,7 @@ interface PreviewModalProps {
 
 export function PreviewModal({ onClose, album, publisherFeed, feedType = 'album' }: PreviewModalProps) {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [showComments, setShowComments] = useState(true);
   const isPublisherMode = feedType === 'publisher';
 
   // Generate XML for current feed type
@@ -157,8 +158,12 @@ export function PreviewModal({ onClose, album, publisherFeed, feedType = 'album'
 
   const xml = generateCurrentFeedXml();
 
+  // What's shown on screen follows the "Show comments" toggle.
+  // Copy/Download always use the full `xml` (with comments) — display only.
+  const displayXml = showComments ? xml : stripXmlComments(xml);
+
   // Memoize highlighted XML for performance
-  const highlightedXml = useMemo(() => highlightXml(xml), [xml]);
+  const highlightedXml = useMemo(() => highlightXml(displayXml), [displayXml]);
 
   const handleCopy = async () => {
     try {
@@ -189,6 +194,23 @@ export function PreviewModal({ onClose, album, publisherFeed, feedType = 'album'
       className="preview-modal"
       footer={
         <>
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '0.875rem',
+              cursor: 'pointer',
+              userSelect: 'none'
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={showComments}
+              onChange={(e) => setShowComments(e.target.checked)}
+            />
+            Show comments
+          </label>
           <button className="btn btn-secondary" onClick={handleCopy}>
             Copy to Clipboard
           </button>

@@ -640,7 +640,7 @@ function parseTrack(node: unknown, trackNumber: number, albumValue: ValueBlock, 
 }
 
 // Check if URL is an MSP-hosted feed
-const isMspUrl = (url: string): boolean => {
+export const isMspUrl = (url: string): boolean => {
   return url.includes('/api/hosted/') ||
     url.includes('musicsideproject.com') ||
     url.includes('msp.podtards.com') ||

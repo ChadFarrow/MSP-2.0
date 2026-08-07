@@ -2,13 +2,14 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getAuthHeaders } from './_utils/podcastIndex.js';
 import { notifyPodping, isPodpingConfigured } from './_utils/feedUtils.js';
 import { getFeedUrlError } from './_utils/urlValidation.js';
+import { guardFeedSubmission, wantsForce } from './_utils/feedReachability.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { url, guid, medium } = req.query;
+  const { url, guid, medium, force } = req.query;
 
   if (!url || typeof url !== 'string') {
     return res.status(400).json({ error: 'Missing url parameter' });
@@ -30,6 +31,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const urlError = getFeedUrlError(url);
   if (urlError) {
     return res.status(400).json({ error: urlError });
+  }
+
+  // Don't register a feed that crawlers can't fetch — it lands in Podcast Index
+  // as a permanently blank entry while we tell the user it worked. Refuses only
+  // on a confirmed block and fails open otherwise; `force=1` is the user's
+  // explicit "Submit anyway".
+  const refusal = await guardFeedSubmission(url, { force: wantsForce(force) });
+  if (refusal) {
+    return res.status(400).json(refusal);
   }
 
   try {

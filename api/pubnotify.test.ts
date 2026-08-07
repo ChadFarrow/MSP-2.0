@@ -4,6 +4,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
 
+// The reachability guard fetches the feed before submitting, which would eat the
+// mocked fetch queue these tests set up for the PI calls. These tests are about the
+// PI logic; the guard has its own coverage in _utils/feedReachability.test.ts, plus
+// the refusal path exercised at the bottom of this file.
+const { mockGuard } = vi.hoisted(() => ({ mockGuard: vi.fn() }));
+vi.mock('./_utils/feedReachability.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./_utils/feedReachability.js')>()),
+  guardFeedSubmission: mockGuard
+}));
+
 // Mock crypto for auth header generation
 vi.mock('crypto', () => ({
   default: {
@@ -34,6 +44,7 @@ describe('pubnotify API', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.resetModules();
+    mockGuard.mockResolvedValue(null); // reachable unless a test says otherwise
     // Set env vars before each test
     process.env.PODCASTINDEX_API_KEY = 'test-api-key';
     process.env.PODCASTINDEX_API_SECRET = 'test-api-secret';
@@ -344,5 +355,35 @@ describe('pubnotify API', () => {
     // Ensure it's NOT a search URL
     const jsonCall = res.json.mock.calls[0][0];
     expect(jsonCall.podcastIndexUrl).not.toContain('search?q=');
+  });
+
+  it('refuses to submit a feed the guard reports as unreachable', async () => {
+    mockGuard.mockResolvedValue({
+      error: "This feed can't be reached — your host returned 403 to our crawler.",
+      reachability: { ok: false, status: 403, contentType: 'text/html', looksLikeFeed: false, reason: 'blocked' }
+    });
+
+    const { default: handler } = await import('./pubnotify');
+    const { req, res } = createMockReqRes({ url: 'https://blocked.example/feed.xml' });
+
+    await handler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      reachability: expect.objectContaining({ reason: 'blocked', status: 403 })
+    }));
+    // Nothing reached Podcast Index.
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('passes the force override through to the guard', async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, text: async () => '{}', json: async () => ({}) });
+
+    const { default: handler } = await import('./pubnotify');
+    const { req, res } = createMockReqRes({ url: 'https://blocked.example/feed.xml', force: '1' });
+
+    await handler(req, res);
+
+    expect(mockGuard).toHaveBeenCalledWith('https://blocked.example/feed.xml', { force: true });
   });
 });

@@ -34,6 +34,8 @@ import { useNostr } from '../../store/nostrStore';
 import { useExperimental } from '../../store/experimentalStore';
 import { checkSignerConnection } from '../../utils/nostrSigner';
 import { getFeedUrlError } from '../../utils/urlValidation';
+import { useFeedReachability } from '../../hooks/useFeedReachability';
+import { isGuardRefusal } from '../../utils/feedReachability';
 import { getValueRecipientErrors } from '../../utils/valueValidation';
 import { ModalWrapper } from './ModalWrapper';
 
@@ -139,6 +141,8 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
   const [nsitePiUrl, setNsitePiUrl] = useState<string | null>(null);
   const [nsiteProgress, setNsiteProgress] = useState<string | null>(null);
   const [podcastIndexSubmitUrl, setPodcastIndexSubmitUrl] = useState('');
+  /** Set when the server refused the PI submit as unreachable; drives the override button. */
+  const [piRefusal, setPiRefusal] = useState<string | null>(null);
   const [podcastIndexResultUrl, setPodcastIndexResultUrl] = useState<string | null>(null);
 
   // Check if feed is linked to current user's Nostr identity
@@ -166,6 +170,12 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
   };
 
   const podcastIndexUrlError = mode === 'podcastIndex' ? getFeedUrlError(podcastIndexSubmitUrl.trim()) : null;
+  // Advisory only — deliberately absent from isButtonDisabled() below, since the
+  // check can be wrong and must never stop a submit. See feedReachability.ts.
+  const { warning: podcastIndexReachWarning } = useFeedReachability(
+    podcastIndexSubmitUrl.trim(),
+    mode === 'podcastIndex' && !podcastIndexUrlError
+  );
 
   // Helper to determine if button should be disabled
   const isButtonDisabled = () => {
@@ -441,7 +451,8 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
     }
   };
 
-  const handleSave = async () => {
+  /** @param forcePiSubmit user clicked "Submit anyway" after a reachability refusal */
+  const handleSave = async (forcePiSubmit = false) => {
     setLoading(true);
     setMessage(null);
     setProgress(null);
@@ -803,23 +814,37 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
             return;
           }
           setPodcastIndexResultUrl(null);
+          setPiRefusal(null);
           const params = new URLSearchParams({ url: submitUrl });
           if (currentFeedGuid) params.set('guid', currentFeedGuid);
           const piMedium = isPublisherMode ? publisherFeed?.medium : album.medium;
           if (piMedium) params.set('medium', piMedium);
+          if (forcePiSubmit) params.set('force', '1');
           const response = await fetch(`/api/pubnotify?${params}`);
           const data = await response.json().catch(() => ({}));
           if (!response.ok) {
+            // The reachability guard refused — offer the override instead of a
+            // bare error, so a wrong verdict is never a dead end.
+            if (isGuardRefusal(data)) {
+              setPiRefusal(data.error);
+              setLoading(false);
+              return;
+            }
             setMessage({ type: 'error', text: (data as { error?: string }).error ?? 'Failed to submit to Podcast Index' });
             setLoading(false);
             return;
           }
+          // An overridden submit never reports a clean success — saying "submitted!"
+          // for a feed nothing can fetch is the bug this whole guard exists to fix.
+          const unreachableNote = forcePiSubmit
+            ? ' Note: the feed was unreachable when we checked, so Podcast Index may not be able to crawl it.'
+            : '';
           if ((data as { podcastIndexUrl?: string }).podcastIndexUrl) {
             setPodcastIndexResultUrl((data as { podcastIndexUrl: string }).podcastIndexUrl);
-            setMessage({ type: 'success', text: 'Feed added to Podcast Index!' });
+            setMessage({ type: 'success', text: `Feed added to Podcast Index!${unreachableNote}` });
           } else {
             setPodcastIndexResultUrl(`https://podcastindex.org/search?q=${encodeURIComponent(submitUrl)}`);
-            setMessage({ type: 'success', text: 'Feed submitted! It may take a moment to appear in the index.' });
+            setMessage({ type: 'success', text: `Feed submitted! It may take a moment to appear in the index.${unreachableNote}` });
           }
           break;
         }
@@ -944,10 +969,20 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
             {!isUploadDone && (
               <button
                 className="btn btn-primary"
-                onClick={handleSave}
+                onClick={() => handleSave()}
                 disabled={isButtonDisabled()}
               >
                 {getButtonText()}
+              </button>
+            )}
+            {mode === 'podcastIndex' && piRefusal && (
+              <button
+                className="btn btn-secondary"
+                onClick={() => handleSave(true)}
+                disabled={loading}
+                title="Submit even though the feed looks unreachable"
+              >
+                Submit anyway
               </button>
             )}
             {mode === 'nostrMusic' && (
@@ -1677,7 +1712,10 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
               <input
                 type="text"
                 value={podcastIndexSubmitUrl}
-                onChange={(e) => setPodcastIndexSubmitUrl(e.target.value)}
+                onChange={(e) => {
+                  setPodcastIndexSubmitUrl(e.target.value);
+                  setPiRefusal(null); // the refusal referred to the previous URL
+                }}
                 placeholder="https://example.com/feed.xml"
                 style={{
                   width: '100%',
@@ -1693,6 +1731,26 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
               {podcastIndexUrlError && (
                 <div style={{ marginTop: '6px', fontSize: '0.8rem', color: 'var(--error, #ef4444)' }}>
                   {podcastIndexUrlError}
+                </div>
+              )}
+              {!podcastIndexUrlError && !piRefusal && podcastIndexReachWarning && (
+                <div style={{ marginTop: '6px', fontSize: '0.8rem', color: 'var(--warning, #f59e0b)' }}>
+                  ⚠️ {podcastIndexReachWarning}
+                </div>
+              )}
+              {piRefusal && (
+                <div style={{
+                  marginTop: '12px',
+                  padding: '12px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--warning, #f59e0b)',
+                  backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                  fontSize: '0.85rem'
+                }}>
+                  <strong>Not submitted.</strong> {piRefusal}
+                  <div style={{ marginTop: '8px', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                    If you're sure the feed is fine, use <strong>Submit anyway</strong> below.
+                  </div>
                 </div>
               )}
               {podcastIndexResultUrl && (

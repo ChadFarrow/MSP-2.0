@@ -3,6 +3,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
 
+// The reachability guard fetches the feed before pinging, which would eat the mocked
+// fetch queue below. These tests are about the podping flow; the guard is covered in
+// _utils/feedReachability.test.ts and by the refusal test at the bottom of this file.
+const { mockGuard } = vi.hoisted(() => ({ mockGuard: vi.fn() }));
+vi.mock('./_utils/feedReachability.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./_utils/feedReachability.js')>()),
+  guardFeedSubmission: mockGuard
+}));
+
 function createMockReqRes(
   method: string,
   query: Record<string, string | undefined>,
@@ -28,6 +37,7 @@ describe('/api/podping', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     vi.resetModules();
+    mockGuard.mockResolvedValue(null); // reachable unless a test says otherwise
     delete process.env.PODPING_ENDPOINT_URL;
     delete process.env.PODPING_BEARER_TOKEN;
 
@@ -158,5 +168,51 @@ describe('/api/podping', () => {
     await handler(req, res);
 
     expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('refuses to ping a feed the guard reports as unreachable', async () => {
+    process.env.PODPING_ENDPOINT_URL = 'https://podping.example/';
+    process.env.PODPING_BEARER_TOKEN = 'secret';
+    mockGuard.mockResolvedValue({
+      error: "This feed can't be reached — your host returned 403 to our crawler.",
+      reachability: { ok: false, status: 403, contentType: 'text/html', looksLikeFeed: false, reason: 'blocked' }
+    });
+
+    const { default: handler } = await import('./podping');
+    const { req, res } = createMockReqRes('GET', { url: 'https://blocked.example/feed.xml' });
+
+    await handler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      reachability: expect.objectContaining({ reason: 'blocked' })
+    }));
+    // Nothing was broadcast to Hive.
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('skips the guard entirely when force is set', async () => {
+    process.env.PODPING_ENDPOINT_URL = 'https://podping.example/';
+    process.env.PODPING_BEARER_TOKEN = 'secret';
+    mockFetch.mockResolvedValue({ ok: true, status: 200, text: async () => '' });
+
+    const { default: handler } = await import('./podping');
+    const { req, res } = createMockReqRes('GET', { url: 'https://blocked.example/feed.xml', force: '1' });
+
+    await handler(req, res);
+
+    expect(mockGuard).toHaveBeenCalledWith('https://blocked.example/feed.xml', { force: true });
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('does not probe before the podping config gate', async () => {
+    // Unconfigured deployment: 501 without spending a reachability probe.
+    const { default: handler } = await import('./podping');
+    const { req, res } = createMockReqRes('GET', { url: 'https://example.com/feed.xml' });
+
+    await handler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(501);
+    expect(mockGuard).not.toHaveBeenCalled();
   });
 });

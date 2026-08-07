@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { ModalWrapper } from './ModalWrapper';
 import { getHostedFeedInfo, buildHostedUrl } from '../../utils/hostedFeed';
 import { getFeedUrlError } from '../../utils/urlValidation';
+import { useFeedReachability } from '../../hooks/useFeedReachability';
+import { isGuardRefusal } from '../../utils/feedReachability';
 
 interface PodpingModalProps {
   onClose: () => void;
@@ -25,6 +27,8 @@ export function PodpingModal({ onClose, feedGuid, medium }: PodpingModalProps) {
   const [podpingUrl, setPodpingUrl] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  /** Set when the server refused the ping as unreachable; drives the override button. */
+  const [refusal, setRefusal] = useState<string | null>(null);
   const [verify, setVerify] = useState<VerifyState>({ status: 'idle' });
   const [verifyJob, setVerifyJob] = useState<{ url: string; id: number; since: number } | null>(null);
   const verifyJobId = useRef(0);
@@ -108,9 +112,10 @@ export function PodpingModal({ onClose, feedGuid, medium }: PodpingModalProps) {
     setVerifyJob(null);
     setVerify({ status: 'idle' });
     setMessage(null);
+    setRefusal(null);
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (force = false) => {
     const url = podpingUrl.trim();
     if (!url) {
       setMessage({ type: 'error', text: 'Please enter a feed URL' });
@@ -119,12 +124,17 @@ export function PodpingModal({ onClose, feedGuid, medium }: PodpingModalProps) {
 
     setSubmitting(true);
     setMessage(null);
+    setRefusal(null);
     setVerifyJob(null);
     setVerify({ status: 'idle' });
 
     try {
-      const body: { url: string; reason: string; medium?: string } = { url, reason: 'update' };
+      const body: { url: string; reason: string; medium?: string; force?: boolean } = {
+        url,
+        reason: 'update'
+      };
       if (medium) body.medium = medium;
+      if (force) body.force = true;
       const response = await fetch('/api/podping', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -132,9 +142,21 @@ export function PodpingModal({ onClose, feedGuid, medium }: PodpingModalProps) {
       });
       if (!response.ok) {
         const data = await response.json().catch(() => ({ error: response.statusText }));
+        // The guard refused: offer the override rather than a dead end.
+        if (isGuardRefusal(data)) {
+          setRefusal(data.error);
+          return;
+        }
         throw new Error(data.error || 'Podping failed');
       }
-      setMessage({ type: 'success', text: 'Podping sent.' });
+      // Never a clean ✅ when the user overrode a refusal — that's the exact
+      // "we said it worked" failure this guard exists to stop.
+      setMessage({
+        type: 'success',
+        text: force
+          ? 'Podping sent — but the feed was unreachable when we checked, so indexers may not be able to fetch it.'
+          : 'Podping sent.'
+      });
       verifyJobId.current += 1;
       setVerify({ status: 'checking' });
       setVerifyJob({ url, id: verifyJobId.current, since: Date.now() });
@@ -146,6 +168,8 @@ export function PodpingModal({ onClose, feedGuid, medium }: PodpingModalProps) {
   };
 
   const urlError = getFeedUrlError(podpingUrl.trim());
+  // Advisory only — a podping to an unreachable feed still sends. See feedReachability.ts.
+  const { warning: reachWarning } = useFeedReachability(podpingUrl.trim(), !urlError);
   const noteStyle = { marginTop: '6px', fontSize: '0.8rem', color: 'var(--text-secondary)' };
 
   return (
@@ -157,11 +181,21 @@ export function PodpingModal({ onClose, feedGuid, medium }: PodpingModalProps) {
         <div style={{ display: 'flex', gap: '12px', width: '100%' }}>
           <button
             className="btn btn-primary"
-            onClick={handleSubmit}
+            onClick={() => handleSubmit()}
             disabled={submitting || !podpingUrl.trim() || !!urlError}
           >
             {submitting ? 'Sending…' : 'Send Podping'}
           </button>
+          {refusal && (
+            <button
+              className="btn btn-secondary"
+              onClick={() => handleSubmit(true)}
+              disabled={submitting}
+              title="Send the podping even though the feed looks unreachable"
+            >
+              Send anyway
+            </button>
+          )}
           <div style={{ flex: 1 }} />
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
         </div>
@@ -195,7 +229,28 @@ export function PodpingModal({ onClose, feedGuid, medium }: PodpingModalProps) {
             {urlError}
           </div>
         )}
+        {!urlError && reachWarning && (
+          <div style={{ marginTop: '6px', fontSize: '0.8rem', color: 'var(--warning, #f59e0b)' }}>
+            ⚠️ {reachWarning}
+          </div>
+        )}
       </div>
+      {refusal && (
+        <div style={{
+          marginTop: '12px',
+          padding: '12px',
+          borderRadius: '8px',
+          border: '1px solid var(--warning, #f59e0b)',
+          backgroundColor: 'rgba(245, 158, 11, 0.1)',
+          fontSize: '0.85rem',
+          color: 'var(--text-primary)'
+        }}>
+          <strong>Not sent.</strong> {refusal}
+          <div style={{ marginTop: '8px', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+            If you're sure the feed is fine, use <strong>Send anyway</strong> below.
+          </div>
+        </div>
+      )}
       {message && (
         <div style={{
           color: message.type === 'error' ? 'var(--error)' : 'var(--success)',

@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import type { PublisherFeed } from '../../../types/feed';
 import { getFeedUrlError } from '../../../utils/urlValidation';
+import { useFeedReachability } from '../../../hooks/useFeedReachability';
+import { isGuardRefusal } from '../../../utils/feedReachability';
 import { Section } from '../../Section';
 import { generatePublisherRssFeed, downloadXml } from '../../../utils/xmlGenerator';
 import {
@@ -25,11 +27,18 @@ export function PublisherFeedReminderSection({ publisherFeed }: PublisherFeedRem
   const [selfHostedUrl, setSelfHostedUrl] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [piResult, setPiResult] = useState<{ success: boolean; message: string } | null>(null);
+  /** Set when the server refused the submit as unreachable; drives the override button. */
+  const [piRefusal, setPiRefusal] = useState<string | null>(null);
 
   const podcastGuid = publisherFeed.podcastGuid;
   const existingInfo = podcastGuid ? getHostedFeedInfo(podcastGuid) : null;
   const isAlreadyHosted = !!existingInfo;
   const selfHostedUrlError = getFeedUrlError(selfHostedUrl.trim());
+  // Advisory only — never gates the submit button. See feedReachability.ts.
+  const { warning: selfHostedReachWarning } = useFeedReachability(
+    selfHostedUrl.trim(),
+    !selfHostedUrlError
+  );
 
   const handleHostOnMSP = async () => {
     if (!podcastGuid) {
@@ -120,23 +129,36 @@ export function PublisherFeedReminderSection({ publisherFeed }: PublisherFeedRem
     downloadXml(xml, `${safeTitle}.xml`);
   };
 
-  const handleSubmitToPodcastIndex = async () => {
+  const handleSubmitToPodcastIndex = async (force = false) => {
     if (!selfHostedUrl.trim()) return;
 
     setIsSubmitting(true);
     setPiResult(null);
+    setPiRefusal(null);
 
     try {
       const params = new URLSearchParams({ url: selfHostedUrl.trim() });
       if (publisherFeed.medium) params.set('medium', publisherFeed.medium);
+      if (force) params.set('force', '1');
       const response = await fetch(`/api/pubnotify?${params}`);
       const data = await response.json();
 
       if (!response.ok) {
+        // The reachability guard refused — offer the override rather than a dead end.
+        if (isGuardRefusal(data)) {
+          setPiRefusal(data.error);
+          return;
+        }
         throw new Error(data.error || 'Failed to submit to Podcast Index');
       }
 
-      setPiResult({ success: true, message: 'Feed submitted to Podcast Index! It may take a moment to appear.' });
+      // An overridden submit is never reported as a clean success.
+      setPiResult({
+        success: true,
+        message: force
+          ? 'Feed submitted — but it was unreachable when we checked, so Podcast Index may not be able to crawl it.'
+          : 'Feed submitted to Podcast Index! It may take a moment to appear.'
+      });
     } catch (err) {
       setPiResult({ success: false, message: err instanceof Error ? err.message : 'Failed to submit' });
     } finally {
@@ -193,7 +215,10 @@ export function PublisherFeedReminderSection({ publisherFeed }: PublisherFeedRem
             <input
               type="text"
               value={selfHostedUrl}
-              onChange={(e) => setSelfHostedUrl(e.target.value)}
+              onChange={(e) => {
+                setSelfHostedUrl(e.target.value);
+                setPiRefusal(null); // the refusal referred to the previous URL
+              }}
               placeholder="https://example.com/publisher-feed.xml"
               style={{
                 flex: 1,
@@ -208,15 +233,44 @@ export function PublisherFeedReminderSection({ publisherFeed }: PublisherFeedRem
             />
             <button
               className="btn btn-secondary"
-              onClick={handleSubmitToPodcastIndex}
+              onClick={() => handleSubmitToPodcastIndex()}
               disabled={isSubmitting || !selfHostedUrl.trim() || !!selfHostedUrlError}
             >
               {isSubmitting ? 'Submitting...' : 'Submit to PI'}
             </button>
+            {piRefusal && (
+              <button
+                className="btn btn-secondary"
+                onClick={() => handleSubmitToPodcastIndex(true)}
+                disabled={isSubmitting}
+                title="Submit even though the feed looks unreachable"
+              >
+                Submit anyway
+              </button>
+            )}
           </div>
           {selfHostedUrlError && (
             <p style={{ color: 'var(--error, #ef4444)', fontSize: '13px', marginTop: '6px', marginBottom: 0 }}>
               {selfHostedUrlError}
+            </p>
+          )}
+          {piRefusal && (
+            <p style={{
+              color: 'var(--text-primary)',
+              fontSize: '13px',
+              marginTop: '8px',
+              marginBottom: 0,
+              padding: '10px',
+              borderRadius: '6px',
+              border: '1px solid var(--warning, #f59e0b)',
+              backgroundColor: 'rgba(245, 158, 11, 0.1)'
+            }}>
+              <strong>Not submitted.</strong> {piRefusal}
+            </p>
+          )}
+          {!selfHostedUrlError && !piRefusal && selfHostedReachWarning && (
+            <p style={{ color: 'var(--warning, #f59e0b)', fontSize: '13px', marginTop: '6px', marginBottom: 0 }}>
+              ⚠️ {selfHostedReachWarning}
             </p>
           )}
           {piResult && (

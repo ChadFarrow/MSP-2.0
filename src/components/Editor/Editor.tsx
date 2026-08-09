@@ -8,7 +8,8 @@ import { detectAddressType } from '../../utils/addressUtils';
 import { getMediaDuration, secondsToHHMMSS, formatDuration, getAudioMimeType, isKnownAudioFormat, resolveMediaSize, hhmmssToSeconds } from '../../utils/audioUtils';
 import { getVideoMimeType } from '../../utils/videoUtils';
 import { isNaddrString, resolveNostrVideo } from '../../utils/nostrVideoConverter';
-import { getFeedUrlError } from '../../utils/urlValidation';
+import { getFeedUrlError, normalizeFeedUrl } from '../../utils/urlValidation';
+import { verifyFeedUrl } from '../../utils/verifyFeedUrl';
 import { InfoIcon } from '../InfoIcon';
 import { Section } from '../Section';
 import { Toggle } from '../Toggle';
@@ -134,7 +135,9 @@ export function Editor() {
   // Submit to Podcast Index state
   const [piSubmitting, setPiSubmitting] = useState(false);
   const [piSubmitResult, setPiSubmitResult] = useState<{ success: boolean; message: string } | null>(null);
-  const publisherFeedUrlError = getFeedUrlError((album.publisher?.feedUrl || '').trim());
+  // Latch: set when the reachability check warns, so a second click submits anyway.
+  const [piBypassVerify, setPiBypassVerify] = useState(false);
+  const publisherFeedUrlError = getFeedUrlError(album.publisher?.feedUrl || '');
 
   // Auto-lookup publisher feed in Podcast Index when URL changes
   const lookupPublisherFeed = useCallback(async (feedUrl: string) => {
@@ -197,21 +200,26 @@ export function Editor() {
 
   // Submit feed to Podcast Index
   const handleSubmitToPI = async () => {
-    const feedUrl = album.publisher?.feedUrl;
-    if (!feedUrl?.trim()) return;
+    // Normalize here too: the store value can arrive from a feed import, which
+    // never passes through the input's onChange.
+    const feedUrl = normalizeFeedUrl(album.publisher?.feedUrl || '');
+    if (!feedUrl) return;
     setPiSubmitting(true);
     setPiSubmitResult(null);
     try {
-      // First validate it's an actual RSS feed
-      const proxyRes = await fetch(`/api/proxy-feed?url=${encodeURIComponent(feedUrl)}`);
-      if (!proxyRes.ok) {
-        setPiSubmitResult({ success: false, message: 'Could not fetch URL - check the address' });
-        return;
-      }
-      const content = await proxyRes.text();
-      if (!content.includes('<rss') && !content.includes('<feed') && !content.includes('<channel')) {
-        setPiSubmitResult({ success: false, message: 'URL does not appear to be an RSS feed' });
-        return;
+      // Check the feed actually resolves. This used to go through /api/proxy-feed,
+      // whose domain allowlist 403s every self-hosted feed — so a perfectly good
+      // URL was reported as "could not fetch" and the submission blocked.
+      if (!piBypassVerify) {
+        const check = await verifyFeedUrl(feedUrl);
+        if (!check.ok) {
+          setPiSubmitResult({
+            success: false,
+            message: `${check.warning} Click again to submit anyway.`
+          });
+          setPiBypassVerify(true);
+          return;
+        }
       }
 
       // Submit to Podcast Index
@@ -686,15 +694,19 @@ export function Editor() {
                 className="form-input"
                 placeholder="https://example.com/publisher-feed.xml"
                 value={album.publisher?.feedUrl || ''}
-                onChange={e => dispatch({
-                  type: 'UPDATE_ALBUM',
-                  payload: {
-                    publisher: {
-                      feedGuid: '',
-                      feedUrl: e.target.value
+                onChange={e => {
+                  setPiBypassVerify(false);
+                  setPiSubmitResult(null);
+                  dispatch({
+                    type: 'UPDATE_ALBUM',
+                    payload: {
+                      publisher: {
+                        feedGuid: '',
+                        feedUrl: normalizeFeedUrl(e.target.value)
+                      }
                     }
-                  }
-                })}
+                  });
+                }}
                 style={publisherFeedUrlError ? { borderColor: 'var(--error, #ef4444)' } : undefined}
               />
               {publisherFeedUrlError && (
@@ -720,7 +732,9 @@ export function Editor() {
                         disabled={piSubmitting || !!publisherFeedUrlError}
                         style={{ fontSize: '12px', padding: '6px 12px' }}
                       >
-                        {piSubmitting ? 'Submitting...' : 'Submit to Podcast Index'}
+                        {piSubmitting
+                          ? 'Submitting...'
+                          : piBypassVerify ? 'Submit anyway' : 'Submit to Podcast Index'}
                       </button>
                       {piSubmitResult && (
                         <span style={{

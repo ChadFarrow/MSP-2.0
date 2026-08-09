@@ -1,15 +1,21 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getAuthHeaders } from './_utils/podcastIndex.js';
-import { getFeedUrlError } from './_utils/urlValidation.js';
+import { getFeedUrlError, normalizeFeedUrl } from './_utils/urlValidation.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { url } = req.body;
+  const { url: rawUrl } = req.body;
 
-  if (!url || typeof url !== 'string') {
+  if (!rawUrl || typeof rawUrl !== 'string') {
+    return res.status(400).json({ error: 'Missing url parameter' });
+  }
+
+  // Strip paste whitespace before validating — see the note in pubnotify.ts.
+  const url = normalizeFeedUrl(rawUrl);
+  if (!url) {
     return res.status(400).json({ error: 'Missing url parameter' });
   }
 

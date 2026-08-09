@@ -6,6 +6,9 @@ import { getClientIp } from './_utils/urlSafety.js';
 import { guardFeedSubmission, wantsForce } from './_utils/feedReachability.js';
 
 const RATE_LIMIT = { limit: 10, windowMs: 3600_000 };
+// The limiter is one shared Map keyed by plain strings, so every endpoint
+// namespaces its own. See _utils/rateLimiter.ts.
+const RATE_LIMIT_PREFIX = 'podping:';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET' && req.method !== 'POST') {
@@ -42,7 +45,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const ip = getClientIp(req);
-  const rate = checkRateLimit(ip, RATE_LIMIT);
+  const rate = checkRateLimit(`${RATE_LIMIT_PREFIX}${ip}`, RATE_LIMIT);
   if (!rate.allowed) {
     res.setHeader('Retry-After', Math.ceil(rate.retryAfterMs / 1000));
     return res.status(429).json({ error: 'Too many podping requests. Try again later.' });

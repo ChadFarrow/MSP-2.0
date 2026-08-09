@@ -168,6 +168,27 @@ describe('/api/podping', () => {
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
+  // The limiter is one shared Map. If this endpoint ever drops its key prefix it
+  // starts sharing a bucket with any other unprefixed caller, and the symptom —
+  // podping refusing because of traffic somewhere else — looks nothing like the
+  // cause. Exhausting the bare-IP key must leave podping untouched.
+  it('namespaces its rate-limit key rather than using the bare IP', async () => {
+    process.env.PODPING_ENDPOINT_URL = 'https://podping.example/';
+    process.env.PODPING_BEARER_TOKEN = 'secret';
+    mockFetch.mockResolvedValue({ ok: true, status: 200, text: async () => '' });
+
+    const { checkRateLimit } = await import('./_utils/rateLimiter');
+    for (let i = 0; i < 10; i++) {
+      checkRateLimit('9.9.9.9', { limit: 10, windowMs: 3600_000 });
+    }
+
+    const { default: handler } = await import('./podping');
+    const { req, res } = createMockReqRes('GET', { url: 'https://example.com/feed.xml' }, '9.9.9.9');
+    await handler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
   describe('reachability guard', () => {
     it('refuses to podping a feed whose host blocks crawlers', async () => {
       process.env.PODPING_ENDPOINT_URL = 'https://podping.example/';

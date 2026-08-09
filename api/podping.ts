@@ -3,6 +3,7 @@ import { notifyPodping, isPodpingConfigured } from './_utils/feedUtils.js';
 import { checkRateLimit } from './_utils/rateLimiter.js';
 import { getFeedUrlError, normalizeFeedUrl } from './_utils/urlValidation.js';
 import { getClientIp } from './_utils/urlSafety.js';
+import { guardFeedSubmission, wantsForce } from './_utils/feedReachability.js';
 
 const RATE_LIMIT = { limit: 10, windowMs: 3600_000 };
 
@@ -12,10 +13,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const source = req.method === 'GET' ? req.query : req.body ?? {};
-  const { url: rawUrl, reason, medium } = source as {
+  const { url: rawUrl, reason, medium, force } = source as {
     url?: string;
     reason?: string;
     medium?: string;
+    force?: unknown;
   };
 
   if (!rawUrl || typeof rawUrl !== 'string') {
@@ -48,6 +50,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (!isPodpingConfigured()) {
     return res.status(501).json({ error: 'Podping not configured on this deployment' });
+  }
+
+  // A podping for an unfetchable feed is worse than useless: it lands on Hive,
+  // every indexer dutifully goes to crawl, they all get the same 403 — and the
+  // user sees "✅ Podping received" and assumes it worked. Checked after the
+  // config gate so an unconfigured deployment never probes for nothing.
+  const refusal = await guardFeedSubmission(url, { force: wantsForce(force), clientIp: ip });
+  if (refusal) {
+    return res.status(400).json(refusal);
   }
 
   const result = await notifyPodping(url, { reason, medium });

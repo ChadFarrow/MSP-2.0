@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { ModalWrapper } from './ModalWrapper';
 import { getHostedFeedInfo, buildHostedUrl } from '../../utils/hostedFeed';
 import { getFeedUrlError, normalizeFeedUrl } from '../../utils/urlValidation';
-import { verifyFeedUrl } from '../../utils/verifyFeedUrl';
+import { verifyFeedUrl, isGuardRefusal } from '../../utils/verifyFeedUrl';
 
 interface PodpingModalProps {
   onClose: () => void;
@@ -125,8 +125,12 @@ export function PodpingModal({ onClose, feedGuid, medium }: PodpingModalProps) {
       return;
     }
 
+    // The latch doubles as the override: set by the check below or by a server
+    // refusal, and cleared whenever the URL changes.
+    const force = bypassReachCheck;
+
     // Pinging a URL that doesn't resolve tells indexers to re-crawl nothing.
-    if (!bypassReachCheck) {
+    if (!force) {
       setChecking(true);
       const reach = await verifyFeedUrl(url);
       setChecking(false);
@@ -144,8 +148,9 @@ export function PodpingModal({ onClose, feedGuid, medium }: PodpingModalProps) {
     setVerify({ status: 'idle' });
 
     try {
-      const body: { url: string; reason: string; medium?: string } = { url, reason: 'update' };
+      const body: { url: string; reason: string; medium?: string; force?: boolean } = { url, reason: 'update' };
       if (medium) body.medium = medium;
+      if (force) body.force = true;
       const response = await fetch('/api/podping', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -153,9 +158,21 @@ export function PodpingModal({ onClose, feedGuid, medium }: PodpingModalProps) {
       });
       if (!response.ok) {
         const data = await response.json().catch(() => ({ error: response.statusText }));
+        // The server saw a block our own check missed. Surface it and arm the
+        // latch, so the button becomes "Send anyway" rather than a dead end.
+        if (isGuardRefusal(data)) {
+          setReachWarning(data.error);
+          setBypassReachCheck(true);
+          return;
+        }
         throw new Error(data.error || 'Podping failed');
       }
-      setMessage({ type: 'success', text: 'Podping sent.' });
+      setMessage({
+        type: 'success',
+        text: force
+          ? 'Podping sent — but the feed was unreachable when we checked, so indexers may not be able to fetch it.'
+          : 'Podping sent.'
+      });
       verifyJobId.current += 1;
       setVerify({ status: 'checking' });
       setVerifyJob({ url, id: verifyJobId.current, since: Date.now() });

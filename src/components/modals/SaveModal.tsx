@@ -34,7 +34,7 @@ import { useNostr } from '../../store/nostrStore';
 import { useExperimental } from '../../store/experimentalStore';
 import { checkSignerConnection } from '../../utils/nostrSigner';
 import { getFeedUrlError, normalizeFeedUrl } from '../../utils/urlValidation';
-import { verifyFeedUrl } from '../../utils/verifyFeedUrl';
+import { verifyFeedUrl, isGuardRefusal, FORCED_SUBMIT_NOTE } from '../../utils/verifyFeedUrl';
 import { getValueRecipientErrors } from '../../utils/valueValidation';
 import { ModalWrapper } from './ModalWrapper';
 
@@ -623,6 +623,12 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
             nsiteSiteId,
             (status) => setNsiteProgress(status)
           );
+          // Nobody types this URL, so there is no field to warn beside — but the
+          // nsite gateway is a third-party host like any other, and the submit
+          // guard can refuse it. Saying "Feed submitted to Podcast Index"
+          // regardless is the exact false success this feature exists to stop.
+          const PI_RETRY_HINT = ' Feed published, but the Podcast Index submission failed — use Save → Submit to PodcastIndex to retry.';
+          let piNote = '';
           if (nsiteResult.success) {
             if (nsiteResult.nsiteUrl) {
               setNsiteUrl(nsiteResult.nsiteUrl);
@@ -633,12 +639,22 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                 const piParams = new URLSearchParams({ url: nsiteResult.nsiteUrl, guid: currentFeedGuid });
                 if (piMedium) piParams.set('medium', piMedium);
                 const piRes = await fetch(`/api/pubnotify?${piParams.toString()}`);
+                const piData = await piRes.json().catch(() => ({}));
                 if (piRes.ok) {
-                  const piData = await piRes.json();
                   if (piData.podcastIndexUrl) setNsitePiUrl(piData.podcastIndexUrl);
+                  piNote = ' Feed submitted to Podcast Index.';
+                } else if (isGuardRefusal(piData)) {
+                  // Deliberately not retried with force: the recovery path is the
+                  // manual "Submit to PodcastIndex" mode in this same modal, which
+                  // has the override. Forcing here would disable the guard on the
+                  // riskiest path in the app.
+                  piNote = ` Not submitted to Podcast Index: ${piData.error}`;
+                } else {
+                  piNote = PI_RETRY_HINT;
                 }
               } catch {
                 // Non-fatal — feed is already published to nsite
+                piNote = PI_RETRY_HINT;
               }
             }
             if (nsiteResult.blossomUrl) setNsiteBlossomUrl(nsiteResult.blossomUrl);
@@ -646,9 +662,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
           setNsiteProgress(null);
           setMessage({
             type: nsiteResult.success ? 'success' : 'error',
-            text: nsiteResult.success
-              ? nsiteResult.message + ' Feed submitted to Podcast Index.'
-              : nsiteResult.message
+            text: nsiteResult.success ? nsiteResult.message + piNote : nsiteResult.message
           });
           break;
         }
@@ -818,7 +832,10 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
           }
           // Confirm the URL actually resolves before handing it to PI — a broken
           // entry there sticks around. Advisory: a second click submits anyway.
-          if (!podcastIndexBypassVerify) {
+          // The latch doubles as the override: set by this check or by a server
+          // refusal, and cleared whenever the URL changes.
+          const forcePiSubmit = podcastIndexBypassVerify;
+          if (!forcePiSubmit) {
             setVerifying(true);
             const check = await verifyFeedUrl(submitUrl);
             setVerifying(false);
@@ -835,19 +852,29 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
           if (currentFeedGuid) params.set('guid', currentFeedGuid);
           const piMedium = isPublisherMode ? publisherFeed?.medium : album.medium;
           if (piMedium) params.set('medium', piMedium);
+          if (forcePiSubmit) params.set('force', '1');
           const response = await fetch(`/api/pubnotify?${params}`);
           const data = await response.json().catch(() => ({}));
           if (!response.ok) {
+            // The server saw a block our own check missed. Arm the latch so the
+            // button becomes "Submit anyway" rather than a dead end.
+            if (isGuardRefusal(data)) {
+              setPodcastIndexVerifyWarning(data.error);
+              setPodcastIndexBypassVerify(true);
+              setLoading(false);
+              return;
+            }
             setMessage({ type: 'error', text: (data as { error?: string }).error ?? 'Failed to submit to Podcast Index' });
             setLoading(false);
             return;
           }
+          const forcedNote = forcePiSubmit ? FORCED_SUBMIT_NOTE : '';
           if ((data as { podcastIndexUrl?: string }).podcastIndexUrl) {
             setPodcastIndexResultUrl((data as { podcastIndexUrl: string }).podcastIndexUrl);
-            setMessage({ type: 'success', text: 'Feed added to Podcast Index!' });
+            setMessage({ type: 'success', text: `Feed added to Podcast Index!${forcedNote}` });
           } else {
             setPodcastIndexResultUrl(`https://podcastindex.org/search?q=${encodeURIComponent(submitUrl)}`);
-            setMessage({ type: 'success', text: 'Feed submitted! It may take a moment to appear in the index.' });
+            setMessage({ type: 'success', text: `Feed submitted! It may take a moment to appear in the index.${forcedNote}` });
           }
           break;
         }

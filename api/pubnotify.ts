@@ -2,13 +2,15 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getAuthHeaders } from './_utils/podcastIndex.js';
 import { notifyPodping, isPodpingConfigured } from './_utils/feedUtils.js';
 import { getFeedUrlError, normalizeFeedUrl } from './_utils/urlValidation.js';
+import { guardFeedSubmission, wantsForce } from './_utils/feedReachability.js';
+import { getClientIp } from './_utils/urlSafety.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { url: rawUrl, guid, medium } = req.query;
+  const { url: rawUrl, guid, medium, force } = req.query;
 
   if (!rawUrl || typeof rawUrl !== 'string') {
     return res.status(400).json({ error: 'Missing url parameter' });
@@ -38,6 +40,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const urlError = getFeedUrlError(url);
   if (urlError) {
     return res.status(400).json({ error: urlError });
+  }
+
+  // Don't register a feed crawlers can't fetch. Podcast Index keeps the entry
+  // forever as a permanently blank record while we tell the user it worked.
+  // Refuses only on a confirmed block and fails open otherwise; `force=1` is the
+  // user's explicit "Submit anyway".
+  const refusal = await guardFeedSubmission(url, { force: wantsForce(force), clientIp: getClientIp(req) });
+  if (refusal) {
+    return res.status(400).json(refusal);
   }
 
   try {

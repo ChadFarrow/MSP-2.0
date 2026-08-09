@@ -9,7 +9,7 @@ import { getMediaDuration, secondsToHHMMSS, formatDuration, getAudioMimeType, is
 import { getVideoMimeType } from '../../utils/videoUtils';
 import { isNaddrString, resolveNostrVideo } from '../../utils/nostrVideoConverter';
 import { getFeedUrlError, normalizeFeedUrl } from '../../utils/urlValidation';
-import { verifyFeedUrl } from '../../utils/verifyFeedUrl';
+import { verifyFeedUrl, isGuardRefusal, FORCED_SUBMIT_NOTE } from '../../utils/verifyFeedUrl';
 import { InfoIcon } from '../InfoIcon';
 import { Section } from '../Section';
 import { Toggle } from '../Toggle';
@@ -210,7 +210,10 @@ export function Editor() {
       // Check the feed actually resolves. This used to go through /api/proxy-feed,
       // whose domain allowlist 403s every self-hosted feed — so a perfectly good
       // URL was reported as "could not fetch" and the submission blocked.
-      if (!piBypassVerify) {
+      // The latch doubles as the override: set by this check or by a server
+      // refusal, and cleared whenever the URL changes.
+      const force = piBypassVerify;
+      if (!force) {
         const check = await verifyFeedUrl(feedUrl);
         if (!check.ok) {
           setPiSubmitResult({
@@ -226,11 +229,19 @@ export function Editor() {
       const response = await fetch('/api/pisubmit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: feedUrl })
+        body: JSON.stringify({ url: feedUrl, ...(force ? { force: true } : {}) })
       });
       const data = await response.json();
       if (response.ok && data.success) {
-        setPiSubmitResult({ success: true, message: 'Submitted! May take a few minutes to index.' });
+        setPiSubmitResult({
+          success: true,
+          message: `Submitted! May take a few minutes to index.${force ? FORCED_SUBMIT_NOTE : ''}`
+        });
+      } else if (isGuardRefusal(data)) {
+        // The server saw a block our own check missed. Arm the latch so the
+        // button becomes "Submit anyway" rather than a dead end.
+        setPiSubmitResult({ success: false, message: `${data.error} Click again to submit anyway.` });
+        setPiBypassVerify(true);
       } else {
         setPiSubmitResult({ success: false, message: data.error || data.details?.description || 'Failed to submit' });
       }

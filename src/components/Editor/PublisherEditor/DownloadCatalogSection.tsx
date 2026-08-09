@@ -5,7 +5,7 @@ import { fetchFeedFromUrl, parseRssFeed } from '../../../utils/xmlParser';
 import { generateRssFeed, downloadXml } from '../../../utils/xmlGenerator';
 import { getHostedFeedInfo, buildHostedUrl } from '../../../utils/hostedFeed';
 import { getFeedUrlError, normalizeFeedUrl } from '../../../utils/urlValidation';
-import { verifyFeedUrl } from '../../../utils/verifyFeedUrl';
+import { verifyFeedUrl, isGuardRefusal, FORCED_SUBMIT_NOTE } from '../../../utils/verifyFeedUrl';
 
 interface DownloadCatalogSectionProps {
   publisherFeed: PublisherFeed;
@@ -86,7 +86,10 @@ export function DownloadCatalogSection({ publisherFeed, feedInstance }: Download
     try {
       // Confirm the URL resolves before registering it — a broken entry sticks
       // around in Podcast Index.
-      if (!bypassVerify) {
+      // The latch doubles as the override: set by this check or by a server
+      // refusal, and cleared whenever the URL changes.
+      const force = bypassVerify;
+      if (!force) {
         const check = await verifyFeedUrl(feedUrl);
         if (!check.ok) {
           setSubmitResult({ success: false, message: `${check.warning} Click again to submit anyway.` });
@@ -98,17 +101,23 @@ export function DownloadCatalogSection({ publisherFeed, feedInstance }: Download
       const response = await fetch('/api/pisubmit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: feedUrl })
+        body: JSON.stringify({ url: feedUrl, ...(force ? { force: true } : {}) })
       });
       const data = await response.json();
 
       if (response.ok && data.success) {
-        setSubmitResult({ success: true, message: data.message || 'Feed submitted! It may take a few minutes to be indexed.' });
+        setSubmitResult({
+          success: true,
+          message: `${data.message || 'Feed submitted! It may take a few minutes to be indexed.'}${force ? FORCED_SUBMIT_NOTE : ''}`
+        });
         // Re-check after a short delay
         setTimeout(() => {
           setUrlValidation('idle');
           setPiCheckNonce(n => n + 1);
         }, 2000);
+      } else if (isGuardRefusal(data)) {
+        setSubmitResult({ success: false, message: `${data.error} Click again to submit anyway.` });
+        setBypassVerify(true);
       } else {
         const errorMsg = data.error || data.details?.description || 'Failed to submit feed';
         setSubmitResult({ success: false, message: errorMsg });

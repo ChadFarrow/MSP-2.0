@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useFeed } from '../../store/feedStore';
 import { useNostr } from '../../store/nostrStore';
 import { LANGUAGES, PERSON_GROUPS, PERSON_ROLES, createEmptyPersonRole, createEmptyTrack, isVideoMedium, isCommunitySupport, createSupportRecipients, hasUserRecipients } from '../../types/feed';
@@ -9,6 +9,7 @@ import { getMediaDuration, secondsToHHMMSS, formatDuration, getAudioMimeType, is
 import { getVideoMimeType } from '../../utils/videoUtils';
 import { isNaddrString, resolveNostrVideo } from '../../utils/nostrVideoConverter';
 import { getFeedUrlError, normalizeFeedUrl } from '../../utils/urlValidation';
+import { trackOrderIssue } from '../../utils/trackOrder';
 import { verifyFeedUrl, isGuardRefusal, FORCED_SUBMIT_NOTE } from '../../utils/verifyFeedUrl';
 import { InfoIcon } from '../InfoIcon';
 import { Section } from '../Section';
@@ -254,6 +255,10 @@ export function Editor() {
 
   // Determine if this is a video feed
   const isVideo = isVideoMedium(album.medium);
+
+  // Feeds built or imported before pub dates were kept in sync with list order can still be
+  // out of order; offer a one-click repair rather than rewriting an import behind their back.
+  const orderIssue = useMemo(() => trackOrderIssue(album.tracks), [album.tracks]);
 
   const toggleTrackCollapse = (trackId: string) => {
     setCollapsedTracks(prev => ({
@@ -778,6 +783,22 @@ export function Editor() {
 
           {/* Tracks/Videos Section */}
           <Section title={isVideo ? "Videos" : "Tracks"} icon={isVideo ? "🎬" : "🎵"}>
+            {orderIssue && (
+              <div className="track-order-warning">
+                <span>
+                  {orderIssue === 'reversed'
+                    ? `These ${isVideo ? 'videos' : 'tracks'} look like they're in reverse order — ${isVideo ? 'video' : 'track'} 1 is at the bottom.`
+                    : `Pub dates don't match this order, so apps may play these ${isVideo ? 'videos' : 'tracks'} out of order.`}
+                </span>
+                <button
+                  className="btn btn-warning"
+                  onClick={() => dispatch({ type: 'FIX_TRACK_ORDER' })}
+                  style={{ fontSize: '0.875rem', padding: '4px 12px', whiteSpace: 'nowrap' }}
+                >
+                  {orderIssue === 'reversed' ? 'Reverse order' : 'Fix pub dates'}
+                </button>
+              </div>
+            )}
             {album.tracks.length > 0 && (
               <div style={{ marginBottom: '12px', textAlign: 'right' }}>
                 <button

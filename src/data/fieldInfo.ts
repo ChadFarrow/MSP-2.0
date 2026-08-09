@@ -58,7 +58,7 @@ export const FIELD_INFO = {
   trackTitle: "The song title.",
   trackDescription: "Optional description or notes about the track.",
   trackDuration: "Total duration in HH:MM:SS format. Required for podcast apps.",
-  trackPubDate: "Publication date/time for this track. Used for sorting and display in podcast apps.",
+  trackPubDate: "Publication date/time for this track. Filled in automatically and kept in order for you — podcast apps sort newest-first, so track 1 gets the newest date and the album plays top to bottom. Only change this if a track has a real release date of its own; setting them out of order will play the album out of order.",
   trackSeason: "Season number for grouping tracks (e.g., 1 for first album). Optional.",
   trackEpisode: "Episode number for this track. Defaults to track order if not set.",
   enclosureUrl: "Direct link to the audio file. MP3 is preferred — smaller file size saves bandwidth for listeners. Other formats (flac, wav, m4a, aac, ogg, opus, aiff) are also supported. Ensure CORS policy allows access.",

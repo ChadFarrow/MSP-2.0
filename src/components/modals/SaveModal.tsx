@@ -33,7 +33,8 @@ import { NostrConnectModal } from './NostrConnectModal';
 import { useNostr } from '../../store/nostrStore';
 import { useExperimental } from '../../store/experimentalStore';
 import { checkSignerConnection } from '../../utils/nostrSigner';
-import { getFeedUrlError } from '../../utils/urlValidation';
+import { getFeedUrlError, normalizeFeedUrl } from '../../utils/urlValidation';
+import { verifyFeedUrl } from '../../utils/verifyFeedUrl';
 import { getValueRecipientErrors } from '../../utils/valueValidation';
 import { ModalWrapper } from './ModalWrapper';
 
@@ -140,6 +141,17 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
   const [nsiteProgress, setNsiteProgress] = useState<string | null>(null);
   const [podcastIndexSubmitUrl, setPodcastIndexSubmitUrl] = useState('');
   const [podcastIndexResultUrl, setPodcastIndexResultUrl] = useState<string | null>(null);
+  // Reachability warning + the "Submit anyway" latch that lets the user override it.
+  const [podcastIndexVerifyWarning, setPodcastIndexVerifyWarning] = useState<string | null>(null);
+  const [podcastIndexBypassVerify, setPodcastIndexBypassVerify] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+
+  const handlePodcastIndexUrlChange = (value: string) => {
+    setPodcastIndexSubmitUrl(normalizeFeedUrl(value));
+    // A warning (and the permission to ignore it) belongs to the old URL.
+    setPodcastIndexVerifyWarning(null);
+    setPodcastIndexBypassVerify(false);
+  };
 
   // Check if feed is linked to current user's Nostr identity
   const isNostrLinked = hostedInfo?.ownerPubkey && nostrState.user?.pubkey === hostedInfo.ownerPubkey;
@@ -154,18 +166,20 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
       if (mode === 'nostrMusic' || mode === 'blossom' || mode === 'hosted' || mode === 'nsite') return 'Uploading...';
       if (mode === 'download') return 'Downloading...';
       if (mode === 'clipboard') return 'Copying...';
-      if (mode === 'podcastIndex') return 'Submitting...';
+      if (mode === 'podcastIndex') return verifying ? 'Checking URL…' : 'Submitting...';
       return 'Saving...';
     }
     if (mode === 'nostrMusic') return 'Publish';
     if (mode === 'blossom' || mode === 'hosted' || mode === 'nsite') return 'Upload';
     if (mode === 'download') return 'Download';
     if (mode === 'clipboard') return 'Copy to Clipboard';
-    if (mode === 'podcastIndex') return 'Submit to PodcastIndex';
+    if (mode === 'podcastIndex') {
+      return podcastIndexBypassVerify ? 'Submit anyway' : 'Submit to PodcastIndex';
+    }
     return 'Save';
   };
 
-  const podcastIndexUrlError = mode === 'podcastIndex' ? getFeedUrlError(podcastIndexSubmitUrl.trim()) : null;
+  const podcastIndexUrlError = mode === 'podcastIndex' ? getFeedUrlError(podcastIndexSubmitUrl) : null;
 
   // Helper to determine if button should be disabled
   const isButtonDisabled = () => {
@@ -791,7 +805,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
           }
           break;
         case 'podcastIndex': {
-          const submitUrl = podcastIndexSubmitUrl.trim();
+          const submitUrl = normalizeFeedUrl(podcastIndexSubmitUrl);
           if (!submitUrl) {
             setMessage({ type: 'error', text: 'Feed URL is required' });
             setLoading(false);
@@ -802,6 +816,20 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
             setLoading(false);
             return;
           }
+          // Confirm the URL actually resolves before handing it to PI — a broken
+          // entry there sticks around. Advisory: a second click submits anyway.
+          if (!podcastIndexBypassVerify) {
+            setVerifying(true);
+            const check = await verifyFeedUrl(submitUrl);
+            setVerifying(false);
+            if (!check.ok) {
+              setPodcastIndexVerifyWarning(check.warning);
+              setPodcastIndexBypassVerify(true);
+              setLoading(false);
+              return;
+            }
+          }
+          setPodcastIndexVerifyWarning(null);
           setPodcastIndexResultUrl(null);
           const params = new URLSearchParams({ url: submitUrl });
           if (currentFeedGuid) params.set('guid', currentFeedGuid);
@@ -828,6 +856,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Save failed' });
     } finally {
       setLoading(false);
+      setVerifying(false);
       setProgress(null);
     }
   };
@@ -1677,7 +1706,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
               <input
                 type="text"
                 value={podcastIndexSubmitUrl}
-                onChange={(e) => setPodcastIndexSubmitUrl(e.target.value)}
+                onChange={(e) => handlePodcastIndexUrlChange(e.target.value)}
                 placeholder="https://example.com/feed.xml"
                 style={{
                   width: '100%',
@@ -1693,6 +1722,11 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
               {podcastIndexUrlError && (
                 <div style={{ marginTop: '6px', fontSize: '0.8rem', color: 'var(--error, #ef4444)' }}>
                   {podcastIndexUrlError}
+                </div>
+              )}
+              {!podcastIndexUrlError && podcastIndexVerifyWarning && (
+                <div style={{ marginTop: '6px', fontSize: '0.8rem', color: 'var(--warning-color, #f59e0b)' }}>
+                  ⚠ {podcastIndexVerifyWarning} Submit anyway if you're sure.
                 </div>
               )}
               {podcastIndexResultUrl && (

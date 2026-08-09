@@ -1,20 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { notifyPodping, isPodpingConfigured } from './_utils/feedUtils.js';
 import { checkRateLimit } from './_utils/rateLimiter.js';
-import { getFeedUrlError } from './_utils/urlValidation.js';
+import { getFeedUrlError, normalizeFeedUrl } from './_utils/urlValidation.js';
+import { getClientIp } from './_utils/urlSafety.js';
 
 const RATE_LIMIT = { limit: 10, windowMs: 3600_000 };
-
-function getClientIp(req: VercelRequest): string {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string') {
-    return forwarded.split(',')[0].trim();
-  }
-  if (Array.isArray(forwarded) && forwarded.length > 0) {
-    return forwarded[0].split(',')[0].trim();
-  }
-  return 'unknown';
-}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET' && req.method !== 'POST') {
@@ -22,13 +12,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const source = req.method === 'GET' ? req.query : req.body ?? {};
-  const { url, reason, medium } = source as {
+  const { url: rawUrl, reason, medium } = source as {
     url?: string;
     reason?: string;
     medium?: string;
   };
 
-  if (!url || typeof url !== 'string') {
+  if (!rawUrl || typeof rawUrl !== 'string') {
+    return res.status(400).json({ error: 'Missing url parameter' });
+  }
+
+  // Strip paste whitespace before validating — see the note in pubnotify.ts.
+  const url = normalizeFeedUrl(rawUrl);
+  if (!url) {
     return res.status(400).json({ error: 'Missing url parameter' });
   }
 

@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { ModalWrapper } from './ModalWrapper';
 import { getHostedFeedInfo, buildHostedUrl } from '../../utils/hostedFeed';
-import { getFeedUrlError } from '../../utils/urlValidation';
+import { getFeedUrlError, normalizeFeedUrl } from '../../utils/urlValidation';
+import { verifyFeedUrl } from '../../utils/verifyFeedUrl';
 
 interface PodpingModalProps {
   onClose: () => void;
@@ -28,6 +29,11 @@ export function PodpingModal({ onClose, feedGuid, medium }: PodpingModalProps) {
   const [verify, setVerify] = useState<VerifyState>({ status: 'idle' });
   const [verifyJob, setVerifyJob] = useState<{ url: string; id: number; since: number } | null>(null);
   const verifyJobId = useRef(0);
+  // Reachability pre-check (distinct from the on-chain Hive verification below):
+  // a warning plus the latch that lets a second click send the ping regardless.
+  const [checking, setChecking] = useState(false);
+  const [reachWarning, setReachWarning] = useState<string | null>(null);
+  const [bypassReachCheck, setBypassReachCheck] = useState(false);
 
   useEffect(() => {
     if (!feedGuid) return;
@@ -103,19 +109,34 @@ export function PodpingModal({ onClose, feedGuid, medium }: PodpingModalProps) {
   }, [verifyJob]);
 
   const handleUrlChange = (value: string) => {
-    setPodpingUrl(value);
+    setPodpingUrl(normalizeFeedUrl(value));
     // The old result refers to a different feed now.
     setVerifyJob(null);
     setVerify({ status: 'idle' });
     setMessage(null);
+    setReachWarning(null);
+    setBypassReachCheck(false);
   };
 
   const handleSubmit = async () => {
-    const url = podpingUrl.trim();
+    const url = normalizeFeedUrl(podpingUrl);
     if (!url) {
       setMessage({ type: 'error', text: 'Please enter a feed URL' });
       return;
     }
+
+    // Pinging a URL that doesn't resolve tells indexers to re-crawl nothing.
+    if (!bypassReachCheck) {
+      setChecking(true);
+      const reach = await verifyFeedUrl(url);
+      setChecking(false);
+      if (!reach.ok) {
+        setReachWarning(reach.warning);
+        setBypassReachCheck(true);
+        return;
+      }
+    }
+    setReachWarning(null);
 
     setSubmitting(true);
     setMessage(null);
@@ -145,7 +166,7 @@ export function PodpingModal({ onClose, feedGuid, medium }: PodpingModalProps) {
     }
   };
 
-  const urlError = getFeedUrlError(podpingUrl.trim());
+  const urlError = getFeedUrlError(podpingUrl);
   const noteStyle = { marginTop: '6px', fontSize: '0.8rem', color: 'var(--text-secondary)' };
 
   return (
@@ -158,9 +179,15 @@ export function PodpingModal({ onClose, feedGuid, medium }: PodpingModalProps) {
           <button
             className="btn btn-primary"
             onClick={handleSubmit}
-            disabled={submitting || !podpingUrl.trim() || !!urlError}
+            disabled={submitting || checking || !podpingUrl || !!urlError}
           >
-            {submitting ? 'Sending…' : 'Send Podping'}
+            {checking
+              ? 'Checking URL…'
+              : submitting
+                ? 'Sending…'
+                : bypassReachCheck
+                  ? 'Send anyway'
+                  : 'Send Podping'}
           </button>
           <div style={{ flex: 1 }} />
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
@@ -193,6 +220,11 @@ export function PodpingModal({ onClose, feedGuid, medium }: PodpingModalProps) {
         {urlError && (
           <div style={{ marginTop: '6px', fontSize: '0.8rem', color: 'var(--error, #ef4444)' }}>
             {urlError}
+          </div>
+        )}
+        {!urlError && reachWarning && (
+          <div style={{ marginTop: '6px', fontSize: '0.8rem', color: 'var(--warning-color, #f59e0b)' }}>
+            ⚠ {reachWarning} Send anyway if you're sure.
           </div>
         )}
       </div>

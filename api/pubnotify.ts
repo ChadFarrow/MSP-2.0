@@ -1,16 +1,24 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getAuthHeaders } from './_utils/podcastIndex.js';
 import { notifyPodping, isPodpingConfigured } from './_utils/feedUtils.js';
-import { getFeedUrlError } from './_utils/urlValidation.js';
+import { getFeedUrlError, normalizeFeedUrl } from './_utils/urlValidation.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { url, guid, medium } = req.query;
+  const { url: rawUrl, guid, medium } = req.query;
 
-  if (!url || typeof url !== 'string') {
+  if (!rawUrl || typeof rawUrl !== 'string') {
+    return res.status(400).json({ error: 'Missing url parameter' });
+  }
+
+  // Strip whitespace a copy/paste dragged along before anything looks at the URL.
+  // new URL() tolerates edge spaces, so without this the format check below passes
+  // and getFeedUrlError then rejects a URL the user sees as perfectly clean.
+  const url = normalizeFeedUrl(rawUrl);
+  if (!url) {
     return res.status(400).json({ error: 'Missing url parameter' });
   }
 

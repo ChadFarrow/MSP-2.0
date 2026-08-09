@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import type { Album, Track, Person, PersonRole, ValueRecipient, Funding, PublisherFeed, RemoteItem, FeedType } from '../types/feed';
 import { createEmptyAlbum, createEmptyTrack, createEmptyPerson, createEmptyPersonRole, createEmptyRecipient, createEmptyFunding, createEmptyPublisherFeed, createEmptyRemoteItem, createEmptyVideoAlbum, createSupportRecipients, isCommunitySupport, hasUserRecipients, fillPersonalSplitDefault, rebalancePersonalForSupport } from '../types/feed';
 import { albumStorage, videoStorage, publisherStorage, feedTypeStorage } from '../utils/storage';
+import { nextTrackPubDate, resequenceTrackDates, trackOrderIssue } from '../utils/trackOrder';
 
 export type { FeedType };
 
@@ -27,6 +28,7 @@ export type FeedAction =
   | { type: 'UPDATE_TRACK'; payload: { index: number; track: Partial<Track> } }
   | { type: 'REMOVE_TRACK'; payload: number }
   | { type: 'REORDER_TRACKS'; payload: { fromIndex: number; toIndex: number } }
+  | { type: 'FIX_TRACK_ORDER' }
   | { type: 'ADD_TRACK_PERSON'; payload: { trackIndex: number; person?: Person } }
   | { type: 'UPDATE_TRACK_PERSON'; payload: { trackIndex: number; personIndex: number; person: Person } }
   | { type: 'REMOVE_TRACK_PERSON'; payload: { trackIndex: number; personIndex: number } }
@@ -55,7 +57,7 @@ export type FeedAction =
   | { type: 'CREATE_NEW_VIDEO_FEED' };
 
 // State interface
-interface FeedState {
+export interface FeedState {
   feedType: FeedType;
   album: Album;
   videoFeed: Album | null;
@@ -119,8 +121,8 @@ function applyRemoveSplitRules(
     : recipients;
 }
 
-// Reducer
-function feedReducer(state: FeedState, action: FeedAction): FeedState {
+// Reducer (exported for tests; the app always reaches it through FeedProvider)
+export function feedReducer(state: FeedState, action: FeedAction): FeedState {
   // Get the active album for actions that work on the current feed
   const activeAlbum = getActiveAlbum(state);
 
@@ -271,9 +273,15 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
 
     case 'ADD_TRACK': {
       const newTrack = action.payload || createEmptyTrack(activeAlbum.tracks.length + 1);
+      // Stamp the date here rather than in createEmptyTrack: a track created "now" is *newer*
+      // than the ones above it, and newest-first consumers then play the album backwards.
+      // Overriding the payload keeps every dispatch site correct, not just the reducer default.
       return updateActiveFeed(state, {
         ...activeAlbum,
-        tracks: [...activeAlbum.tracks, newTrack]
+        tracks: [
+          ...activeAlbum.tracks,
+          { ...newTrack, pubDate: nextTrackPubDate(activeAlbum.tracks, activeAlbum.pubDate) }
+        ]
       });
     }
 
@@ -297,9 +305,24 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
       const tracks = [...activeAlbum.tracks];
       const [removed] = tracks.splice(action.payload.fromIndex, 1);
       tracks.splice(action.payload.toIndex, 0, removed);
+      const renumbered = tracks.map((t, i) => ({ ...t, trackNumber: i + 1, episode: i + 1 }));
+      // Dates have to follow the new order or the reorder is invisible to podcast apps.
       return updateActiveFeed(state, {
         ...activeAlbum,
-        tracks: tracks.map((t, i) => ({ ...t, trackNumber: i + 1, episode: i + 1 }))
+        tracks: resequenceTrackDates(renumbered, activeAlbum.pubDate)
+      });
+    }
+
+    case 'FIX_TRACK_ORDER': {
+      // An imported newest-first feed needs flipping; everything else just needs its dates
+      // lined up with the order already on screen.
+      const tracks = trackOrderIssue(activeAlbum.tracks) === 'reversed'
+        ? [...activeAlbum.tracks].reverse()
+        : activeAlbum.tracks;
+      const renumbered = tracks.map((t, i) => ({ ...t, trackNumber: i + 1, episode: i + 1 }));
+      return updateActiveFeed(state, {
+        ...activeAlbum,
+        tracks: resequenceTrackDates(renumbered, activeAlbum.pubDate)
       });
     }
 

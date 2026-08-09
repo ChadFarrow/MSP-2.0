@@ -284,3 +284,40 @@ describe('podcast:image generation', () => {
     expect(xml).not.toContain('<podcast:images');
   });
 });
+
+describe('xmlGenerator track order', () => {
+  const threeTrackAlbum = () => {
+    const album = createEmptyAlbum();
+    album.title = 'Ordered Album';
+    album.tracks = ['One', 'Two', 'Three'].map((title, i) => ({
+      ...album.tracks[0],
+      id: `id-${i}`,
+      guid: `guid-${i}`,
+      trackNumber: i + 1,
+      title,
+      // Descending, as the store now stamps them.
+      pubDate: new Date(Date.parse('2025-02-01T00:02:00Z') - i * 60_000).toUTCString()
+    }));
+    return album;
+  };
+
+  it('emits items in list order', () => {
+    const xml = generateRssFeed(threeTrackAlbum());
+    const titles = [...xml.matchAll(/<item>[\s\S]*?<title>(.*?)<\/title>/g)].map(m => m[1]);
+    expect(titles).toEqual(['One', 'Two', 'Three']);
+  });
+
+  it('emits item pubDates in descending order so newest-first apps play track 1 first', () => {
+    const xml = generateRssFeed(threeTrackAlbum());
+    const items = xml.split('<item>').slice(1);
+    const times = items.map(item => Date.parse(/<pubDate>(.*?)<\/pubDate>/.exec(item)![1]));
+    expect(times).toHaveLength(3);
+    expect(times.every((t, i) => i === 0 || t < times[i - 1])).toBe(true);
+  });
+
+  it('emits ascending podcast:episode numbers alongside descending dates', () => {
+    const xml = generateRssFeed(threeTrackAlbum());
+    const episodes = [...xml.matchAll(/<podcast:episode>(\d+)<\/podcast:episode>/g)].map(m => Number(m[1]));
+    expect(episodes).toEqual([1, 2, 3]);
+  });
+});

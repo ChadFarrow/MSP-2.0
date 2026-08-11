@@ -11,17 +11,19 @@ import { probeFeedUrl, VERIFY_TIMEOUT_MS } from './_utils/feedProbe.js';
  * GET /api/verify-feed-url?url=<encoded>
  * → 200 { reachable, status?, looksLikeFeed?, finalUrl?, reason? }
  *
- * Why this exists next to /api/proxy-feed: proxy-feed returns the fetched body to
- * the browser, so it carries a domain allowlist — which makes it useless here,
- * because the musicians who need checking are precisely the ones self-hosting on
- * a domain that will never be on a list. This endpoint returns a *verdict only*
- * and never the bytes, which is what lets it safely drop the allowlist.
+ * Why this exists next to /api/proxy-feed: both fetch arbitrary user-supplied
+ * URLs without a domain allowlist — the musicians who need checking are
+ * precisely the ones self-hosting on a domain that will never be on a list — but
+ * they strike different bargains for it. This endpoint returns a *verdict only*
+ * and never the bytes. proxy-feed must return bytes, and pays for that with the
+ * extra guards documented in its header. Don't collapse the two.
  *
- * DO NOT make this return response content. The allowlist is absent on the
- * explicit condition that nothing fetched here reaches the caller. The probing —
- * two differently shaped requests, per-hop SSRF checks, capped body sniff — lives
- * in _utils/feedProbe.ts and is shared with the submit guard so the advisory
- * warning and the refusal can never disagree.
+ * DO NOT make this return response content. Dropping the allowlist here was
+ * conditional on nothing fetched ever reaching the caller. The probing — two
+ * differently shaped requests, per-hop SSRF checks, capped body sniff — lives in
+ * _utils/feedProbe.ts (over the shared transport in _utils/safeFetch.ts) and is
+ * shared with the submit guard so the advisory warning and the refusal can never
+ * disagree.
  */
 
 const RATE_LIMIT = { limit: 30, windowMs: 3600_000 };

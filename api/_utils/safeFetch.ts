@@ -120,6 +120,17 @@ export async function readCapped(response: Response, maxBytes: number): Promise<
       }
       // Read one chunk *past* the cap rather than stopping at it, so "exactly
       // maxBytes" is distinguishable from "maxBytes and more to come".
+      //
+      // NOTE — this is the one place the extraction from feedProbe is NOT
+      // behaviour-preserving, whatever the passing test count suggests. The
+      // original checked `text.length < maxBytes` *before* each read, so the cap
+      // was measured purely in UTF-16 code units; this also counts raw bytes.
+      // For multi-byte UTF-8 that stops earlier in character terms — a 64 KB
+      // sniff over 3-byte characters now yields ~21.8k chars where it used to
+      // yield ~65.5k. Nothing depends on it today (feed markers live in the
+      // first few hundred bytes, and every existing test still passes), but the
+      // byte count is what a caller returning the bytes actually needs, so it
+      // stays. Don't cite "the tests didn't change" as proof that nothing did.
       if (bytes > maxBytes || text.length > maxBytes) {
         truncated = true;
         break;

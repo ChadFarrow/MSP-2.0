@@ -496,6 +496,8 @@ describe('podcast:remoteItem title attribute', () => {
       title: 'Please Stand By',
       image: IMG
     });
+  });
+});
 
 describe('podcast:publisher parsing', () => {
   const wrap = (publisherXml: string) => `<?xml version="1.0" encoding="UTF-8"?>

@@ -1,9 +1,12 @@
 // SSRF guards shared by the endpoints that fetch user-supplied URLs.
 //
-// /api/proxy-feed returns the fetched *body* to the browser, so it keeps a
-// domain allowlist on top of these checks. /api/verify-feed-url returns only a
-// verdict and therefore has no allowlist — which makes the checks here its only
-// line of defence. Treat them accordingly.
+// Neither /api/verify-feed-url nor /api/proxy-feed carries a domain allowlist —
+// the musicians who need those endpoints are precisely the ones self-hosting on
+// a domain no list would cover — so the checks here are their first line of
+// defence, applied on every redirect hop by _utils/safeFetch.ts. verify-feed-url
+// additionally never returns the fetched bytes; proxy-feed must return them, and
+// pays for that with the extra guards documented in its header. Treat any change
+// here as affecting both.
 import { lookup } from 'node:dns/promises';
 import type { VercelRequest } from '@vercel/node';
 

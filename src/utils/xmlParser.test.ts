@@ -432,3 +432,61 @@ describe('publisher feed sourceUrl from atom:link rel="self"', () => {
     expect(generatePublisherRssFeed(feed)).toContain('https://example.com/horseheads.xml');
   });
 });
+
+describe('podcast:publisher parsing', () => {
+  const wrap = (publisherXml: string) => `<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:podcast="https://podcastindex.org/namespace/1.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" version="2.0">
+  <channel>
+    <title>Album</title>
+    <description>d</description>
+    <podcast:medium>music</podcast:medium>
+    ${publisherXml}
+  </channel>
+</rss>`;
+
+  const GUID = 'ff83e8b5-7648-44d0-aa3c-4912f491066a';
+  const URL = 'https://headstarts.uk/msp/publisher-feeds/James_Goulding.xml';
+
+  it('reads the canonical nested form', () => {
+    const album = parseRssFeed(wrap(
+      `<podcast:publisher><podcast:remoteItem medium="publisher" feedGuid="${GUID}" feedUrl="${URL}"/></podcast:publisher>`
+    ));
+    expect(album.publisher).toEqual({ feedGuid: GUID, feedUrl: URL });
+  });
+
+  it('reads attributes written directly on podcast:publisher', () => {
+    // Out of spec, but it occurs in the wild. This used to return undefined, and
+    // because 'podcast:publisher' is a known channel key it was excluded from
+    // unknownChannelElements too — so a parse/regenerate deleted it outright.
+    const album = parseRssFeed(wrap(
+      `<podcast:publisher medium="publisher" feedGuid="${GUID}" feedUrl="${URL}"/>`
+    ));
+    expect(album.publisher).toEqual({ feedGuid: GUID, feedUrl: URL });
+  });
+
+  it('survives more than one nested remoteItem', () => {
+    // fast-xml-parser returns an array here, and getAttr yields '' for an array,
+    // so this used to drop the publisher entirely rather than take the first.
+    const album = parseRssFeed(wrap(
+      `<podcast:publisher>
+         <podcast:remoteItem medium="publisher" feedGuid="${GUID}" feedUrl="${URL}"/>
+         <podcast:remoteItem medium="publisher" feedGuid="second-guid" feedUrl="https://example.com/other.xml"/>
+       </podcast:publisher>`
+    ));
+    expect(album.publisher).toEqual({ feedGuid: GUID, feedUrl: URL });
+  });
+
+  it('normalizes a malformed publisher to the canonical nested form on output', () => {
+    const album = parseRssFeed(wrap(
+      `<podcast:publisher medium="publisher" feedGuid="${GUID}" feedUrl="${URL}"/>`
+    ));
+    expect(generateRssFeed(album)).toContain(
+      `<podcast:publisher>\n            <podcast:remoteItem medium="publisher" feedGuid="${GUID}" feedUrl="${URL}" />\n        </podcast:publisher>`
+    );
+  });
+
+  it('leaves publisher undefined when there is nothing to read', () => {
+    const album = parseRssFeed(wrap('<podcast:publisher></podcast:publisher>'));
+    expect(album.publisher).toBeUndefined();
+  });
+});

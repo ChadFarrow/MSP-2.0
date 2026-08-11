@@ -9,10 +9,12 @@
 //
 // SECURITY: this fetches arbitrary user-supplied URLs with no domain allowlist,
 // on the strict condition that it returns a *verdict and never the bytes*. The
-// only defences are assertPublicHttpUrl on the first hop and on every redirect
-// hop. Do not replace the manual redirect walk with `redirect: 'follow'`, and do
-// not let response content reach a caller.
+// transport defences — assertPublicHttpUrl on the first hop and on every
+// redirect hop, manual redirect walking — live in _utils/safeFetch.ts and are
+// shared with /api/proxy-feed. The no-bytes rule is this module's alone: do not
+// let response content reach a caller from here.
 import { assertPublicHttpUrl } from './urlSafety.js';
+import { safeFetchFollow, readCapped, looksLikeFeedText } from './safeFetch.js';
 
 /**
  * Exactly the JSON /api/verify-feed-url returns. Do NOT add fields — the handler
@@ -59,11 +61,9 @@ export const VERIFY_TIMEOUT_MS = 10_000;
  */
 export const GUARD_TIMEOUT_MS = 4_000;
 
-const MAX_REDIRECTS = 5;
 /** Enough to see the opening tag of any real feed without buffering a podcast. */
 const MAX_SNIFF_BYTES = 64 * 1024;
 const RANGE_BYTES = 2048;
-const FEED_MARKERS = ['<rss', '<feed', '<channel'];
 const USER_AGENT = 'MSP-FeedVerifier/1.0';
 const ACCEPT = 'application/rss+xml, application/xml, text/xml, */*';
 
@@ -84,32 +84,14 @@ interface Walk {
   verdict: ProbeVerdict;
 }
 
-/** Read at most maxBytes of the body, then abort. Never returned to a caller. */
-async function sniffBody(response: Response, maxBytes: number): Promise<string> {
-  const reader = response.body?.getReader();
-  if (!reader) return (await response.text()).slice(0, maxBytes);
-
-  const decoder = new TextDecoder('utf-8', { fatal: false });
-  let text = '';
-  try {
-    while (text.length < maxBytes) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      text += decoder.decode(value, { stream: true });
-    }
-  } finally {
-    await reader.cancel().catch(() => {});
-  }
-  return text.slice(0, maxBytes);
-}
-
 /**
- * Follow redirects by hand so every hop gets the SSRF check. `redirect: 'follow'`
- * would let a public URL bounce to 169.254.169.254 behind our back.
+ * Turn a completed request into a verdict. The redirect walking and the capped
+ * read are shared mechanism (safeFetch.ts); everything here is this module's
+ * policy.
  *
  * `startUrl` must already have passed assertPublicHttpUrl — probeFeedUrl does
  * that once for both walks, so a blocked first hop can be reported as a refusal
- * rather than a verdict.
+ * rather than a verdict. That's what `startAlreadyChecked` below encodes.
  */
 async function walk(
   startUrl: string,
@@ -117,52 +99,47 @@ async function walk(
   headers: Record<string, string>,
   sniffBytes: number
 ): Promise<Walk> {
-  let current = startUrl;
+  const result = await safeFetchFollow(startUrl, { signal, headers, startAlreadyChecked: true });
 
-  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-    if (hop > 0) {
-      const safety = await assertPublicHttpUrl(current);
-      if (!safety.ok) {
-        return {
-          outcome: { reachable: false, reason: `Redirected to a blocked address (${safety.error})` },
-          // Not 'blocked': that means the origin's WAF refused our crawler. Saying
-          // "your host returned 403" when the feed redirects to a private address
-          // would send the user to fix the wrong thing.
-          verdict: 'unsafe'
-        };
-      }
-    }
-
-    const response = await fetch(current, { redirect: 'manual', signal, headers });
-
-    if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get('location');
-      if (!location) {
-        return {
-          outcome: { reachable: false, status: response.status, reason: 'Redirect with no destination' },
-          verdict: 'server-error'
-        };
-      }
-      current = new URL(location, current).toString();
-      continue;
-    }
-
-    if (!isSuccess(response)) {
+  if (!result.ok) {
+    if (result.kind === 'unsafe') {
       return {
-        outcome: { reachable: false, status: response.status, finalUrl: current },
-        verdict: classifyStatus(response.status)
+        outcome: { reachable: false, reason: result.reason },
+        // Not 'blocked': that means the origin's WAF refused our crawler. Saying
+        // "your host returned 403" when the feed redirects to a private address
+        // would send the user to fix the wrong thing.
+        verdict: 'unsafe'
       };
     }
-
-    const body = await sniffBody(response, sniffBytes);
-    const looksLikeFeed = FEED_MARKERS.some((marker) => body.includes(marker));
     return {
-      outcome: { reachable: true, status: response.status, looksLikeFeed, finalUrl: current },
-      verdict: 'ok'
+      outcome: {
+        reachable: false,
+        ...(result.kind === 'no-location' ? { status: result.status } : {}),
+        reason: result.reason
+      },
+      verdict: 'server-error'
     };
   }
 
-  return { outcome: { reachable: false, reason: 'Too many redirects' }, verdict: 'server-error' };
+  const { response, finalUrl } = result;
+
+  if (!isSuccess(response)) {
+    return {
+      outcome: { reachable: false, status: response.status, finalUrl },
+      verdict: classifyStatus(response.status)
+    };
+  }
+
+  const { text } = await readCapped(response, sniffBytes);
+  return {
+    outcome: {
+      reachable: true,
+      status: response.status,
+      looksLikeFeed: looksLikeFeedText(text),
+      finalUrl
+    },
+    verdict: 'ok'
+  };
 }
 
 function isWalk(value: Walk | Error): value is Walk {

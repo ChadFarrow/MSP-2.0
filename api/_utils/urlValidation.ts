@@ -54,8 +54,14 @@ const CHECKS: Array<{ test: (url: string) => boolean; label: string; detail: str
       'Spaces, tabs and line breaks are not valid in URLs. Rename the file at your host to remove them, then submit the new URL.',
   },
   {
-    test: (url) => url.includes("'"),
-    label: "apostrophes (')",
+    // The curly U+2019 counts as much as the ASCII U+0027: a filename copied out
+    // of a word processor or a smart-quoting CMS carries the curly one, and it
+    // would otherwise fall through to the non-ASCII rule below and lose the
+    // duplicate-feed explanation for the generic "indexing issues" wording.
+    // A pre-encoded %27 counts too — hand-encoding it doesn't stop Podcast Index
+    // forking the entry, so the user still needs to rename the file.
+    test: (url) => /['’]/.test(url) || /%27/i.test(url),
+    label: "apostrophes (' or ’, including %27)",
     detail:
       "Podcast Index may encode apostrophes as %27, creating a duplicate feed entry. Rename the file to remove them.",
   },

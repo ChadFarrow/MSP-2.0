@@ -200,6 +200,9 @@ export function DownloadCatalogSection({ publisherFeed, feedInstance }: Download
     if (publisherFeed.remoteItems.length === 0) return;
 
     setDownloadingAll(true);
+    // A failed feed used to vanish here — the catch below was empty, so a run
+    // that downloaded nothing looked identical to one that downloaded everything.
+    const failures: string[] = [];
     for (let i = 0; i < publisherFeed.remoteItems.length; i++) {
       const item = publisherFeed.remoteItems[i];
       if (!item.feedUrl) continue;
@@ -228,12 +231,22 @@ export function DownloadCatalogSection({ publisherFeed, feedInstance }: Download
         downloadXml(newXml, `${safeTitle}-with-publisher.xml`);
         // Small delay between downloads
         await new Promise(resolve => setTimeout(resolve, 500));
-      } catch {
-        // Continue with next feed
+      } catch (err) {
+        // Record and continue with the next feed, so one bad URL doesn't stop
+        // the run — but report the failures at the end rather than silently.
+        const label = item.title || item.feedUrl;
+        failures.push(`${label}: ${err instanceof Error ? err.message : 'Unknown error'}`);
       }
     }
     setDownloadingIndex(null);
     setDownloadingAll(false);
+
+    if (failures.length > 0) {
+      alert(
+        `${failures.length} of ${publisherFeed.remoteItems.length} feeds could not be downloaded:\n\n` +
+        failures.join('\n\n')
+      );
+    }
   };
 
   const hasPublisherGuid = !!publisherFeed.podcastGuid;

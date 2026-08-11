@@ -692,7 +692,8 @@ const CODE_MESSAGES: Record<string, string> = {
     'The host refused our request. Bot protection (on Cloudflare: Security → Bots) may be blocking it — Podcast Index would be blocked the same way.',
   'not-a-feed':
     "That URL loaded, but it isn't an RSS feed. Check you copied the feed URL rather than a web page.",
-  'too-large': 'That feed is larger than MSP can import.',
+  'too-large':
+    'That feed is too large to fetch through MSP. Download the XML and import it as a file instead.',
   'unsafe-address': 'That address is not one MSP can fetch. Use a public URL.',
   'invalid-url': "That doesn't look like a valid feed URL.",
   'rate-limited': "You've imported a lot of feeds recently. Wait a few minutes and try again.",

@@ -24,9 +24,23 @@ export function isPrivateHost(hostname: string): boolean {
     return true;
   }
 
-  // IPv6 loopback / unique-local / link-local
-  if (host === '::1' || host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80:')) {
-    return true;
+  // IPv6 loopback / unique-local / link-local.
+  //
+  // Gated on the host actually being an IPv6 literal. The fc00::/7 and fe80::/10
+  // prefix tests are string-prefix matches, and a bare hostname beginning with
+  // those same letters is an ordinary public domain: fdrecords.com, fcmusic.net,
+  // fcc.gov, fdic.gov all matched before this check was added. That was invisible
+  // while /api/proxy-feed still had its 17-domain allowlist — it never reached a
+  // hostname the allowlist hadn't already vetted — but the allowlist is gone, and
+  // self-hosted musician domains are exactly what the proxy now fetches. A
+  // hostname can never contain a colon (URL.hostname excludes the port), so this
+  // is a safe discriminator, and resolved IPv6 addresses are checked separately
+  // in isPrivateAddress below.
+  if (host.includes(':')) {
+    if (host === '::1' || host === '::') return true;
+    if (host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80:')) {
+      return true;
+    }
   }
 
   // IPv4 literal checks

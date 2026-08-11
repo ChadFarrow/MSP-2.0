@@ -200,16 +200,53 @@ describe('/api/proxy-feed', () => {
       expect(allResponseBodies(res)).not.toContain('secrets');
     });
 
-    it('gives up after 5 redirects', async () => {
+    it('gives up after 10 redirects', async () => {
       const url = (n: number) => `https://example.com/${n}`;
       const map: Record<string, () => unknown> = {};
-      for (let i = 0; i <= 10; i++) map[url(i)] = () => redirectResponse(302, url(i + 1));
+      for (let i = 0; i <= 20; i++) map[url(i)] = () => redirectResponse(302, url(i + 1));
       serve(map);
       const { default: handler } = await import('./proxy-feed');
       const { req, res } = createMockReqRes('GET', { url: url(0) });
       await handler(req, res);
       expect(res.status).toHaveBeenCalledWith(502);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'too-many-redirects' }));
+    });
+
+    it('follows a 6-hop chain that the shared 5-hop default would have refused', async () => {
+      // Shared hosting really does chain http → https → www → trailing-slash →
+      // CDN → region. safeFetch's default of 5 suits verify-feed-url's 4 s
+      // budget; refusing a working feed here would be a false positive, and the
+      // endpoint this replaced used Node's `redirect: 'follow'` default of 20.
+      const url = (n: number) => `https://example.com/hop${n}`;
+      const map: Record<string, () => unknown> = {};
+      for (let i = 0; i < 6; i++) map[url(i)] = () => redirectResponse(302, url(i + 1));
+      map[url(6)] = () => textResponse(RSS);
+      serve(map);
+      const { default: handler } = await import('./proxy-feed');
+      const { req, res } = createMockReqRes('GET', { url: url(0) });
+      await handler(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.send).toHaveBeenCalledWith(RSS);
+    });
+
+    it('strips credentials from a redirect target instead of relaying them', async () => {
+      // The handler rejects userinfo on the URL it is handed, but new URL(location,
+      // current) carries it through — and Node's fetch turns it into an
+      // Authorization header. Without stripping, one redirect defeats that guard.
+      const start = 'https://example.com/start.xml';
+      serve({
+        [start]: () => redirectResponse(302, 'https://user:pass@example.com/real.xml'),
+        'https://example.com/real.xml': () => textResponse(RSS)
+      });
+      const { default: handler } = await import('./proxy-feed');
+      const { req, res } = createMockReqRes('GET', { url: start });
+      await handler(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      const fetched = mockFetch.mock.calls.map((c) => String(c[0]));
+      expect(fetched).toContain('https://example.com/real.xml');
+      expect(fetched.some((u) => u.includes('user:pass'))).toBe(false);
     });
   });
 
@@ -268,6 +305,34 @@ describe('/api/proxy-feed', () => {
 
       expect(res.status).toHaveBeenCalledWith(413);
       expect(res.send).not.toHaveBeenCalled();
+    });
+
+    it('refuses below Vercel’s 4.5 MB response ceiling, not above it', async () => {
+      // Vercel kills any function response over 4.5 MB with its own opaque
+      // FUNCTION_PAYLOAD_TOO_LARGE. Our cap has to fire first or the user gets a
+      // 413 with nothing explaining it and no hint about importing the file.
+      // A 4.4 MB feed must therefore already be refused *by us*.
+      const big = `<rss>${'x'.repeat(4_400_000)}</rss>`;
+      serve({ [SELF_HOSTED]: () => textResponse(big, { chunkSize: 256 * 1024 }) });
+      const { default: handler } = await import('./proxy-feed');
+      const { req, res } = createMockReqRes('GET', { url: SELF_HOSTED });
+      await handler(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(413);
+      expect(allResponseBodies(res)).toMatch(/import it as a file/i);
+    });
+
+    it('serves a feed comfortably under the cap', async () => {
+      const ok = `<rss><channel>${'<item>x</item>'.repeat(50_000)}</channel></rss>`;
+      expect(ok.length).toBeGreaterThan(512 * 1024);
+      expect(ok.length).toBeLessThan(4 * 1024 * 1024);
+      serve({ [SELF_HOSTED]: () => textResponse(ok, { chunkSize: 64 * 1024 }) });
+      const { default: handler } = await import('./proxy-feed');
+      const { req, res } = createMockReqRes('GET', { url: SELF_HOSTED });
+      await handler(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.send).toHaveBeenCalledWith(ok);
     });
   });
 

@@ -123,6 +123,25 @@ describe('getFeedUrlError', () => {
     expect(err).toMatch(/%27/);
   });
 
+  it('flags a curly apostrophe with the duplicate-feed explanation, not the generic one', () => {
+    // U+2019 also trips the non-ASCII rule, but that rule is listed after this
+    // one, so the duplicate-feed detail is the one the user actually reads.
+    const err = getFeedUrlError('https://example.com/o’malley.xml');
+    expect(err).toMatch(/apostrophes/);
+    expect(err).toMatch(/duplicate feed entry/);
+  });
+
+  it('flags an already percent-encoded apostrophe', () => {
+    // Hand-encoding it doesn't stop Podcast Index forking the entry.
+    const err = getFeedUrlError('https://example.com/o%27malley.xml');
+    expect(err).toMatch(/apostrophes/);
+    expect(err).toMatch(/duplicate feed entry/);
+  });
+
+  it('leaves ordinary percent-encoding alone', () => {
+    expect(getFeedUrlError('https://example.com/my%20feed.xml')).toBeNull();
+  });
+
   it('flags special characters that require percent-encoding', () => {
     expect(getFeedUrlError('https://example.com/<feed>.xml')).toMatch(/special characters/);
     expect(getFeedUrlError('https://example.com/feed|x.xml')).toMatch(/special characters/);

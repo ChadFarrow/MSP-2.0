@@ -50,6 +50,18 @@ const KNOWN_CHANNEL_KEYS = new Set([
   'podcast:image'
 ]);
 
+// Album and video feeds don't model channel-level remoteItems (a podroll), so
+// letting the key stay "known" for them meant it was neither parsed nor
+// preserved — parseRssFeed never reads it, and being in the set above excludes
+// it from unknownChannelElements. Since Download Feed is a parse→regenerate,
+// that deleted a publisher's podroll from their album feeds. Dropping the key
+// here lets it round-trip as an unknown element instead. The publisher path
+// keeps the full set: it parses these into feed.remoteItems and would otherwise
+// emit them twice.
+const ALBUM_CHANNEL_KEYS = new Set(
+  [...KNOWN_CHANNEL_KEYS].filter(key => key !== 'podcast:remoteItem')
+);
+
 // Known item keys that we explicitly parse (don't capture as unknown)
 const KNOWN_ITEM_KEYS = new Set([
   'title',
@@ -95,7 +107,7 @@ export const parseRssFeed = (xmlString: string): Album => {
     medium: (getText(channel['podcast:medium']) as 'music' | 'video') || 'music',
     bannerArtUrl: '',
     op3: false,
-    unknownChannelElements: captureUnknownElements(channel, KNOWN_CHANNEL_KEYS),
+    unknownChannelElements: captureUnknownElements(channel, ALBUM_CHANNEL_KEYS),
     tracks: []
   };
 
@@ -172,6 +184,32 @@ export const parseRssFeed = (xmlString: string): Album => {
     album.publisher = parsePublisherReference(publisher);
   }
 
+  // Some feeds point at their publisher with a bare channel-level
+  // <podcast:remoteItem medium="publisher"> and no <podcast:publisher> wrapper.
+  // That has to be *modelled*, not passed through as an unknown element: the
+  // Download Catalog flows overwrite album.publisher unconditionally after
+  // parsing, so a passed-through copy would be re-emitted alongside the
+  // <podcast:publisher> block the generator writes — two publisher references
+  // in a file we rewrote on the user's behalf. Podroll remoteItems (any other
+  // medium) still round-trip untouched via unknownChannelElements.
+  const channelRemoteItems = channel['podcast:remoteItem'];
+  const remoteItemArray = channelRemoteItems
+    ? (Array.isArray(channelRemoteItems) ? channelRemoteItems : [channelRemoteItems])
+    : [];
+  const podrollItems = remoteItemArray.filter(
+    item => getAttr(item, 'medium') !== 'publisher'
+  );
+  if (podrollItems.length !== remoteItemArray.length && !album.publisher) {
+    const publisherItem = remoteItemArray.find(
+      item => getAttr(item, 'medium') === 'publisher'
+    );
+    const feedGuid = getAttr(publisherItem, 'feedGuid');
+    const feedUrl = getAttr(publisherItem, 'feedUrl');
+    if (feedGuid || feedUrl) {
+      album.publisher = { feedGuid: feedGuid || '', feedUrl: feedUrl || undefined };
+    }
+  }
+
   // Artist Npub (from podcast:txt with purpose="npub")
   const txtTags = channel['podcast:txt'];
   if (txtTags) {
@@ -185,7 +223,23 @@ export const parseRssFeed = (xmlString: string): Album => {
   }
 
   // Capture unknown channel elements
-  album.unknownChannelElements = captureUnknownElements(channel, KNOWN_CHANNEL_KEYS);
+  album.unknownChannelElements = captureUnknownElements(channel, ALBUM_CHANNEL_KEYS);
+
+  // Keep only the podroll entries in the passthrough. Any publisher-medium one
+  // was consumed into album.publisher just above, and the generator writes that
+  // back out as a <podcast:publisher> block — leaving it here too would emit it
+  // twice. Drop the key entirely when nothing but the publisher ref was there.
+  if (album.unknownChannelElements?.['podcast:remoteItem']) {
+    if (podrollItems.length > 0) {
+      album.unknownChannelElements['podcast:remoteItem'] =
+        podrollItems.length === 1 ? podrollItems[0] : podrollItems;
+    } else {
+      delete album.unknownChannelElements['podcast:remoteItem'];
+      if (Object.keys(album.unknownChannelElements).length === 0) {
+        album.unknownChannelElements = undefined;
+      }
+    }
+  }
 
   // Tracks
   const items = channel.item;
@@ -534,17 +588,34 @@ function parseRemoteItem(node: unknown): RemoteItem | null {
   };
 }
 
-// Parse publisher reference (for albums that belong to a publisher)
+/**
+ * Parse a publisher reference (for albums that belong to a publisher).
+ *
+ * The spec form is a <podcast:publisher> wrapping exactly one
+ * <podcast:remoteItem medium="publisher">, and that is what the generator emits.
+ * Two malformed shapes also occur in the wild and both used to return undefined
+ * — which silently *deleted* them, because 'podcast:publisher' is in
+ * KNOWN_CHANNEL_KEYS and so is excluded from unknownChannelElements too. Since
+ * the Download Feed flow is a parse→regenerate, that lost the tag outright.
+ * Reading them here normalizes all three to the canonical form on output.
+ */
 function parsePublisherReference(node: unknown): PublisherReference | undefined {
   if (!node) return undefined;
 
   const publisherNode = node as Record<string, unknown>;
-  const remoteItem = publisherNode['podcast:remoteItem'];
+  const raw = publisherNode['podcast:remoteItem'];
 
-  if (remoteItem) {
-    const feedGuid = getAttr(remoteItem, 'feedGuid');
-    const feedUrl = getAttr(remoteItem, 'feedUrl');
+  // fast-xml-parser returns an array when the child repeats, and getAttr returns
+  // '' for an array — so more than one remoteItem used to drop the publisher
+  // entirely. The spec allows exactly one; take the first usable entry.
+  const candidates: unknown[] = raw ? (Array.isArray(raw) ? raw : [raw]) : [];
+  // Attributes written directly on <podcast:publisher> with no child element.
+  // Out of spec, but reading it beats discarding the user's data.
+  candidates.push(publisherNode);
 
+  for (const candidate of candidates) {
+    const feedGuid = getAttr(candidate, 'feedGuid');
+    const feedUrl = getAttr(candidate, 'feedUrl');
     if (feedGuid || feedUrl) {
       return {
         feedGuid: feedGuid || '',

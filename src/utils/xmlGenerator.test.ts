@@ -16,11 +16,52 @@ describe('xmlGenerator publisher reference', () => {
 
     const xml = generateRssFeed(album);
 
-    expect(xml).toContain('<podcast:publisher>');
-    expect(xml).toContain('</podcast:publisher>');
-    expect(xml).toContain('feedGuid="abc123-guid"');
-    expect(xml).toContain('feedUrl="https://example.com/publisher-feed.xml"');
-    expect(xml).toContain('medium="publisher"');
+    // Asserted as one block, not as independent substrings. The spec requires
+    // <podcast:publisher> to CONTAIN exactly one <podcast:remoteItem
+    // medium="publisher">, and separate toContain checks would pass just as
+    // happily with an empty publisher element and the remoteItem emitted as a
+    // sibling somewhere else in the channel — which is precisely the shape a
+    // reviewer once claimed MSP was producing.
+    expect(xml).toContain(
+      '<podcast:publisher>\n' +
+      '            <podcast:remoteItem medium="publisher" feedGuid="abc123-guid" feedUrl="https://example.com/publisher-feed.xml" />\n' +
+      '        </podcast:publisher>'
+    );
+  });
+
+  it('round-trips a publisher reference through the parser', () => {
+    const album = createEmptyAlbum();
+    album.title = 'Test Album';
+    album.author = 'Test Artist';
+    album.description = 'Test description';
+    album.publisher = {
+      feedGuid: 'ff83e8b5-7648-44d0-aa3c-4912f491066a',
+      feedUrl: 'https://headstarts.uk/msp/publisher-feeds/James_Goulding.xml'
+    };
+
+    const reparsed = parseRssFeed(generateRssFeed(album));
+
+    expect(reparsed.publisher).toEqual(album.publisher);
+  });
+
+  it('keeps a channel-level podroll remoteItem through a parse/regenerate cycle', () => {
+    // The Download Feed flow is parse→regenerate. Album feeds don't model a
+    // podroll, so it has to survive as an unknown channel element or MSP eats
+    // the publisher's tag on their behalf.
+    const source = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:podcast="https://podcastindex.org/namespace/1.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+  <channel>
+    <title>Album</title>
+    <description>d</description>
+    <podcast:medium>music</podcast:medium>
+    <podcast:remoteItem feedGuid="roll-1" feedUrl="https://example.com/friend.xml" medium="music"/>
+  </channel>
+</rss>`;
+
+    const regenerated = generateRssFeed(parseRssFeed(source));
+
+    expect(regenerated).toContain('feedGuid="roll-1"');
+    expect(regenerated).toContain('https://example.com/friend.xml');
   });
 
   it('does not include podcast:publisher tag when publisher is not set', () => {

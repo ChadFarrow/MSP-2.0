@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useFeed } from '../../store/feedStore';
 import { useNostr } from '../../store/nostrStore';
-import { LANGUAGES, PERSON_GROUPS, PERSON_ROLES, createEmptyPersonRole, createEmptyTrack, isVideoMedium, isCommunitySupport, createSupportRecipients, hasUserRecipients } from '../../types/feed';
+import { LANGUAGES, PERSON_GROUPS, PERSON_ROLES, createEmptyPersonRole, createEmptyTrack, isVideoMedium, isCommunitySupport, createSupportRecipients, hasUserRecipients, TRANSCRIPT_TYPES, DEFAULT_TRANSCRIPT_TYPE } from '../../types/feed';
 import type { PersonGroup } from '../../types/feed';
 import { FIELD_INFO } from '../../data/fieldInfo';
 import { detectAddressType } from '../../utils/addressUtils';
@@ -1141,16 +1141,40 @@ export function Editor() {
                     />
                     <div className="form-group">
                       <label className="form-label">Lyrics URL<InfoIcon text={FIELD_INFO.transcriptUrl} /></label>
-                      <input
-                        type="url"
-                        className="form-input"
-                        placeholder="https://example.com/lyrics.srt"
-                        value={track.transcriptUrl || ''}
-                        onChange={e => dispatch({
-                          type: 'UPDATE_TRACK',
-                          payload: { index, track: { transcriptUrl: e.target.value } }
-                        })}
-                      />
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <input
+                          type="url"
+                          className="form-input"
+                          style={{ flex: '1 1 240px', minWidth: 0 }}
+                          placeholder="https://example.com/lyrics.srt"
+                          value={track.transcriptUrl || ''}
+                          onChange={e => dispatch({
+                            type: 'UPDATE_TRACK',
+                            payload: { index, track: { transcriptUrl: e.target.value } }
+                          })}
+                        />
+                        <select
+                          className="form-select"
+                          style={{ flex: '0 0 auto', minWidth: '170px' }}
+                          aria-label="Lyrics file type"
+                          value={track.transcriptType || DEFAULT_TRANSCRIPT_TYPE}
+                          onChange={e => dispatch({
+                            type: 'UPDATE_TRACK',
+                            payload: { index, track: { transcriptType: e.target.value } }
+                          })}
+                        >
+                          {TRANSCRIPT_TYPES.map(t => (
+                            <option key={t.value} value={t.value}>{t.label}</option>
+                          ))}
+                          {/* An imported feed may carry a type outside the spec list
+                              (MSP itself wrote application/srt for a long time). Show
+                              it rather than silently snapping the value to SubRip. */}
+                          {track.transcriptType &&
+                            !TRANSCRIPT_TYPES.some(t => t.value === track.transcriptType) && (
+                            <option value={track.transcriptType}>{track.transcriptType}</option>
+                          )}
+                        </select>
+                      </div>
                     </div>
                     <div className="form-group">
                       <Toggle

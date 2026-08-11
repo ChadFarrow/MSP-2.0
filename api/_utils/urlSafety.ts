@@ -1,9 +1,12 @@
 // SSRF guards shared by the endpoints that fetch user-supplied URLs.
 //
-// /api/proxy-feed returns the fetched *body* to the browser, so it keeps a
-// domain allowlist on top of these checks. /api/verify-feed-url returns only a
-// verdict and therefore has no allowlist — which makes the checks here its only
-// line of defence. Treat them accordingly.
+// Neither /api/verify-feed-url nor /api/proxy-feed carries a domain allowlist —
+// the musicians who need those endpoints are precisely the ones self-hosting on
+// a domain no list would cover — so the checks here are their first line of
+// defence, applied on every redirect hop by _utils/safeFetch.ts. verify-feed-url
+// additionally never returns the fetched bytes; proxy-feed must return them, and
+// pays for that with the extra guards documented in its header. Treat any change
+// here as affecting both.
 import { lookup } from 'node:dns/promises';
 import type { VercelRequest } from '@vercel/node';
 
@@ -21,9 +24,23 @@ export function isPrivateHost(hostname: string): boolean {
     return true;
   }
 
-  // IPv6 loopback / unique-local / link-local
-  if (host === '::1' || host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80:')) {
-    return true;
+  // IPv6 loopback / unique-local / link-local.
+  //
+  // Gated on the host actually being an IPv6 literal. The fc00::/7 and fe80::/10
+  // prefix tests are string-prefix matches, and a bare hostname beginning with
+  // those same letters is an ordinary public domain: fdrecords.com, fcmusic.net,
+  // fcc.gov, fdic.gov all matched before this check was added. That was invisible
+  // while /api/proxy-feed still had its 17-domain allowlist — it never reached a
+  // hostname the allowlist hadn't already vetted — but the allowlist is gone, and
+  // self-hosted musician domains are exactly what the proxy now fetches. A
+  // hostname can never contain a colon (URL.hostname excludes the port), so this
+  // is a safe discriminator, and resolved IPv6 addresses are checked separately
+  // in isPrivateAddress below.
+  if (host.includes(':')) {
+    if (host === '::1' || host === '::') return true;
+    if (host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80:')) {
+      return true;
+    }
   }
 
   // IPv4 literal checks

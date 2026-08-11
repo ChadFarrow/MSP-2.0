@@ -664,72 +664,108 @@ const isMspUrl = (url: string): boolean => {
     url.includes('msp-2-0');
 };
 
-// Fetch XML from URL (with CORS proxy fallback)
+/** Carries the real reason a fetch failed, so callers can say something true. */
+export class FeedFetchError extends Error {
+  // Declared as fields rather than constructor parameter properties:
+  // erasableSyntaxOnly is enabled in tsconfig.
+  readonly code: string;
+  readonly status?: number;
+
+  constructor(message: string, code: string, status?: number) {
+    super(message);
+    this.name = 'FeedFetchError';
+    this.code = code;
+    this.status = status;
+  }
+}
+
+const FETCH_ACCEPT = 'application/rss+xml, application/xml, text/xml, */*';
+const PASTE_HINT = ' You can also paste the XML content directly.';
+
+/**
+ * Mirrors the ErrorCode union in api/proxy-feed.ts. An unknown code falls back
+ * to the server's own `error` string, so adding a code server-side degrades to a
+ * usable message rather than a wrong one.
+ */
+const CODE_MESSAGES: Record<string, string> = {
+  'not-found': "That URL didn't load — the host returned 404 Not Found.",
+  blocked:
+    'The host refused our request. Bot protection (on Cloudflare: Security → Bots) may be blocking it — Podcast Index would be blocked the same way.',
+  'not-a-feed':
+    "That URL loaded, but it isn't an RSS feed. Check you copied the feed URL rather than a web page.",
+  'too-large':
+    'That feed is too large to fetch through MSP. Download the XML and import it as a file instead.',
+  'unsafe-address': 'That address is not one MSP can fetch. Use a public URL.',
+  'invalid-url': "That doesn't look like a valid feed URL.",
+  'rate-limited': "You've imported a lot of feeds recently. Wait a few minutes and try again.",
+  timeout: "That URL didn't respond in time.",
+  network: "Couldn't connect to that address.",
+  'too-many-redirects': 'That URL redirects too many times.',
+  'upstream-error': "That URL didn't load — the host returned an error."
+};
+
+const looksLikeFeed = (xml: string): boolean =>
+  xml.includes('<rss') || xml.includes('<feed') || xml.includes('<channel');
+
+/**
+ * Optimisation only. Works when the host sends CORS headers; most self-hosted
+ * feeds don't. Its failure is not evidence about the feed — a CORS rejection is
+ * a bare TypeError — so it never produces the user-facing error.
+ */
+async function fetchDirect(url: string): Promise<string | null> {
+  try {
+    const response = await fetch(url, { headers: { Accept: FETCH_ACCEPT } });
+    if (!response.ok) return null;
+    const content = await response.text();
+    return looksLikeFeed(content) ? content : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The authoritative attempt: throws a FeedFetchError carrying the real reason. */
+async function fetchViaProxy(url: string): Promise<string> {
+  let response: Response;
+  try {
+    response = await fetch(`/api/proxy-feed?url=${encodeURIComponent(url)}`, {
+      headers: { Accept: FETCH_ACCEPT }
+    });
+  } catch {
+    throw new FeedFetchError('Could not reach MSP to fetch that feed.' + PASTE_HINT, 'network');
+  }
+
+  if (response.ok) {
+    const content = await response.text();
+    if (looksLikeFeed(content)) return content;
+    throw new FeedFetchError(CODE_MESSAGES['not-a-feed'] + PASTE_HINT, 'not-a-feed');
+  }
+
+  const body = (await response.json().catch(() => null)) as
+    | { error?: string; code?: string; status?: number }
+    | null;
+  const code = body?.code ?? 'upstream-error';
+  const message = CODE_MESSAGES[code] ?? body?.error ?? CODE_MESSAGES['upstream-error'];
+  throw new FeedFetchError(message + PASTE_HINT, code, body?.status ?? response.status);
+}
+
+/**
+ * Fetch a feed's XML, going through /api/proxy-feed to sidestep CORS.
+ *
+ * Exactly one attempt is authoritative for the error. This used to loop over
+ * four transports — direct, our proxy, allorigins.win and corsproxy.io —
+ * `continue`-ing past every failure, so the only thing it could ever report was
+ * a generic "paste the XML directly". The two public proxies are gone for three
+ * independent reasons: they leak every user's feed URL to a third party,
+ * corsproxy.io requires an API key so that entry always failed, and allorigins
+ * wraps the body in JSON that was unwrapped heuristically, which could mangle a
+ * feed. Our own proxy no longer has a domain allowlist, so they cover nothing.
+ */
 export const fetchFeedFromUrl = async (url: string): Promise<string> => {
-  // For MSP feeds, try our own proxy first to avoid CORS issues
-  if (isMspUrl(url)) {
-    try {
-      const proxyUrl = `/api/proxy-feed?url=${encodeURIComponent(url)}`;
-      const response = await fetch(proxyUrl, {
-        headers: {
-          'Accept': 'application/rss+xml, application/xml, text/xml, */*'
-        }
-      });
+  // MSP-hosted feeds go through the proxy first: on a preview deploy the app and
+  // the canonical hosted URL are different origins, so direct always CORS-fails.
+  if (isMspUrl(url)) return fetchViaProxy(url);
 
-      if (response.ok) {
-        const content = await response.text();
-        if (content.includes('<rss') || content.includes('<channel')) {
-          return content;
-        }
-      }
-    } catch {
-      // Fall through to other methods
-    }
-  }
-
-  const corsProxies = [
-    '', // Try direct first
-    '/api/proxy-feed?url=', // Our own proxy
-    'https://api.allorigins.win/get?url=',
-    'https://corsproxy.io/?'
-  ];
-
-  for (const proxy of corsProxies) {
-    try {
-      const fetchUrl = proxy
-        ? `${proxy}${encodeURIComponent(url)}`
-        : url;
-
-      const response = await fetch(fetchUrl, {
-        headers: {
-          'Accept': 'application/rss+xml, application/xml, text/xml, */*'
-        }
-      });
-
-      if (!response.ok) continue;
-
-      let content = await response.text();
-
-      // Handle allorigins wrapper
-      if (proxy.includes('allorigins.win')) {
-        try {
-          const data = JSON.parse(content);
-          content = data.contents || content;
-        } catch {
-          // Not JSON, use as-is
-        }
-      }
-
-      // Validate it's XML
-      if (content.includes('<rss') || content.includes('<channel')) {
-        return content;
-      }
-    } catch {
-      continue;
-    }
-  }
-
-  throw new Error('Failed to fetch feed from URL. Please paste the XML content directly.');
+  return (await fetchDirect(url)) ?? (await fetchViaProxy(url));
 };
 
 // Detect if XML is a video feed based on medium tag

@@ -78,7 +78,16 @@ export async function safeFetchFollow(
           reason: 'Redirect with no destination'
         };
       }
-      current = new URL(location, current).toString();
+      const next = new URL(location, current);
+      // Strip userinfo before following. Node's fetch turns https://user:pass@host
+      // into an Authorization header, and new URL(location, current) carries
+      // userinfo straight through — so a caller that rejects credentials on the
+      // URL it was handed (proxy-feed does) is still a credential relay one
+      // redirect later. assertPublicHttpUrl never looks at these fields, so this
+      // is the only place it can be caught for every caller at once.
+      next.username = '';
+      next.password = '';
+      current = next.toString();
       continue;
     }
 

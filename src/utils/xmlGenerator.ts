@@ -1,5 +1,6 @@
 // MSP 2.0 - XML Generator for Demu RSS Feeds
 import type { Album, Track, Person, ValueBlock, ValueRecipient, Funding, PublisherFeed, RemoteItem, PublisherReference, BaseChannelData, PodcastImage } from '../types/feed';
+import { DEFAULT_TRANSCRIPT_TYPE } from '../types/feed';
 import { formatRFC822Date } from './dateUtils';
 
 // Escape XML special characters
@@ -421,7 +422,7 @@ const generateTrackXml = (track: Track, album: Album, level: number): string => 
   lines.push(`${indent(level + 1)}<guid isPermaLink="false">${escapeXml(track.guid)}</guid>`);
 
   if (track.transcriptUrl) {
-    lines.push(`${indent(level + 1)}<podcast:transcript url="${escapeXml(track.transcriptUrl)}" type="${escapeXml(track.transcriptType || 'application/srt')}" />`);
+    lines.push(`${indent(level + 1)}<podcast:transcript url="${escapeXml(track.transcriptUrl)}" type="${escapeXml(track.transcriptType || DEFAULT_TRANSCRIPT_TYPE)}" />`);
   }
 
   // Track artwork (falls back to album)

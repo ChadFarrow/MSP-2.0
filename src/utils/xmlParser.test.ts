@@ -489,4 +489,43 @@ describe('podcast:publisher parsing', () => {
     const album = parseRssFeed(wrap('<podcast:publisher></podcast:publisher>'));
     expect(album.publisher).toBeUndefined();
   });
+
+  it('reads a bare channel-level remoteItem with medium="publisher"', () => {
+    const album = parseRssFeed(wrap(
+      `<podcast:remoteItem medium="publisher" feedGuid="${GUID}" feedUrl="${URL}"/>`
+    ));
+    expect(album.publisher).toEqual({ feedGuid: GUID, feedUrl: URL });
+  });
+
+  it('emits exactly one publisher reference for a bare remoteItem, even after an overwrite', () => {
+    // The Download Catalog flows set album.publisher unconditionally after
+    // parsing. If the bare remoteItem had merely been passed through as an
+    // unknown element it would be re-emitted next to the generated
+    // <podcast:publisher> block, and Download Feed rewrites somebody else's
+    // file — so this is corruption, not just noise.
+    const album = parseRssFeed(wrap(
+      `<podcast:remoteItem medium="publisher" feedGuid="${GUID}" feedUrl="${URL}"/>`
+    ));
+    album.publisher = { feedGuid: 'new-guid', feedUrl: 'https://example.com/pub.xml' };
+
+    const xml = generateRssFeed(album);
+    expect(xml.match(/medium="publisher"/g)).toHaveLength(1);
+    expect(xml).toContain('new-guid');
+    expect(xml).not.toContain(GUID);
+  });
+
+  it('still round-trips a podroll alongside a bare publisher remoteItem', () => {
+    // Only the publisher-medium entry is consumed; other mediums are podroll and
+    // must survive untouched.
+    const album = parseRssFeed(wrap(
+      `<podcast:remoteItem medium="publisher" feedGuid="${GUID}" feedUrl="${URL}"/>
+    <podcast:remoteItem feedGuid="aaaaaaaa-0000-0000-0000-000000000001" medium="music"/>
+    <podcast:remoteItem feedGuid="aaaaaaaa-0000-0000-0000-000000000002" medium="music"/>`
+    ));
+
+    const xml = generateRssFeed(album);
+    expect(xml.match(/medium="publisher"/g)).toHaveLength(1);
+    expect(xml).toContain('aaaaaaaa-0000-0000-0000-000000000001');
+    expect(xml).toContain('aaaaaaaa-0000-0000-0000-000000000002');
+  });
 });

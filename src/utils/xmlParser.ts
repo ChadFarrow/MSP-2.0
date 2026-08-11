@@ -184,6 +184,32 @@ export const parseRssFeed = (xmlString: string): Album => {
     album.publisher = parsePublisherReference(publisher);
   }
 
+  // Some feeds point at their publisher with a bare channel-level
+  // <podcast:remoteItem medium="publisher"> and no <podcast:publisher> wrapper.
+  // That has to be *modelled*, not passed through as an unknown element: the
+  // Download Catalog flows overwrite album.publisher unconditionally after
+  // parsing, so a passed-through copy would be re-emitted alongside the
+  // <podcast:publisher> block the generator writes — two publisher references
+  // in a file we rewrote on the user's behalf. Podroll remoteItems (any other
+  // medium) still round-trip untouched via unknownChannelElements.
+  const channelRemoteItems = channel['podcast:remoteItem'];
+  const remoteItemArray = channelRemoteItems
+    ? (Array.isArray(channelRemoteItems) ? channelRemoteItems : [channelRemoteItems])
+    : [];
+  const podrollItems = remoteItemArray.filter(
+    item => getAttr(item, 'medium') !== 'publisher'
+  );
+  if (podrollItems.length !== remoteItemArray.length && !album.publisher) {
+    const publisherItem = remoteItemArray.find(
+      item => getAttr(item, 'medium') === 'publisher'
+    );
+    const feedGuid = getAttr(publisherItem, 'feedGuid');
+    const feedUrl = getAttr(publisherItem, 'feedUrl');
+    if (feedGuid || feedUrl) {
+      album.publisher = { feedGuid: feedGuid || '', feedUrl: feedUrl || undefined };
+    }
+  }
+
   // Artist Npub (from podcast:txt with purpose="npub")
   const txtTags = channel['podcast:txt'];
   if (txtTags) {
@@ -198,6 +224,22 @@ export const parseRssFeed = (xmlString: string): Album => {
 
   // Capture unknown channel elements
   album.unknownChannelElements = captureUnknownElements(channel, ALBUM_CHANNEL_KEYS);
+
+  // Keep only the podroll entries in the passthrough. Any publisher-medium one
+  // was consumed into album.publisher just above, and the generator writes that
+  // back out as a <podcast:publisher> block — leaving it here too would emit it
+  // twice. Drop the key entirely when nothing but the publisher ref was there.
+  if (album.unknownChannelElements?.['podcast:remoteItem']) {
+    if (podrollItems.length > 0) {
+      album.unknownChannelElements['podcast:remoteItem'] =
+        podrollItems.length === 1 ? podrollItems[0] : podrollItems;
+    } else {
+      delete album.unknownChannelElements['podcast:remoteItem'];
+      if (Object.keys(album.unknownChannelElements).length === 0) {
+        album.unknownChannelElements = undefined;
+      }
+    }
+  }
 
   // Tracks
   const items = channel.item;

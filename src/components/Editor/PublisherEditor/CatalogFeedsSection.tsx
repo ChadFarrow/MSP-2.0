@@ -229,9 +229,9 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
     setIsSubmitting(true);
     setSubmitResult(null);
     try {
-      // Check the feed actually resolves. This used to go through /api/proxy-feed,
-      // whose domain allowlist 403s every self-hosted feed — so a perfectly good
-      // URL was reported as "could not fetch" and the submission blocked.
+      // Check the feed actually resolves, via /api/verify-feed-url rather than
+      // /api/proxy-feed: this needs a verdict, not the bytes, and a verdict is
+      // cheaper and safer to ask for.
       // The latch doubles as the override: set by this check or by a server
       // refusal, and cleared whenever the URL changes.
       const force = bypassVerify;

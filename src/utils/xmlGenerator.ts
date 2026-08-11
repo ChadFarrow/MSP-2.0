@@ -169,6 +169,26 @@ const generateSingleElementXml = (tagName: string, value: unknown, level: number
   return '';
 };
 
+/**
+ * True when an imported feed's own <atom:link rel="self"> is already sitting in
+ * the passthrough. parseSelfLink deliberately leaves atom:link out of
+ * KNOWN_CHANNEL_KEYS so the element round-trips through unknownChannelElements,
+ * which means generating a second one from sourceUrl would emit it twice — the
+ * same "modelled AND passed through" mistake that duplicated publisher refs.
+ * Other rels (hub, next, alternate) are ignored: only rel="self" collides.
+ */
+const hasSelfLinkPassthrough = (elements?: Record<string, unknown>): boolean => {
+  const raw = elements?.['atom:link'];
+  if (!raw) return false;
+  const links = Array.isArray(raw) ? raw : [raw];
+  return links.some(
+    link =>
+      typeof link === 'object' &&
+      link !== null &&
+      (link as Record<string, unknown>)['@_rel'] === 'self'
+  );
+};
+
 // Generate person XML - outputs one <podcast:person> tag per role
 const generatePersonXml = (person: Person, level: number): string => {
   // Generate one tag per role (per Podcasting 2.0 spec)
@@ -233,11 +253,18 @@ const generateRemoteItemXml = (item: RemoteItem, level: number): string => {
   if (item.feedUrl) attrs.push(`feedUrl="${escapeXml(item.feedUrl)}"`);
   if (item.itemGuid) attrs.push(`itemGuid="${escapeXml(item.itemGuid)}"`);
   attrs.push(`medium="${escapeXml(item.medium || 'music')}"`);
+  // title is an ATTRIBUTE per spec — "a hint to apps so that they can display
+  // the title without having to do a remote lookup" — and the element is
+  // self-closing. MSP used to write the title as element text, which no
+  // conforming reader looks at, so the hint never reached anyone and every app
+  // did the remote lookup anyway.
+  if (item.title) attrs.push(`title="${escapeXml(item.title)}"`);
+  // feedImg is NOT in the spec. It is kept because MSP's own publisher editor
+  // renders these thumbnails from it (CatalogFeedsSection, DownloadCatalogSection)
+  // and dropping it would blank them on the next import. Unknown attributes are
+  // ignored by conforming parsers, so it costs other readers nothing.
   if (item.image) attrs.push(`feedImg="${escapeXml(item.image)}"`);
 
-  if (item.title) {
-    return `${indent(level)}<podcast:remoteItem ${attrs.join(' ')}>${escapeXml(item.title)}</podcast:remoteItem>`;
-  }
   return `${indent(level)}<podcast:remoteItem ${attrs.join(' ')} />`;
 };
 
@@ -327,8 +354,14 @@ const generateCommonChannelElements = (data: BaseChannelData, medium: string, le
     lines.push(`${indent(level)}<image>`);
     lines.push(`${indent(level + 1)}<url>${escapeXml(data.imageUrl)}</url>`);
     lines.push(`${indent(level + 1)}<title>${escapeXml(data.imageTitle || data.title)}</title>`);
-    if (data.imageLink) {
-      lines.push(`${indent(level + 1)}<link>${escapeXml(data.imageLink)}</link>`);
+    // RSS 2.0 makes <link> REQUIRED inside <image> (url + title + link), and
+    // emitting it only when imageLink was filled in made every feed MSP produced
+    // fail validation with "Missing image element: link" — an error, not a
+    // warning. The channel link is the correct fallback: the spec's own note is
+    // that image url/title/link mirror the channel's.
+    const imageLink = data.imageLink || data.link;
+    if (imageLink) {
+      lines.push(`${indent(level + 1)}<link>${escapeXml(imageLink)}</link>`);
     }
     if (data.imageDescription) {
       lines.push(`${indent(level + 1)}<description>${escapeXml(data.imageDescription)}</description>`);
@@ -532,6 +565,22 @@ export const generatePublisherRssFeed = (publisher: PublisherFeed): string => {
   if (publisher.unknownChannelElements) {
     collectNamespacePrefixes(publisher.unknownChannelElements, prefixes);
   }
+
+  // <atom:link rel="self"> — the URL the feed claims to live at. Feeds MSP
+  // generated never had one, which the W3C validator flags and which costs MSP
+  // itself: parseSelfLink is one of the three sources for the Publisher Feed URL
+  // that auto-fills the Download Catalog field, so a self-hosted feed re-imported
+  // from a file had nothing to fall back on. Only emitted from a sourceUrl we
+  // actually know — never guessed — and never when the passthrough already
+  // carries one.
+  const selfLink =
+    publisher.sourceUrl && !hasSelfLinkPassthrough(publisher.unknownChannelElements)
+      ? publisher.sourceUrl
+      : undefined;
+  // Must be declared before generateNamespaceDeclarations runs, or the element
+  // is emitted against an undeclared prefix and the XML is malformed.
+  if (selfLink) prefixes.add('atom');
+
   const additionalNsDecl = generateNamespaceDeclarations(prefixes);
 
   // RSS root with namespaces
@@ -541,6 +590,12 @@ export const generatePublisherRssFeed = (publisher: PublisherFeed): string => {
 
   // Channel
   lines.push(`${indent(1)}<channel>`);
+
+  if (selfLink) {
+    lines.push(
+      `${indent(2)}<atom:link href="${escapeXml(selfLink)}" rel="self" type="application/rss+xml" />`
+    );
+  }
 
   // Common channel elements (medium is always "publisher" for publisher feeds)
   lines.push(...generateCommonChannelElements(publisher, 'publisher', 2));

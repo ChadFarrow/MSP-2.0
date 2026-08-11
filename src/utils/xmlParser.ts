@@ -583,7 +583,11 @@ function parseRemoteItem(node: unknown): RemoteItem | null {
     feedUrl: feedUrl || undefined,
     itemGuid: getAttr(node, 'itemGuid') || undefined,
     medium: getAttr(node, 'medium') || undefined,
-    title: getText(node) || undefined,
+    // The spec defines title as an ATTRIBUTE and the element as self-closing.
+    // Reading only the element text meant every conforming publisher feed —
+    // Fountain's among them — imported with no titles at all. The text fallback
+    // stays for feeds MSP itself wrote before the generator was corrected.
+    title: getAttr(node, 'title') || getText(node) || undefined,
     image: getAttr(node, 'feedImg') || getAttr(node, 'image') || undefined
   };
 }

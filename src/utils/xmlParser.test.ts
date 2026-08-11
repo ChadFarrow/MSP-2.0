@@ -433,6 +433,72 @@ describe('publisher feed sourceUrl from atom:link rel="self"', () => {
   });
 });
 
+describe('podcast:remoteItem title attribute', () => {
+  const pubWrap = (items: string) => `<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:podcast="https://podcastindex.org/namespace/1.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" version="2.0">
+  <channel>
+    <title>James Goulding</title>
+    <description>d</description>
+    <podcast:medium>publisher</podcast:medium>
+    <podcast:guid>ff83e8b5-7648-44d0-aa3c-4912f491066a</podcast:guid>
+    ${items}
+  </channel>
+</rss>`;
+
+  const ALBUM_GUID = '048d73a2-5ca3-4593-8d8d-bca7d9e72d4a';
+  const ALBUM_URL = 'https://headstarts.uk/msp/James-Goulding/Please-Stand-By/Please_Stand_By.xml';
+
+  it('reads title from the attribute, as the spec defines it', () => {
+    // The shape Fountain emits. Reading only element text meant every
+    // conforming publisher feed imported with no album titles at all.
+    const feed = parsePublisherRssFeed(pubWrap(
+      `<podcast:remoteItem feedGuid="${ALBUM_GUID}" feedUrl="${ALBUM_URL}" medium="music" title="Please Stand By"/>`
+    ));
+    expect(feed.remoteItems[0].title).toBe('Please Stand By');
+  });
+
+  it('still reads a title written as element text (feeds MSP wrote before this)', () => {
+    const feed = parsePublisherRssFeed(pubWrap(
+      `<podcast:remoteItem feedGuid="${ALBUM_GUID}" feedUrl="${ALBUM_URL}" medium="music">Please Stand By</podcast:remoteItem>`
+    ));
+    expect(feed.remoteItems[0].title).toBe('Please Stand By');
+  });
+
+  it('prefers the attribute when a feed carries both', () => {
+    const feed = parsePublisherRssFeed(pubWrap(
+      `<podcast:remoteItem feedGuid="${ALBUM_GUID}" medium="music" title="From attribute">From text</podcast:remoteItem>`
+    ));
+    expect(feed.remoteItems[0].title).toBe('From attribute');
+  });
+
+  it('emits title as a self-closing attribute, never as element text', () => {
+    const feed = parsePublisherRssFeed(pubWrap(
+      `<podcast:remoteItem feedGuid="${ALBUM_GUID}" feedUrl="${ALBUM_URL}" medium="music">Please Stand By</podcast:remoteItem>`
+    ));
+    const xml = generatePublisherRssFeed(feed);
+
+    expect(xml).toContain('title="Please Stand By"');
+    expect(xml).not.toContain('>Please Stand By</podcast:remoteItem>');
+    expect(xml).toMatch(/<podcast:remoteItem [^>]*\/>/);
+  });
+
+  it('round-trips the legacy text form into the spec form without losing feedImg', () => {
+    const IMG = 'https://headstarts.uk/msp/James-Goulding/Please-Stand-By/psb.jpeg';
+    const feed = parsePublisherRssFeed(pubWrap(
+      `<podcast:remoteItem feedGuid="${ALBUM_GUID}" feedUrl="${ALBUM_URL}" medium="music" feedImg="${IMG}">Please Stand By</podcast:remoteItem>`
+    ));
+    const reparsed = parsePublisherRssFeed(generatePublisherRssFeed(feed));
+
+    expect(reparsed.remoteItems[0]).toEqual({
+      feedGuid: ALBUM_GUID,
+      feedUrl: ALBUM_URL,
+      medium: 'music',
+      title: 'Please Stand By',
+      image: IMG
+    });
+  });
+});
+
 describe('podcast:publisher parsing', () => {
   const wrap = (publisherXml: string) => `<?xml version="1.0" encoding="UTF-8"?>
 <rss xmlns:podcast="https://podcastindex.org/namespace/1.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" version="2.0">

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { generateRssFeed } from './xmlGenerator';
+import { generateRssFeed, generatePublisherRssFeed } from './xmlGenerator';
 import { parseRssFeed } from './xmlParser';
-import { createEmptyAlbum } from '../types/feed';
+import { createEmptyAlbum, createEmptyPublisherFeed } from '../types/feed';
 
 describe('xmlGenerator publisher reference', () => {
   it('includes podcast:publisher tag when publisher is set', () => {
@@ -319,5 +319,78 @@ describe('xmlGenerator track order', () => {
     const xml = generateRssFeed(threeTrackAlbum());
     const episodes = [...xml.matchAll(/<podcast:episode>(\d+)<\/podcast:episode>/g)].map(m => Number(m[1]));
     expect(episodes).toEqual([1, 2, 3]);
+  });
+});
+
+describe('RSS validity: image link and atom self-link', () => {
+  it('emits <link> inside <image>, falling back to the channel link', () => {
+    // RSS 2.0 requires url + title + link. Omitting it made every MSP feed fail
+    // the W3C validator with an *error*, not a warning.
+    const album = createEmptyAlbum();
+    album.title = 'Please Stand By';
+    album.link = 'https://jamesgoulding.bandcamp.com/';
+    album.imageUrl = 'https://example.com/cover.jpg';
+    album.imageLink = '';
+
+    const xml = generateRssFeed(album);
+    expect(xml).toContain('<link>https://jamesgoulding.bandcamp.com/</link>');
+    expect(xml).toMatch(/<image>[\s\S]*<link>[\s\S]*<\/image>/);
+  });
+
+  it('prefers an explicit imageLink over the channel link', () => {
+    const album = createEmptyAlbum();
+    album.link = 'https://example.com/site';
+    album.imageUrl = 'https://example.com/cover.jpg';
+    album.imageLink = 'https://example.com/art-page';
+
+    expect(generateRssFeed(album)).toContain('<link>https://example.com/art-page</link>');
+  });
+
+  it('emits atom:link rel="self" from a publisher sourceUrl, with the namespace declared', () => {
+    const feed = createEmptyPublisherFeed();
+    feed.title = 'James Goulding';
+    feed.sourceUrl = 'https://headstarts.uk/msp/publisher-feeds/James_Goulding.xml';
+
+    const xml = generatePublisherRssFeed(feed);
+    expect(xml).toContain('xmlns:atom="http://www.w3.org/2005/Atom"');
+    expect(xml).toContain(
+      '<atom:link href="https://headstarts.uk/msp/publisher-feeds/James_Goulding.xml" rel="self" type="application/rss+xml" />'
+    );
+  });
+
+  it('never guesses a self-link when sourceUrl is unknown', () => {
+    const feed = createEmptyPublisherFeed();
+    feed.title = 'No source';
+    expect(generatePublisherRssFeed(feed)).not.toContain('rel="self"');
+  });
+
+  it('does not emit a second self-link when the imported one round-trips', () => {
+    // atom:link is deliberately absent from KNOWN_CHANNEL_KEYS, so an imported
+    // self-link is re-emitted from unknownChannelElements. Generating another
+    // from sourceUrl would duplicate the element.
+    const feed = createEmptyPublisherFeed();
+    feed.sourceUrl = 'https://example.com/pub.xml';
+    feed.unknownChannelElements = {
+      'atom:link': {
+        '@_href': 'https://example.com/pub.xml',
+        '@_rel': 'self',
+        '@_type': 'application/rss+xml'
+      }
+    };
+
+    const xml = generatePublisherRssFeed(feed);
+    expect(xml.match(/rel="self"/g)).toHaveLength(1);
+  });
+
+  it('still emits its own self-link when the passthrough only has other rels', () => {
+    const feed = createEmptyPublisherFeed();
+    feed.sourceUrl = 'https://example.com/pub.xml';
+    feed.unknownChannelElements = {
+      'atom:link': { '@_href': 'https://example.com/hub', '@_rel': 'hub' }
+    };
+
+    const xml = generatePublisherRssFeed(feed);
+    expect(xml.match(/rel="self"/g)).toHaveLength(1);
+    expect(xml).toContain('rel="hub"');
   });
 });

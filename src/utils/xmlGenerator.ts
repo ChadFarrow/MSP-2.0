@@ -233,11 +233,18 @@ const generateRemoteItemXml = (item: RemoteItem, level: number): string => {
   if (item.feedUrl) attrs.push(`feedUrl="${escapeXml(item.feedUrl)}"`);
   if (item.itemGuid) attrs.push(`itemGuid="${escapeXml(item.itemGuid)}"`);
   attrs.push(`medium="${escapeXml(item.medium || 'music')}"`);
+  // title is an ATTRIBUTE per spec — "a hint to apps so that they can display
+  // the title without having to do a remote lookup" — and the element is
+  // self-closing. MSP used to write the title as element text, which no
+  // conforming reader looks at, so the hint never reached anyone and every app
+  // did the remote lookup anyway.
+  if (item.title) attrs.push(`title="${escapeXml(item.title)}"`);
+  // feedImg is NOT in the spec. It is kept because MSP's own publisher editor
+  // renders these thumbnails from it (CatalogFeedsSection, DownloadCatalogSection)
+  // and dropping it would blank them on the next import. Unknown attributes are
+  // ignored by conforming parsers, so it costs other readers nothing.
   if (item.image) attrs.push(`feedImg="${escapeXml(item.image)}"`);
 
-  if (item.title) {
-    return `${indent(level)}<podcast:remoteItem ${attrs.join(' ')}>${escapeXml(item.title)}</podcast:remoteItem>`;
-  }
   return `${indent(level)}<podcast:remoteItem ${attrs.join(' ')} />`;
 };
 

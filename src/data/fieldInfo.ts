@@ -64,7 +64,7 @@ export const FIELD_INFO = {
   enclosureUrl: "Direct link to the audio file. MP3 is preferred — smaller file size saves bandwidth for listeners. Other formats (flac, wav, m4a, aac, ogg, opus, aiff) are also supported. Ensure CORS policy allows access.",
   enclosureLength: "File size in bytes. Filled in automatically from the audio file when its host allows it; podcast apps use it to show download size.",
   trackArtUrl: "Optional track-specific artwork. If empty, album art is used.",
-  transcriptUrl: "Link to an SRT file with time-coded lyrics for display during playback.",
+  transcriptUrl: "Link to a file with time-coded lyrics for display during playback, plus its format. SubRip (.srt) and WebVTT (.vtt) are the widely supported ones. Apps that don't support lyrics simply ignore it.",
   trackGuid: "Unique identifier for this track. Auto-generated, or use guidgenerator.com to create one.",
   trackExplicit: "Mark if this specific track contains explicit content.",
   overridePersons: "Enable to set different credits for this track than the album level. Track-level persons replace album-level.",

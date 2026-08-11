@@ -1,7 +1,7 @@
 // MSP 2.0 - XML Parser for importing Demu RSS Feeds
 import { XMLParser } from 'fast-xml-parser';
 import type { Album, Track, Person, PersonGroup, ValueRecipient, ValueBlock, Funding, PublisherFeed, RemoteItem, PublisherReference, BaseChannelData, PodcastImage } from '../types/feed';
-import { createEmptyTrack, LEGACY_MSP_NODE_PUBKEY, MSP_SUPPORT_RECIPIENT } from '../types/feed';
+import { createEmptyTrack, LEGACY_MSP_NODE_PUBKEY, MSP_SUPPORT_RECIPIENT, DEFAULT_TRANSCRIPT_TYPE } from '../types/feed';
 import { areValueBlocksStrictEqual, arePersonsEqual } from './comparison';
 import { detectAddressType } from './addressUtils';
 import { MIN_PLAUSIBLE_MEDIA_BYTES } from './audioUtils';
@@ -703,7 +703,8 @@ function parseTrack(node: unknown, trackNumber: number, albumValue: ValueBlock, 
   const transcript = item['podcast:transcript'];
   if (transcript) {
     track.transcriptUrl = getAttr(transcript, 'url') || '';
-    track.transcriptType = getAttr(transcript, 'type') || 'application/srt';
+    // Fallback only — a feed that states its own type keeps it verbatim.
+    track.transcriptType = getAttr(transcript, 'type') || DEFAULT_TRANSCRIPT_TYPE;
   }
 
   // Persons - only set override if different from album

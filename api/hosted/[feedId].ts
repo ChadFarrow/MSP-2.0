@@ -6,7 +6,8 @@ import {
   getBaseUrl,
   hashToken,
   timingSafeEqualHex,
-  isValidFeedId
+  isValidFeedId,
+  timingSafeEqualString
 } from '../_utils/feedUtils.js';
 import type { PodcastIndexAddResult } from '../_utils/feedUtils.js';
 import { extractPodcastMedium } from '../_utils/xmlUtils.js';
@@ -114,7 +115,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // Check for admin key (bypasses UUID validation and edit token)
   const adminKey = req.headers['x-admin-key'];
-  const hasLegacyAdmin = process.env.MSP_ADMIN_KEY && adminKey === process.env.MSP_ADMIN_KEY;
+  // Constant-time: this is a static, long-lived, full-privilege bearer secret,
+  // and === short-circuits on the first differing byte. Same treatment the edit
+  // tokens already get a few lines away.
+  const hasLegacyAdmin = !!process.env.MSP_ADMIN_KEY && typeof adminKey === 'string' &&
+    timingSafeEqualString(adminKey, process.env.MSP_ADMIN_KEY);
 
   // Check Nostr auth header for admin access
   const authHeader = req.headers['authorization'] as string | undefined;
@@ -190,6 +195,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         res.setHeader('Content-Type', 'application/xml; charset=utf-8');
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        // This serves user-supplied bytes from MSP's own origin — the same origin whose
+        // localStorage holds every hosted feed's edit token and the email session JWT.
+        // proxy-feed already reasons about this (its guard 5 notes that passing through
+        // text/html would be stored XSS on our own origin); the same applies here and
+        // wasn't carried over. nosniff pins the declared type, and the CSP blocks
+        // subresource loads — which is what stops an <?xml-stylesheet?> pointing at a
+        // second hosted feed from pulling in XSLT and executing script in our origin.
+        // Neither header affects podcast apps or Podcast Index: they aren't browsers.
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
 
         return res.status(200).send(content);
       }

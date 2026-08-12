@@ -14,7 +14,11 @@ vi.mock('./_utils/feedReachability.js', () => ({
 function createMockReqRes(method: string, body: Record<string, unknown>) {
   const res = {
     status: vi.fn().mockReturnThis(),
-    json: vi.fn().mockReturnThis()
+    json: vi.fn().mockReturnThis(),
+    // Unused by this handler, but the Desktop App fork wraps the same handler in
+    // its CORS helper — which calls setHeader — and runs this exact test file.
+    // Stubbing it here costs nothing and saves that fork a per-sync patch.
+    setHeader: vi.fn().mockReturnThis()
   };
   return {
     req: { method, body, headers: {} } as unknown as VercelRequest,

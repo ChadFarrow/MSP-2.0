@@ -62,7 +62,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Handle potentially empty response body
     const notifyText = await notifyResponse.text();
-    let notifyData: any = {};
+    let notifyData: Record<string, unknown> = {};
     if (notifyText) {
       try {
         notifyData = JSON.parse(notifyText);
@@ -73,7 +73,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (!notifyResponse.ok) {
       return res.status(notifyResponse.status).json({
-        error: notifyData.description || 'Failed to notify Podcast Index',
+        error: typeof notifyData.description === 'string' && notifyData.description
+          ? notifyData.description
+          : 'Failed to notify Podcast Index',
         details: notifyData
       });
     }

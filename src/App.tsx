@@ -37,6 +37,24 @@ const mspLogo = '/msp-logo-192.png';
 import { PodcastIndexIcon } from './components/PodcastIndexIcon';
 import './App.css';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Well-formed enough to spend a Podcast Index lookup on. */
+function isLookupGuid(guid: string | undefined): guid is string {
+  return !!guid && UUID_RE.test(guid);
+}
+
+/**
+ * The Podcast Index id cached alongside a hosted feed's credentials at save time,
+ * or null. Synchronous (localStorage), so callers can read it during render.
+ */
+function cachedPiFeedId(rawGuid: string | undefined): number | null {
+  const guid = rawGuid?.trim();
+  if (!isLookupGuid(guid)) return null;
+  const cachedId = hostedFeedStorage.load(guid)?.podcastIndexId;
+  return typeof cachedId === 'number' ? cachedId : null;
+}
+
 // Main App Content (needs access to context)
 function AppContent() {
   const { state, dispatch } = useFeed();
@@ -63,21 +81,27 @@ function AppContent() {
     : state.feedType === 'video' ? state.videoFeed?.podcastGuid
     : state.album?.podcastGuid;
 
+  // Re-seed the id during render rather than inside the effect below. Both halves
+  // are synchronous — clearing the previous feed's id, and reading the cached one
+  // out of localStorage — and doing them in an effect paints the *previous* feed's
+  // Podcast Index page for a frame after a switch. This is React's documented
+  // pattern for adjusting state when a prop changes.
+  const [piGuid, setPiGuid] = useState(currentFeedGuid);
+  if (piGuid !== currentFeedGuid) {
+    setPiGuid(currentFeedGuid);
+    setPiFeedId(cachedPiFeedId(currentFeedGuid));
+  }
+
   useEffect(() => {
-    setPiFeedId(null);
     const guid = currentFeedGuid?.trim();
     // Only look up well-formed GUIDs (avoids junk queries on empty/new feeds).
-    if (!guid || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(guid)) return;
+    if (!isLookupGuid(guid)) return;
 
-    // For MSP-hosted feeds we already know the id: /api/hosted returns it at save
-    // time and it's cached alongside the hosted-feed credentials. Prefer it — PI's
-    // search only knows a feed's podcastGuid AFTER it crawls the feed, so a freshly
-    // registered feed is invisible to the lookup below for hours.
-    const cachedId = hostedFeedStorage.load(guid)?.podcastIndexId;
-    if (typeof cachedId === 'number') {
-      setPiFeedId(cachedId);
-      return;
-    }
+    // For MSP-hosted feeds we already know the id and the render-time seed above
+    // has already applied it — PI's search only knows a feed's podcastGuid AFTER
+    // it crawls the feed, so a freshly registered feed is invisible to the lookup
+    // below for hours.
+    if (cachedPiFeedId(currentFeedGuid) !== null) return;
 
     let cancelled = false;
     fetch(`/api/pisearch?q=${encodeURIComponent(guid)}`)

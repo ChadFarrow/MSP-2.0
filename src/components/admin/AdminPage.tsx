@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNostr } from '../../store/nostrStore';
 import { FeedList } from './FeedList';
 // The 40px header logo. Points at the 192px file in public/ rather than importing
@@ -16,18 +16,17 @@ type AuthState = 'checking' | 'no-extension' | 'not-logged-in' | 'ready';
 
 export function AdminPage() {
   const { state: nostrState, login } = useNostr();
-  const [authState, setAuthState] = useState<AuthState>('checking');
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!nostrState.hasExtension) {
-      setAuthState('no-extension');
-    } else if (!nostrState.isLoggedIn) {
-      setAuthState('not-logged-in');
-    } else {
-      setAuthState('ready');
-    }
-  }, [nostrState.hasExtension, nostrState.isLoggedIn]);
+  // Derived, not state-in-an-effect: this is a pure function of the Nostr store.
+  // Gating on isLoading matters — nostrStore sleeps 500ms waiting for a NIP-07
+  // extension to inject before it dispatches SET_HAS_EXTENSION, so reading
+  // hasExtension before init settles flashes "no extension" on every load.
+  const authState: AuthState =
+    nostrState.isLoading ? 'checking'
+    : !nostrState.hasExtension ? 'no-extension'
+    : !nostrState.isLoggedIn ? 'not-logged-in'
+    : 'ready';
 
   const handleLogin = async () => {
     await login();

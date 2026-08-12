@@ -40,9 +40,9 @@ jobs:
       - name: Test
         run: npm run test
 
-      # Non-blocking for now: master carries 29 pre-existing problems, and failing
-      # every PR on them would just train people to ignore this job. Flip to blocking
-      # once the backlog is cleared.
+      # Blocking as of the backlog cleanup — master is at 0 problems and must stay
+      # there. This is not just tidiness: the Desktop App fork lints these same files
+      # as a *blocking* job, so a lint error landing here holds its automated sync PR
+      # red, and a fix pushed to that PR is wiped when sync-upstream force-resets.
       - name: Lint
         run: npm run lint
-        continue-on-error: true

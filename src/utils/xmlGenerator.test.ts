@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { generateRssFeed, generatePublisherRssFeed } from './xmlGenerator';
 import { parseRssFeed } from './xmlParser';
-import { createEmptyAlbum, createEmptyPublisherFeed } from '../types/feed';
+import { createEmptyAlbum, createEmptyPublisherFeed, createEmptyTrack } from '../types/feed';
 
 describe('xmlGenerator publisher reference', () => {
   it('includes podcast:publisher tag when publisher is set', () => {
@@ -433,5 +433,54 @@ describe('RSS validity: image link and atom self-link', () => {
     const xml = generatePublisherRssFeed(feed);
     expect(xml.match(/rel="self"/g)).toHaveLength(1);
     expect(xml).toContain('rel="hub"');
+  });
+});
+
+describe('XML escaping at every interpolation site', () => {
+  // Each of these fields reaches the generator from a third-party feed via
+  // Import-from-URL or the publisher Download Feed, and MSP then *hosts* the
+  // regenerated result — so an unescaped one means MSP emits a malformed or
+  // structurally altered document over its own name. A bare & is enough.
+  const raw = 'a & b';
+
+  it('escapes <language>', () => {
+    const album = createEmptyAlbum();
+    album.language = raw;
+    const xml = generateRssFeed(album);
+    expect(xml).toContain('<language>a &amp; b</language>');
+    expect(xml).not.toContain('<language>a & b</language>');
+  });
+
+  it('escapes <podcast:medium>', () => {
+    const album = createEmptyAlbum();
+    // medium is typed as a union but the parser produces it with a cast, not a
+    // validation (`getText(...) as 'music' | 'video'`), so any text can land here.
+    album.medium = raw as unknown as 'music';
+    expect(generateRssFeed(album)).toContain('<podcast:medium>a &amp; b</podcast:medium>');
+  });
+
+  it('escapes the suggested= attribute of podcast:value', () => {
+    const album = createEmptyAlbum();
+    album.value.suggested = '0.1" onload="x';
+    album.value.recipients = [
+      { name: 'A', address: 'a@b.com', split: 100, type: 'lnaddress' }
+    ];
+    const xml = generateRssFeed(album);
+    expect(xml).toContain('suggested="0.1&quot; onload=&quot;x"');
+  });
+
+  it('escapes the enclosure length= attribute and itunes:duration', () => {
+    const album = createEmptyAlbum();
+    album.tracks = [
+      {
+        ...createEmptyTrack(1),
+        enclosureUrl: 'https://example.com/a.mp3',
+        enclosureLength: '123" x="y',
+        duration: '00:03:00 & more'
+      }
+    ];
+    const xml = generateRssFeed(album);
+    expect(xml).toContain('length="123&quot; x=&quot;y"');
+    expect(xml).toContain('<itunes:duration>00:03:00 &amp; more</itunes:duration>');
   });
 });

@@ -6,7 +6,8 @@ import {
   notifyPodcastIndex,
   getBaseUrl,
   hashToken,
-  isValidFeedId
+  isValidFeedId,
+  timingSafeEqualString
 } from '../_utils/feedUtils.js';
 import { extractPodcastMedium } from '../_utils/xmlUtils.js';
 import { hydrateFeed } from '../_utils/feedHydrate.js';
@@ -23,7 +24,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'GET') {
     // Check legacy admin key
     const adminKey = req.headers['x-admin-key'];
-    const hasLegacyAdmin = process.env.MSP_ADMIN_KEY && adminKey === process.env.MSP_ADMIN_KEY;
+    // Constant-time: this is a static, long-lived, full-privilege bearer secret,
+    // and === short-circuits on the first differing byte. Same treatment the edit
+    // tokens already get a few lines away.
+    const hasLegacyAdmin = !!process.env.MSP_ADMIN_KEY && typeof adminKey === 'string' &&
+      timingSafeEqualString(adminKey, process.env.MSP_ADMIN_KEY);
 
     // Check Nostr auth header - first try admin, then regular user
     const authHeader = req.headers['authorization'] as string | undefined;

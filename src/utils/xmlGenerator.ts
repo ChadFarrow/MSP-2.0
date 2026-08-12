@@ -231,7 +231,7 @@ const generateValueXml = (value: ValueBlock, level: number): string => {
     `type="${value.type}"`,
     `method="${method}"`
   ];
-  if (value.suggested) attrs.push(`suggested="${value.suggested}"`);
+  if (value.suggested) attrs.push(`suggested="${escapeXml(value.suggested)}"`);
 
   lines.push(`${indent(level)}<podcast:value ${attrs.join(' ')}>`);
   value.recipients.forEach(r => lines.push(generateRecipientXml(r, level + 1)));
@@ -306,7 +306,7 @@ const generateCommonChannelElements = (data: BaseChannelData, medium: string, le
   }
 
   // Language
-  lines.push(`${indent(level)}<language>${data.language}</language>`);
+  lines.push(`${indent(level)}<language>${escapeXml(data.language)}</language>`);
 
   // Generator - always use MSP 2.0 since we're generating the feed
   lines.push(`${indent(level)}<generator>MSP 2.0 - Music Side Project Studio</generator>`);
@@ -381,7 +381,7 @@ const generateCommonChannelElements = (data: BaseChannelData, medium: string, le
   });
 
   // Medium
-  lines.push(`${indent(level)}<podcast:medium>${medium}</podcast:medium>`);
+  lines.push(`${indent(level)}<podcast:medium>${escapeXml(medium)}</podcast:medium>`);
 
   // Explicit
   lines.push(`${indent(level)}<itunes:explicit>${data.explicit ? 'true' : 'false'}</itunes:explicit>`);
@@ -472,11 +472,11 @@ const generateTrackXml = (track: Track, album: Album, level: number): string => 
   // Enclosure (audio file)
   const fileLength = track.enclosureLength || '0';
   const enclosureUrl = album.op3 ? applyOp3Prefix(track.enclosureUrl, album.podcastGuid) : track.enclosureUrl;
-  lines.push(`${indent(level + 1)}<enclosure url="${escapeXml(enclosureUrl)}" length="${fileLength}" type="${escapeXml(track.enclosureType)}"/>`);
+  lines.push(`${indent(level + 1)}<enclosure url="${escapeXml(enclosureUrl)}" length="${escapeXml(String(fileLength))}" type="${escapeXml(track.enclosureType)}"/>`);
 
 
   // Duration
-  lines.push(`${indent(level + 1)}<itunes:duration>${track.duration}</itunes:duration>`);
+  lines.push(`${indent(level + 1)}<itunes:duration>${escapeXml(track.duration)}</itunes:duration>`);
 
   // Season (always 1)
   lines.push(`${indent(level + 1)}<podcast:season>1</podcast:season>`);

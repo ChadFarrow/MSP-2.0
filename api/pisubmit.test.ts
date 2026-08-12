@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
@@ -11,12 +12,16 @@ vi.mock('./_utils/feedReachability.js', () => ({
 }));
 
 function createMockReqRes(method: string, body: Record<string, unknown>) {
-  const req = { method, body, headers: {} } as any;
   const res = {
     status: vi.fn().mockReturnThis(),
     json: vi.fn().mockReturnThis()
-  } as any;
-  return { req, res };
+  };
+  return {
+    req: { method, body, headers: {} } as unknown as VercelRequest,
+    // Intersected rather than plain VercelResponse so the assertions below keep
+    // reaching res.json.mock while the handler still receives a VercelResponse.
+    res: res as unknown as VercelResponse & typeof res
+  };
 }
 
 describe('/api/pisubmit', () => {

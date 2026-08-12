@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { Mock } from 'vitest';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const mockFetch = vi.fn();
@@ -11,7 +12,16 @@ vi.mock('./_utils/feedReachability.js', () => ({
   wantsForce: (v: unknown) => v === true || v === '1' || v === 'true'
 }));
 
+/** The subset of VercelResponse the handler touches, with vi.fn() assertions. */
+type MockRes = VercelResponse & {
+  status: Mock;
+  json: Mock;
+  setHeader: Mock;
+};
+
 function createMockReqRes(method: string, body: Record<string, unknown>) {
+  const req = { method, body, headers: {} } as unknown as VercelRequest;
+
   const res = {
     status: vi.fn().mockReturnThis(),
     json: vi.fn().mockReturnThis(),
@@ -19,13 +29,9 @@ function createMockReqRes(method: string, body: Record<string, unknown>) {
     // its CORS helper — which calls setHeader — and runs this exact test file.
     // Stubbing it here costs nothing and saves that fork a per-sync patch.
     setHeader: vi.fn().mockReturnThis()
-  };
-  return {
-    req: { method, body, headers: {} } as unknown as VercelRequest,
-    // Intersected rather than plain VercelResponse so the assertions below keep
-    // reaching res.json.mock while the handler still receives a VercelResponse.
-    res: res as unknown as VercelResponse & typeof res
-  };
+  } as unknown as MockRes;
+
+  return { req, res };
 }
 
 describe('/api/pisubmit', () => {

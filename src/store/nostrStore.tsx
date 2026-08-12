@@ -61,7 +61,7 @@ function nostrReducer(state: NostrAuthState, action: NostrAction): NostrAuthStat
         isLoading: false,
         error: null
       };
-    case 'UPDATE_PROFILE':
+    case 'UPDATE_PROFILE': {
       if (!state.user) return state;
       const updatedUser = {
         ...state.user,
@@ -72,6 +72,7 @@ function nostrReducer(state: NostrAuthState, action: NostrAction): NostrAuthStat
       };
       saveUser(updatedUser);
       return { ...state, user: updatedUser };
+    }
     case 'LOGOUT':
       return {
         ...state,

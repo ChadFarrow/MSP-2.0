@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { Mock } from 'vitest';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
@@ -10,6 +12,13 @@ vi.mock('./_utils/feedReachability.js', () => ({
   wantsForce: (v: unknown) => v === true || v === '1' || v === 'true'
 }));
 
+/** The subset of VercelResponse the handler touches, with vi.fn() assertions. */
+type MockRes = VercelResponse & {
+  status: Mock;
+  json: Mock;
+  setHeader: Mock;
+};
+
 function createMockReqRes(
   method: string,
   query: Record<string, string | undefined>,
@@ -20,13 +29,13 @@ function createMockReqRes(
     query,
     body: undefined,
     headers: { 'x-forwarded-for': ip }
-  } as any;
+  } as unknown as VercelRequest;
 
   const res = {
     status: vi.fn().mockReturnThis(),
     json: vi.fn().mockReturnThis(),
     setHeader: vi.fn().mockReturnThis()
-  } as any;
+  } as unknown as MockRes;
 
   return { req, res };
 }

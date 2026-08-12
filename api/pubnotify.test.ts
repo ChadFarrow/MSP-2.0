@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { Mock } from 'vitest';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 // Mock fetch globally before importing the handler
 const mockFetch = vi.fn();
@@ -24,18 +26,28 @@ vi.mock('crypto', () => ({
   }
 }));
 
+/** The subset of VercelResponse the handler touches, with vi.fn() assertions. */
+type MockRes = VercelResponse & {
+  status: Mock;
+  json: Mock;
+  setHeader: Mock;
+};
+
 // Helper to create mock request/response
 function createMockReqRes(query: Record<string, string | undefined>) {
   const req = {
     method: 'GET',
     query,
     headers: {}
-  } as any;
+  } as unknown as VercelRequest;
 
   const res = {
     status: vi.fn().mockReturnThis(),
-    json: vi.fn().mockReturnThis()
-  } as any;
+    json: vi.fn().mockReturnThis(),
+    // Unused by this handler, but the Desktop App fork wraps it in a CORS helper
+    // that calls setHeader and runs this exact file. See pisubmit.test.ts.
+    setHeader: vi.fn().mockReturnThis()
+  } as unknown as MockRes;
 
   return { req, res };
 }

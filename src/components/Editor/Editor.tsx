@@ -81,9 +81,10 @@ function RolesModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
 function Op3StatsLink({ podcastGuid }: { podcastGuid: string }) {
   const [hasStats, setHasStats] = useState<boolean | null>(null);
 
+  // No setHasStats(null) reset here — the call site keys this component on
+  // podcastGuid, so a guid change remounts it and useState does the reset.
   useEffect(() => {
     let cancelled = false;
-    setHasStats(null);
     fetch(`/api/op3check?guid=${encodeURIComponent(podcastGuid)}`)
       .then(res => res.json())
       .then(data => { if (!cancelled) setHasStats(data.hasStats === true); })
@@ -350,7 +351,7 @@ export function Editor() {
                   labelSuffix={<InfoIcon text={FIELD_INFO.op3} />}
                 />
                 {album.op3 && album.podcastGuid && (
-                  <Op3StatsLink podcastGuid={album.podcastGuid} />
+                  <Op3StatsLink key={album.podcastGuid} podcastGuid={album.podcastGuid} />
                 )}
               </div>
               <div className="form-group full-width">

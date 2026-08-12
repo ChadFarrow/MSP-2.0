@@ -49,7 +49,12 @@ npm run dev
 - Build auto-unshallows Vercel's git clone for accurate version computation
 
 ### Typechecking — use `npm run build`, not `tsc --noEmit`
-The root `tsconfig.json` is **references-only** (`files: []` + references to `tsconfig.app.json` / `tsconfig.node.json`), so `tsc --noEmit` against it checks **zero files** and always passes — a false green. Always verify types with `npm run build` (`tsc -b && vite build`) or at minimum `npx tsc -b`. (Lint is separate: `npm run lint`.)
+The root `tsconfig.json` is **references-only** (`files: []` + references to `tsconfig.app.json` / `tsconfig.node.json` / `tsconfig.api.json`), so `tsc --noEmit` against it checks **zero files** and always passes — a false green. Always verify types with `npm run build` (`tsc -b && vite build`) or at minimum `npx tsc -b`. (Lint is separate: `npm run lint`.)
+
+`tsconfig.api.json` exists because `api/` used to be typechecked by **nothing** — `tsconfig.app.json` includes only `src`, `tsconfig.node.json` only `vite.config.ts`, and Vercel's builder transpiles functions without checking them. Roughly 8k lines, including every auth path, the SSRF guards and feed CRUD, had no type gate. It excludes `api/**/*.test.ts` on purpose: handler tests pass `vi.fn()` mocks where a full `VercelResponse` is expected, which is normal for that style of test and would bury real errors in ~30 fake ones.
+
+### CI — Vercel's green check is not a passing test run
+`.github/workflows/ci.yml` runs `npm run build`, `npm run test` and `npm run lint` on every PR and on pushes to `master`. Before it existed the only checks were **Vercel** and **Vercel Preview Comments** — a build and a deploy — so a PR could break all 475 tests and still show green. Lint is `continue-on-error` while master carries pre-existing problems; make it blocking once that backlog is clear.
 
 ### Domains & canonical URL
 Hosted feed URLs (album/video/publisher) **always** use the canonical domain, never the request host:

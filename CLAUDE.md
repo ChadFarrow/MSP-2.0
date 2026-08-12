@@ -16,8 +16,9 @@ MSP 2.0 (Music Side Project Studio) is a React web application for creating Podc
 A `.env` file is required with the following variables:
 - `PODCASTINDEX_API_KEY` - Podcast Index API key
 - `PODCASTINDEX_API_SECRET` - Podcast Index API secret
-- `BLOB_READ_WRITE_TOKEN` - Vercel Blob storage token
+- `BLOB_READ_WRITE_TOKEN` - Vercel Blob storage token. **Read-write: it is the key to every hosted feed** (`feeds/*.xml`, the meta blobs, and the whole `accounts/` namespace whose privacy model is "unguessable paths"). Vercel owns this one — the Blob store injects it into connected projects, and rotating it in the dashboard updates the env var automatically, but **active deployments must be redeployed to pick it up**. It was committed to this public repo in `63c2de2` (Jan 2026) and removed the same day in `5535933`; removing a file does not remove its blob, so it stayed readable in history — and in the Desktop App fork — until rotated in Aug 2026. If you ever rotate again, do **not** take Vercel's "delay expiration of old credentials" option when the reason is exposure: that keeps the leaked key alive for up to 30 days
 - `MSP_ADMIN_PUBKEYS` - Admin public keys for authentication
+- `MSP_ADMIN_KEY` - **Second, static full-admin path that bypasses NIP-98 entirely.** A long-lived bearer secret accepted via the admin header by `api/hosted/index.ts` and `api/hosted/[feedId].ts`; if set, it grants restore/delete/backup on any feed with no Nostr signature. It went undocumented here for a long time — if you don't need it, unset it rather than leaving a spare key under the mat. Compared with `timingSafeEqualString()` (see the hardening notes below for why not the hex variant)
 - `VITE_CANONICAL_URL` - Canonical URL for the application
 - `PODPING_ENDPOINT_URL` - Full URL to MSP's self-hosted podping-hivepinger Railway service, trailing slash (optional; podping notifications are skipped when unset)
 - `PODPING_BEARER_TOKEN` - Bearer token shared with the Railway service (optional; podping notifications are skipped when unset)
@@ -79,6 +80,23 @@ Hosted feed URLs (album/video/publisher) **always** use the canonical domain, ne
 
 ### Versioning
 Version is auto-computed at build time from git commit count: `0.1.{count - 255}` (zero-padded). Each push to master increments the patch number. Configured in `vite.config.ts` via `getAutoVersion()`, with `package.json` version as fallback when git is unavailable. Displayed in the hamburger menu.
+
+## Dependencies & security posture
+
+- **`fast-xml-parser` advisories are runtime, not build-time.** It's the only dependency that parses genuinely untrusted input — feeds fetched from arbitrary self-hosted domains via `/api/proxy-feed`, parsed in the user's browser, including every feed a publisher catalog's "Download All" walks. Its entity-expansion DoS advisories hang the importing user's tab. Treat a critical here as urgent; treat one in `rollup`/`postcss`/`esbuild` as housekeeping.
+- **Don't bulk-update the toolchain.** `npm update vitest vite @vercel/node eslint` in one pass churned **2,632 lockfile lines** and broke `node_modules/.bin/tsc`, so the build failed outright with `sh: tsc: command not found`. Update one package at a time, check the lockfile diff size, and run `npm run build` after each. `npm ci` is the recovery.
+- Prefer updates that stay **inside the existing semver ranges** — those are lockfile-only, need no `package.json` edit, and are what a fresh install would have resolved anyway.
+- As of Aug 2026 the remaining advisories (1 critical transitive `tar`, ~13 high) are all build tooling and none reach the deployed app. Deliberately not forced through: the churn is a worse risk to a stable production site than the advisories are.
+
+## Known security follow-ups (audited, not yet fixed)
+
+Real findings from the Aug 2026 audit, left open on purpose because each is larger than the pass that closed everything around it:
+
+- **NIP-98 is unbound to URL and method, and has no nonce.** `api/_utils/adminAuth.ts` checks kind, a ±300 s window and the signature — it never reads the `u`/`method` tags, though the client at `src/utils/adminAuth.ts` does send them. So one admin event replays across endpoints: an event signed for a feed listing also authorizes `DELETE`. `Math.abs` also accepts events dated 5 minutes into the *future*. `api/admin/challenge.ts` mints a challenge that is never stored or compared — it contributes nothing.
+- **`POST /api/hosted` is unauthenticated and unlimited** — see the rate-limiter notes. Also enables GUID squatting: `feedId` is the client-supplied `podcastGuid`, so claiming someone's GUID first permanently 409s the real owner.
+- **The admin branch skips `isValidFeedId`** (`api/hosted/[feedId].ts`), so `feedId` reaches blob paths unvalidated. Only exploitable in combination with the NIP-98 replay above, but the two compose into arbitrary blob writes outside `feeds/`.
+- **Stale-index async writes.** Several handlers capture an array index, `await`, then dispatch back *by that index* into a list the user can reorder meanwhile — worst in `CatalogFeedsSection.tsx` (writes `feedUrl` into the published catalog) and `Editor.tsx`. Dispatch by `track.id`/stable id instead; `Editor.tsx` already keys its rows that way.
+- `GET /api/hosted/` hydrates **every** feed before filtering by owner, and accepts any valid NIP-98 event from any pubkey.
 
 ## Software Versions
 
@@ -225,6 +243,8 @@ Vercel serverless functions:
 - `_utils/podcastIndex.ts` - Shared Podcast Index auth headers
 - `_utils/feedUtils.ts` - Shared feed utilities (PI notification, podping notification, `isPodpingConfigured()` helper, UUID validation, token hashing)
 - `_utils/rateLimiter.ts` - In-memory fixed-window rate limiter over a **single shared `Map`**, so every caller must namespace its key or two endpoints silently share one bucket. Current consumers: `/api/podping` (`podping:`, 10/hr), `/api/verify-feed-url` (`verify-feed-url:`, 30/hr), `/api/proxy-feed` (`proxy-feed:`, 60/hr), `/api/podping-verify` (`podping-verify:`, 60/hr), `guardFeedSubmission()` (`feed-guard:`, 60/hr), `/api/auth/magic-link` (`magiclink:ip:` + `magiclink:email:`, 5 per 15 min). **Always prefix a new key.** An unprefixed `checkRateLimit(ip, …)` shares a bucket with every other unprefixed caller, and the symptom — one endpoint's limit tripping because of traffic to a different one — looks nothing like its cause.
+  - **Every limit is per warm lambda, not global.** The `Map` is module-level, so each Vercel instance keeps its own buckets and a caller with concurrency gets N× the nominal rate. Accepted — the limits exist to stop casual abuse and runaway loops, not a determined attacker — but don't cite these numbers as a security control. A real limit needs shared state (Redis/Edge Config).
+  - Endpoints with **no** limit at all: `POST /api/hosted` (unauthenticated, 1 MB blob write + PI submit + podping), `GET /api/hosted/`, `PUT/DELETE/PATCH /api/hosted/{id}`, `/api/pisearch`, `/api/pisubmit`, `/api/pubnotify` (all three spend MSP's PI credentials), `/api/auth/verify`, `/api/account/feeds`, `/api/feed/{npub}/{guid}` (opens 4 relay sockets).
 - `_utils/xmlUtils.ts` - RSS XML helpers (`extractPodcastMedium()` — used by hosted POST/PUT before podping broadcast)
 - `_utils/adminAuth.ts` - Nostr NIP-98 auth verification, `NostrEvent` type
 - `_utils/urlValidation.ts` - `normalizeFeedUrl()` + `getFeedUrlError()`. Mirror of `src/utils/urlValidation.ts` (Vercel functions can't import from `src/`, so the rule table is intentionally duplicated). The `src/api mirror` test in `api/_utils/urlValidation.test.ts` asserts the two files are byte-identical apart from the api copy's 2-line header — **edit one, copy it to the other, or that test fails**. See "Feed URL whitespace & reachability" below for the full contract.

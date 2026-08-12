@@ -10,5 +10,14 @@
   "rewrites": [
     { "source": "/admin", "destination": "/" },
     { "source": "/auth/verify", "destination": "/" }
+  ],
+  "headers": [
+    {
+      "comment": "Vite gives everything under /assets/ a content hash, so a given URL can never change content — but production was serving them 'public, max-age=0, must-revalidate', costing a conditional round-trip per asset on every single page load. Safe precisely because of the hash: a rebuild produces a new filename. Do NOT extend this to files in public/ (msp-logo*.png, manifest.json, info.md), which keep stable names and must stay revalidated.",
+      "source": "/assets/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    }
   ]
 }

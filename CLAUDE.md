@@ -72,6 +72,11 @@ Hosted feed URLs (album/video/publisher) **always** use the canonical domain, ne
 - The inherited Squarespace zone was full of non-functional junk records (Office-365/Zoho/Google email templates with no MX, DKIM-as-A records). Pre-cleanup backup + keep/delete classification: `docs/dns-musicsideproject-backup-2026-06-17.txt`. Only 4 records are real: `@`/`www` (apex → MSP 2.0), `new` CNAME, and the `_vercel` verification TXTs.
 - Legacy MSP 1.0 feeds (from the old node-based tooling) are auto-migrated on import — see "Value recipient normalization on import" under XML Handling (`LEGACY_MSP_NODE_PUBKEY` → MSP 2.0 lnaddress).
 
+### Assets & caching
+- **Never import `src/assets/msp-logo.png` into a component.** It is a 1024x1024 PNG of **1,810,143 bytes**, byte-identical to `public/msp-logo.png` (same md5), and it renders at **40px** (`.header-logo`, `App.css`). Importing it bundled a *second* copy into `dist/assets/` while `public/` already served the first as the favicon, so a first visit pulled ~3.6 MB of logo against ~180 kB of compressed JS. `App.tsx` and `admin/AdminPage.tsx` now point at `/msp-logo-192.png` (66 kB) instead; measured `dist` total went 4,996,616 → 3,186,648 bytes. The full-size file stays for `og:image`, which only social crawlers fetch.
+- The unused `src/assets/msp-logo.png` is **deliberately not deleted**. The Desktop App is a fork with its own `App.tsx`; deleting an asset here breaks its build when the sync PR lands — see the fork-divergence gotcha above.
+- `vercel.json` gives `/assets/(.*)` `max-age=31536000, immutable`. Safe only because Vite content-hashes those filenames, so a URL's content can never change. **Don't extend it to `public/`** — `msp-logo*.png`, `manifest.json` and `info.md` have stable names and must stay revalidated.
+
 ### Versioning
 Version is auto-computed at build time from git commit count: `0.1.{count - 255}` (zero-padded). Each push to master increments the patch number. Configured in `vite.config.ts` via `getAutoVersion()`, with `package.json` version as fallback when git is unavailable. Displayed in the hamburger menu.
 

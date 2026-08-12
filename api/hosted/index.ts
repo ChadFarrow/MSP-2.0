@@ -97,11 +97,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Use podcast GUID as feed ID (one feed per podcast)
     const feedId = podcastGuid;
 
-    // Check if feed already exists by looking for metadata file
-    // (metadata is what defines a "managed" feed with credentials)
-    const { blobs } = await list({ prefix: `feeds/${feedId}.meta.json` });
-    const existingMeta = blobs.find(b => b.pathname === `feeds/${feedId}.meta.json`);
-    if (existingMeta) {
+    // Refuse if EITHER blob already exists.
+    //
+    // This used to check only the metadata file, then write the XML below with
+    // allowOverwrite: true. So a feed whose .xml existed without a .meta.json could
+    // be claimed by an anonymous POST — the live feed content was overwritten and a
+    // fresh meta blob was written carrying the caller's editTokenHash. feedId is the
+    // podcastGuid, which is published in every feed's <podcast:guid>, so the attacker
+    // did not need to guess anything.
+    //
+    // Checking the .xml too also closes the smaller version of the same hole: an
+    // orphaned .xml from a half-finished create or delete is no longer silently
+    // adopted by whoever POSTs next.
+    const { blobs } = await list({ prefix: `feeds/${feedId}.` });
+    const metaPath = `feeds/${feedId}.meta.json`;
+    const xmlPath = `feeds/${feedId}.xml`;
+    const existing = blobs.find(b => b.pathname === metaPath || b.pathname === xmlPath);
+    if (existing) {
       return res.status(409).json({
         error: 'Feed already exists for this podcast. Use your edit token to update it, or use the Restore flow.',
         feedId
@@ -140,13 +152,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    // Store feed XML in Vercel Blob
-    // allowOverwrite handles orphaned blobs from incomplete deletions
-    const blob = await put(`feeds/${feedId}.xml`, xml, {
+    // Store feed XML in Vercel Blob.
+    //
+    // allowOverwrite is false on purpose. It used to be true, to "handle orphaned
+    // blobs from incomplete deletions" — but silently adopting an orphaned .xml is
+    // exactly the takeover above, and the existence check now refuses that case
+    // explicitly. Keeping it false also turns the remaining race (a blob appearing
+    // between the check and this write) into a hard error rather than a silent
+    // overwrite of somebody else's feed.
+    const blob = await put(xmlPath, xml, {
       access: 'public',
       contentType: 'application/rss+xml',
       addRandomSuffix: false,
-      allowOverwrite: true
+      allowOverwrite: false
     });
 
     // Build stable URL

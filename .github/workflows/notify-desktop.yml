@@ -3,6 +3,16 @@ name: Notify Desktop App
 on:
   push:
     branches: [master]
+    # Each dispatch costs a sync run plus a full Tests fan-out in the Desktop App,
+    # and a docs-only commit changes nothing the fork builds from. Roughly 1 in 10
+    # commits here touches only markdown — CLAUDE.md is edited constantly.
+    #
+    # These are skipped rather than dropped: sync-upstream.yml's daily 6 AM cron
+    # still merges them, batched into whatever sync runs next, within 24h. So the
+    # fork never diverges, it just learns about prose a little later.
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
 
 jobs:
   notify:

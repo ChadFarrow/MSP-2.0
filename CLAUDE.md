@@ -573,7 +573,7 @@ Two more conformance gaps found the same way, both in the generator, both affect
 #### Value recipient normalization on import
 `parseRecipient()` in `xmlParser.ts` does not trust the feed's `<podcast:valueRecipient>` `type` attribute — it normalizes every recipient at parse time (the single choke point covering channel- and track-level value blocks):
 - **Type detection**: type is derived from the address via `detectAddressType()` (`src/utils/addressUtils.ts`) — an `@` in the address means `lnaddress`, otherwise `node`. Feeds from older node-only tools (the original musicsideproject.com) wrote `type="node"` even for Lightning addresses; this fixes them on import. Mirrors the editor's auto-detection on manual address edit (`RecipientsList.tsx`).
-- **Legacy MSP migration**: a recipient whose address equals `LEGACY_MSP_NODE_PUBKEY` (`types/feed.ts`, the MSP 1.0 support node pubkey) is swapped to the MSP 2.0 lnaddress identity (`MSP_SUPPORT_RECIPIENT` = `MSP 2.0` / `chadf@getalby.com`), **preserving the existing split** and dropping keysend-only `customKey`/`customValue`. Matches on the pubkey (unique, unforgeable), not the name. `LEGACY_MSP_NODE_PUBKEY` / `MSP_SUPPORT_RECIPIENT` in `types/feed.ts` are the single source of truth.
+- **Legacy MSP migration**: a recipient whose address equals `LEGACY_MSP_NODE_PUBKEY` (`types/feed.ts`, the MSP 1.0 support node pubkey) is swapped to the MSP 2.0 lnaddress identity (`MSP_SUPPORT_RECIPIENT` = `MSP 2.0` / `musicsideproject@getalby.com`), **preserving the existing split** and dropping keysend-only `customKey`/`customValue`. Matches on the pubkey (unique, unforgeable), not the name. `LEGACY_MSP_NODE_PUBKEY` / `MSP_SUPPORT_RECIPIENT` in `types/feed.ts` are the single source of truth.
 - Tests in `xmlParser.test.ts` cover type detection, the legacy migration (swap, split preservation, case-insensitive match, track-level coverage), and round-trip to `method="lnaddress"` output.
 
 #### Track order and item pub dates
@@ -679,6 +679,8 @@ MSP 2.0 and Podcastindex.org are auto-added as value recipients with small split
 Key helpers in `types/feed.ts`: `isCommunitySupport()`, `hasUserRecipients()`, `createSupportRecipients()`, `COMMUNITY_SUPPORT_RECIPIENTS`. These are the canonical definitions — imported by both `feedStore.tsx` and `RecipientsList.tsx`.
 
 Imported feeds carrying the **legacy MSP 1.0 support node** (`LEGACY_MSP_NODE_PUBKEY`) are auto-migrated to the MSP 2.0 lnaddress at parse time — see "Value recipient normalization on import" under XML Handling.
+
+**Two MSP 2.0 addresses, both live.** New feeds get `musicsideproject@getalby.com` (`MSP_SUPPORT_RECIPIENT`), a sub-wallet on Chad's node, since 2026-09-26. Feeds made before that pay `MSP 2.0` at `chadf@getalby.com`, the same node's main wallet, and are deliberately **not** migrated: both addresses reach MSP, and Chad chose to leave existing splits alone. `isCommunitySupport()` therefore accepts that old pair too (`PREVIOUS_MSP_SUPPORT_RECIPIENT`). Drop it and every older feed shows its MSP split as the artist's own and offers "Add Community Support", which adds a second MSP split beside the first. It matches name **and** address, so `chadf@getalby.com` under any other name is still a personal split. Neither address matters to the boost chart or to BoostBox's MSP bot: both select on the TLV `name` (`isMspSplit()`), and both addresses are on the node Helipad watches.
 
 ### Adding New Fields
 1. Add to type definition in `types/feed.ts`

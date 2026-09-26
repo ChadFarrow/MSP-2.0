@@ -1,7 +1,7 @@
 /**
  * Blob-backed storage for boost records.
  *
- *   boosts/raw/<MSP_BOOST_NAMESPACE>/<YYYY-MM>/<direction>-<index>.json
+ *   boosts/raw/<MSP_BOOST_NAMESPACE>/<YYYY-MM>/<direction>-<index | ph-<payment_hash>>.json
  *       The verbatim payload, listener message and sender name included. Written once,
  *       never rewritten, never served by any endpoint.
  *   boosts/derived/<isoYear>-W<week>.json
@@ -55,7 +55,8 @@ export function rawMonthPrefix(month: string): string {
 }
 
 export function rawPath(boost: ParsedBoost): string {
-  return `${rawMonthPrefix(monthKey(boost.ts))}${boost.direction}-${boost.index}.json`;
+  const id = boost.source === 'boostbox' ? `ph-${boost.paymentHash}` : String(boost.index);
+  return `${rawMonthPrefix(monthKey(boost.ts))}${boost.direction}-${id}.json`;
 }
 
 export function derivedPath(weekKey: string): string {

@@ -89,6 +89,17 @@ describe('paths', () => {
   it('buckets derived by ISO week, with no namespace since it holds nothing private', () => {
     expect(derivedPath('2026-W35')).toBe('boosts/derived/2026-W35.json');
   });
+
+  it('files a bot record under its payment hash, beside the Helipad ones', () => {
+    const bot = parseBoostPayload({
+      source: 'boostbox',
+      payment_hash: 'b'.repeat(64),
+      direction: 'incoming',
+      time: Math.floor(Date.UTC(2026, 7, 29) / 1000),
+      tlv: '{}'
+    })!;
+    expect(rawPath(bot)).toBe(`boosts/raw/${NAMESPACE}/2026-08/incoming-ph-${'b'.repeat(64)}.json`);
+  });
 });
 
 describe('storeRawBoosts', () => {

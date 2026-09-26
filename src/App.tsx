@@ -541,9 +541,14 @@ function App() {
   }
 
   if (isChartsRoute) {
+    // Admin-only for now, so it needs the Nostr session exactly as /admin does.
     return (
       <ThemeProvider>
-        <ChartsPage />
+        <ExperimentalProvider>
+          <NostrProvider>
+            <ChartsPage />
+          </NostrProvider>
+        </ExperimentalProvider>
       </ThemeProvider>
     );
   }

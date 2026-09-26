@@ -458,6 +458,15 @@ for one.
 - Reading derived for the chart is fine through the cache — 60 seconds of lag on a
   weekly chart is not worth a single line of code.
 
+**The chart is admin-only for now (since 2026-09-26).** It shipped public in #130; Chad
+took it private while charts are still being worked out. `/api/boosts/chart` is gated
+exactly like `/api/boosts/coverage` (NIP-98 admin or `MSP_ADMIN_KEY`), and answers
+`private, no-store` — including its 401 — because a CDN copy of an authenticated response
+is served to anyone. `/charts` sits inside `NostrProvider` like `/admin` and shows nothing
+about the chart until an admin signs in. **Publishing it again means reverting both the
+gate and the cache header together**; the paragraphs below describe the chart as it will
+be when it is public.
+
 **The public chart at `/charts` publishes counts, never amounts.** That is a decision, not
 an oversight: the chart is about what people listened to, and per-track earnings for
 artists who never agreed to publication are not MSP's to give away. `api/boosts/chart.ts`
@@ -505,9 +514,10 @@ Same guarantee, no merge.
   importer. The cron rebuilds the current and previous ISO week — a boost just after
   midnight on Monday lands in the new week while the old one can still take a late write,
   and nothing older can change without an importer run.
-- **The chart's page cache bounds visible freshness**, not the rebuild. `/api/boosts/chart`
-  is `s-maxage=300`; raising it back to an hour would make the real-time rebuild invisible
-  to visitors, which is how it was first shipped.
+- **The chart's page cache bounds visible freshness**, not the rebuild. While public,
+  `/api/boosts/chart` was `s-maxage=300`; raising it back to an hour would make the
+  real-time rebuild invisible to visitors, which is how it was first shipped. While it is
+  admin-only it is `private, no-store`, so there is no cache lag at all.
 - `tools/import-helipad.mjs` remains the backfill and repair tool, and is the only path
   that touches Helipad.
 

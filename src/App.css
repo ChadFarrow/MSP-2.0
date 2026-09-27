@@ -2318,6 +2318,63 @@ body {
 
 .chart-empty { color: var(--text-muted); font-size: 0.9rem; margin: 0; }
 
+/* A list folded shut behind its heading (ChartList): the full lists run to dozens of
+   rows. The heading row is the toggle; the chevron points right when closed, down when
+   open, and the count on the right says how much is behind it. */
+.chart-fold-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 2rem;
+  cursor: pointer;
+  list-style: none;
+  border-radius: 6px;
+}
+
+.chart-fold-summary::-webkit-details-marker { display: none; }
+
+.chart-fold-summary::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-right: 2px solid var(--text-muted);
+  border-bottom: 2px solid var(--text-muted);
+  transform: rotate(-45deg);
+  transition: transform var(--transition);
+}
+
+.chart-fold[open] > .chart-fold-summary::before { transform: rotate(45deg); }
+.chart-fold[open] > .chart-fold-summary { margin-bottom: 0.35rem; }
+
+.chart-fold-summary:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 4px; }
+
+.chart-fold-summary .chart-panel-title { margin: 0; }
+
+.chart-fold-count {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.chart-fold-hide {
+  margin-top: 0.75rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.chart-fold-hide:hover { border-color: var(--border-focus); color: var(--text-primary); }
+
+@media (prefers-reduced-motion: reduce) {
+  .chart-fold-summary::before { transition: none; }
+}
+
 /* ---- Trend graphs (src/components/charts/TrendGraphs.tsx) ----------------
    Thin columns in one colour, hairline solid grid, text in text tokens only. This
    month is fainter everywhere, because a month in progress would read as a drop. */

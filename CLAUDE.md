@@ -68,6 +68,9 @@ npm run dev
 - Dev server proxies `/api/*` to production (`musicsideproject.com`)
 - Build: `npm run build` (tsc + vite)
 - Build auto-unshallows Vercel's git clone for accurate version computation
+- **Vercel CLI scope:** the project belongs to the team `chadfs-projects`, but the CLI's default scope on Chad's Mac mini is the personal account `chadfarrow-4755`. Commands that act on a deployment need `--scope chadfs-projects`, or they fail with "Deployment belongs to a different team" — e.g. `vercel redeploy <url> --target production --scope chadfs-projects`. `vercel env ls`, `env add` and `env pull` work in the repo without it, because `.vercel/project.json` names the project.
+- **A new or changed env var applies only to new deployments.** After `vercel env add`, redeploy production (above, or Redeploy in the dashboard).
+- **Blob credentials for one-off scripts:** `vercel env pull <file> --environment=development` gives a working `BLOB_READ_WRITE_TOKEN` and `MSP_ADMIN_KEY` (one value across all environments). The copy in `.env.local` can be stale — the Blob token was rotated in August 2026 — so pull into a temp file and delete it after.
 
 ### Typechecking — use `npm run build`, not `tsc --noEmit`
 The root `tsconfig.json` is **references-only** (`files: []` + references to `tsconfig.app.json` / `tsconfig.node.json` / `tsconfig.api.json`), so `tsc --noEmit` against it checks **zero files** and always passes — a false green. Always verify types with `npm run build` (`tsc -b && vite build`) or at minimum `npx tsc -b`. (Lint is separate: `npm run lint`.)
@@ -341,8 +344,13 @@ Wired into all six manual feed-URL inputs that reach PI or podping: `SaveModal` 
 
 ### Boost capture (msp-bot, formerly Helipad → MSP)
 
-**Since 2026-09-26 msp-bot is the live source. Helipad's webhook is turned off at the end
-of the rollout (Part C step 9 of `docs/superpowers/plans/2026-09-26-msp-bot-boost-ingest.md`).**
+**msp-bot is the only live source. The rollout (Part C of
+`docs/superpowers/plans/2026-09-26-msp-bot-boost-ingest.md`) finished on 2026-09-27, and
+Helipad's chart trigger is off.** `HELIPAD_WEBHOOK_TOKEN` is still set in Vercel, but only
+`tools/import-helipad.mjs` needs it, for pre-cutover history. Verified after the backfill:
+344 MSP boosts all-time (5 Helipad before the cutover, 339 msp-bot), 164 MSP stream records,
+no record on the wrong side of the cutover, and every one of the bot's 339 MSP notes on
+Nostr matched to a stored record.
 boostbox's `msp-bot` reads the node's Alby Hub wallet over NWC and POSTs every MSP split
 payment — boosts, auto-boosts and streams — to `/api/boosts/ingest` with
 `source: "boostbox"`, a `payment_hash` in place of `index`, and its own
@@ -413,7 +421,9 @@ the guids for us) → `boost-link` (an app's own stable song URL) → `timesplit
 `…/<YYYY-MM>/incoming-ph-<payment_hash>.json` (msp-bot) (private, verbatim)
 and `boosts/derived/<MSP_BOOST_NAMESPACE>/<isoYear>-W<week>.json` (PII-free but carrying
 per-boost amounts, so behind the namespace too since 2026-09-26; weekly because that is
-the unit the chart reports in). Dedup is the raw path itself — `index` is unique per node and the
+the unit the chart reports in). The 117 old public files at `boosts/derived/<week>.json`
+were deleted on 2026-09-27 by `tools/migrate-derived-to-namespace.mjs --delete-old` and
+answer 404; a deleted blob can keep answering 200 from the CDN for about a minute. Dedup is the raw path itself — `index` is unique per node and the
 write uses `allowOverwrite: false`. **The derived merge runs for every record in a batch
 whether or not its raw blob already existed**, which is what makes re-running the import
 script repair a lost derived write *and* re-derive history through an improved

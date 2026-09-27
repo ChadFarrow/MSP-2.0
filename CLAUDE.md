@@ -341,11 +341,14 @@ Wired into all six manual feed-URL inputs that reach PI or podping: `SaveModal` 
 
 ### Boost capture (msp-bot, formerly Helipad → MSP)
 
-**Since 2026-09-26 msp-bot is the live source, and Helipad's webhook is retired.**
+**Since 2026-09-26 msp-bot is the live source. Helipad's webhook is turned off at the end
+of the rollout (Part C step 9 of `docs/superpowers/plans/2026-09-26-msp-bot-boost-ingest.md`).**
 boostbox's `msp-bot` reads the node's Alby Hub wallet over NWC and POSTs every MSP split
 payment — boosts, auto-boosts and streams — to `/api/boosts/ingest` with
 `source: "boostbox"`, a `payment_hash` in place of `index`, and its own
-`MSP_BOT_INGEST_TOKEN`; each token may write only its own source's records. Measured on
+`MSP_BOT_INGEST_TOKEN`; each token may write only its own source's records, and the bot's
+token may send neither the importer's `{week, records}` envelope (it would rewrite a week
+without Helipad's records) nor a record that is not the MSP split. Measured on
 2026-09-26, the bot held all 252 of Helipad's MSP boosts since 2026-01-29 and 87 more,
 mostly lightning-address (LNURL) payments whose metadata only a boost link carries —
 StableKraft, Castamatic and candr.space never reached Helipad at all. Derived weeks take
@@ -406,7 +409,8 @@ the guids for us) → `boost-link` (an app's own stable song URL) → `timesplit
   *key*; the title comes from the best source available.
 
 **Storage** is Vercel Blob, following the `accountStore.ts` "unguessable path" pattern:
-`boosts/raw/<MSP_BOOST_NAMESPACE>/<YYYY-MM>/<direction>-<index>.json` (private, verbatim)
+`boosts/raw/<MSP_BOOST_NAMESPACE>/<YYYY-MM>/<direction>-<index>.json` (Helipad) or
+`…/<YYYY-MM>/incoming-ph-<payment_hash>.json` (msp-bot) (private, verbatim)
 and `boosts/derived/<MSP_BOOST_NAMESPACE>/<isoYear>-W<week>.json` (PII-free but carrying
 per-boost amounts, so behind the namespace too since 2026-09-26; weekly because that is
 the unit the chart reports in). Dedup is the raw path itself — `index` is unique per node and the

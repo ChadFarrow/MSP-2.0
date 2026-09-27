@@ -409,6 +409,10 @@ describe('parseBoostPayload for msp-bot records', () => {
     expect(derived.source).toBe('boostbox');
     expect(derived.paymentHash).toBe(HASH);
   });
+
+  it('skips a bot record that claims to be outgoing', () => {
+    expect(parseBoostPayload(botBody({ direction: 'outgoing' }))).toBeNull();
+  });
 });
 
 describe('recordKey', () => {

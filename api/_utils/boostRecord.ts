@@ -279,6 +279,9 @@ export function parseBoostPayload(body: unknown): ParsedBoost | null {
     // msp-bot has no LND invoice index; the payment hash is its unique key instead.
     const hash = asString(b.payment_hash);
     if (!hash || !PAYMENT_HASH_RE.test(hash)) return null;
+    // The bot only forwards incoming payments, and its raw records live at
+    // incoming-ph-<payment_hash>.json; an outgoing one has no path to be read back from.
+    if (b.direction === 'outgoing') return null;
     paymentHash = hash;
     index = 0;
   } else {

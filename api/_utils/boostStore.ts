@@ -208,17 +208,6 @@ export function monthsForWeek(weekKey: string): string[] {
   return first === last ? [first] : [first, last];
 }
 
-/**
- * Rebuild one week's derived file from the raw records already stored.
- *
- * This is what lets a scheduled job keep the chart current without touching Helipad:
- * the webhook writes raw continuously, and raw is immutable, so reading it back — even
- * through a CDN — is always correct. The week file is then written whole, so there is no
- * read-modify-write and nothing a cache can corrupt.
- *
- * Returns null when the week has no raw records at all, so a caller can tell "nothing
- * there" from "genuinely empty" without writing an empty file over a real one.
- */
 /** Every stored raw record of one week whose path passes `keep`. Raw is immutable, so a cached read is correct. */
 async function readRawWeek(weekKey: string, keep: (pathname: string) => boolean = () => true): Promise<ParsedBoost[]> {
   const blobs = (await Promise.all(
@@ -243,6 +232,17 @@ export async function readStoredBoostboxRecords(weekKey: string): Promise<Parsed
   return records.filter(r => r.source === 'boostbox');
 }
 
+/**
+ * Rebuild one week's derived file from the raw records already stored.
+ *
+ * This is what lets a scheduled job keep the chart current without touching Helipad:
+ * the webhook writes raw continuously, and raw is immutable, so reading it back — even
+ * through a CDN — is always correct. The week file is then written whole, so there is no
+ * read-modify-write and nothing a cache can corrupt.
+ *
+ * Returns null when the week has no raw records at all, so a caller can tell "nothing
+ * there" from "genuinely empty" without writing an empty file over a real one.
+ */
 export async function rebuildWeekFromRaw(
   weekKey: string,
   extra: ParsedBoost[] = []

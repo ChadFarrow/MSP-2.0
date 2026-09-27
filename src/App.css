@@ -2183,6 +2183,17 @@ body {
   color: #fff;
 }
 
+/* Songs | Artists, and the month views' "Only new" filter. Same pills as the periods. */
+.chart-views {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.chart-view-switch { display: flex; gap: 0.25rem; }
+
 .chart-summary {
   color: var(--text-muted);
   margin: 0 0 1.25rem;
@@ -2274,6 +2285,29 @@ body {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  text-align: right;
+}
+
+/* How many different people the count came from — the popularity a count alone hides. */
+.chart-listeners {
+  display: block;
+  color: var(--text-muted);
+  font-weight: 400;
+  font-size: 0.75rem;
+}
+
+/* First supported this month. Says "New" in words, so it never rests on colour alone. */
+.chart-new {
+  display: inline-block;
+  margin-left: 0.45rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-focus);
+  background: var(--accent-bg-subtle);
+  color: var(--text-primary);
+  font-size: 0.7rem;
+  font-weight: 600;
+  vertical-align: 0.1em;
 }
 
 .chart-unit {
@@ -2283,6 +2317,107 @@ body {
 }
 
 .chart-empty { color: var(--text-muted); font-size: 0.9rem; margin: 0; }
+
+/* ---- Trend graphs (src/components/charts/TrendGraphs.tsx) ----------------
+   Thin columns in one colour, hairline solid grid, text in text tokens only. This
+   month is fainter everywhere, because a month in progress would read as a drop. */
+
+.chart-trends {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+}
+
+@media (min-width: 600px) {
+  .chart-trends { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+.chart-trend { margin: 0; min-width: 0; }
+
+.chart-trend-title {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+
+.chart-trend-plot {
+  position: relative;
+  border-radius: 6px;
+}
+
+.chart-trend-plot:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 4px; }
+
+.chart-trend-plot svg { display: block; overflow: visible; }
+
+.chart-trend-col { fill: var(--accent-primary); }
+.chart-trend-col.is-partial { opacity: 0.45; }
+.chart-trend-col.is-active { fill: var(--accent-secondary); opacity: 1; }
+
+.chart-trend-grid { stroke: var(--border-color); stroke-width: 1; }
+
+.chart-trend-tick,
+.chart-trend-value {
+  fill: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-trend-value { fill: var(--text-secondary); font-weight: 600; }
+
+.chart-trend-tooltip {
+  position: absolute;
+  top: -0.5rem;
+  transform: translate(-50%, -100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.chart-trend-tooltip strong { color: var(--text-primary); font-size: 0.9rem; }
+
+.chart-trend-note {
+  margin: 1rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.chart-trend-table { margin-top: 1rem; font-size: 0.85rem; color: var(--text-secondary); }
+
+.chart-trend-table summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 0.25rem 0;
+}
+
+.chart-trend-table table { border-collapse: collapse; margin-top: 0.5rem; width: 100%; }
+
+.chart-trend-table th,
+.chart-trend-table td {
+  padding: 0.3rem 0.5rem;
+  border-top: 1px solid var(--border-color);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-trend-table th[scope="row"],
+.chart-trend-table thead th:first-child { text-align: left; font-weight: 400; }
+
+.chart-trend-table thead th { color: var(--text-muted); font-weight: 600; border-top: none; }
+
+/* A row's own trend, beside its count. */
+.chart-spark { display: block; margin: 0 0 0.2rem auto; }
 
 .charts-note {
   margin-top: 2.5rem;

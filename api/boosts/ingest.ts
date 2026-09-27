@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { checkRateLimit } from '../_utils/rateLimiter.js';
 import { getClientIp } from '../_utils/urlSafety.js';
 import { timingSafeEqualString } from '../_utils/feedUtils.js';
-import { parseBoostPayload, isHelipadTestBoost, isoWeekKey } from '../_utils/boostRecord.js';
+import { parseBoostPayload, isHelipadTestBoost, isMspSplit, isoWeekKey } from '../_utils/boostRecord.js';
 import type { BoostSource, ParsedBoost } from '../_utils/boostRecord.js';
 import {
   isBoostStoreConfigured,
@@ -43,7 +43,9 @@ import { enrichWithRemoteTitles } from '../_utils/remoteItemLookup.js';
  * A second caller, msp-bot (boostbox), posts the same record shape with
  * `source: "boostbox"` and a `payment_hash` in place of `index`, under its own
  * MSP_BOT_INGEST_TOKEN. Since 2026-09-26 it is the chart's live source; Helipad's
- * records count only before BOOSTBOX_CUTOVER (see boostRecord.ts).
+ * records count only before BOOSTBOX_CUTOVER (see boostRecord.ts). It sends single
+ * records or arrays only: the week envelope is refused under its token, and so is any
+ * record that is not the MSP split.
  */
 
 /**
@@ -122,6 +124,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!Array.isArray(envelope.records)) {
       return res.status(400).json({ error: 'records must be an array' });
     }
+    // The envelope rewrites the whole week from the records supplied plus the bot's
+    // stored ones, so only Helipad's importer may send it: a bot-token envelope would
+    // write that week with every Helipad record gone. The bot never needs it.
+    if (caller !== 'helipad') {
+      return res.status(400).json({ error: 'The week envelope is for the Helipad importer only' });
+    }
     week = envelope.week;
     payloads = envelope.records;
   } else {
@@ -143,6 +151,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!parsed) { skipped += 1; continue; }
     // A leaked bot token must not be able to forge Helipad history, nor the reverse.
     if (parsed.source !== caller) { skipped += 1; continue; }
+    // A bot with a wrong BBN_RECIPIENT_NAMES must not put another show's listener
+    // messages into MSP's raw store. Helipad's records are all kept, as they always were.
+    if (parsed.source === 'boostbox' && !isMspSplit(parsed)) { skipped += 1; continue; }
     // Accepted and acknowledged, never stored — see isHelipadTestBoost.
     if (isHelipadTestBoost(parsed)) { tests += 1; continue; }
     entries.push({ parsed, payload });

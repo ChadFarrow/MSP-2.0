@@ -147,6 +147,38 @@ describe('/api/boosts/ingest', () => {
     expect(mockStoreRaw).not.toHaveBeenCalled();
   });
 
+  it("refuses the week envelope under the bot's token, storing nothing", async () => {
+    // The envelope rewrites a whole week from the records supplied plus the bot's stored
+    // ones, so a bot-token envelope would write that week with every Helipad record gone.
+    const { req, res } = createMockReqRes(
+      'POST',
+      { week: '2026-W39', records: [botBody('f'.repeat(64))] },
+      { authorization: `Bearer ${BOT_TOKEN}` }
+    );
+    await handler(req, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ error: 'The week envelope is for the Helipad importer only' });
+    expect(mockStoreRaw).not.toHaveBeenCalled();
+    expect(mockReplaceWeek).not.toHaveBeenCalled();
+  });
+
+  it("skips a bot record that is not MSP's split, before anything is stored", async () => {
+    // A bot with a wrong BBN_RECIPIENT_NAMES must not put another show's listener
+    // messages into MSP's raw store.
+    const other = { ...botBody('f'.repeat(64)), tlv: JSON.stringify({ name: 'Some Other Show', action: 'boost' }) };
+    const a = createMockReqRes('POST', other, { authorization: `Bearer ${BOT_TOKEN}` });
+    await handler(a.req, a.res);
+    expect(a.res.status).toHaveBeenCalledWith(400);
+    expect(mockStoreRaw).not.toHaveBeenCalled();
+
+    const b = createMockReqRes('POST', [botBody('e'.repeat(64)), other], { authorization: `Bearer ${BOT_TOKEN}` });
+    await handler(b.req, b.res);
+    expect(b.res.status).toHaveBeenCalledWith(200);
+    expect(b.res.json).toHaveBeenCalledWith(expect.objectContaining({ skipped: 1 }));
+    expect(mockStoreRaw.mock.calls[0][0]).toHaveLength(1);
+    expect(mockStoreRaw.mock.calls[0][0][0].parsed.paymentHash).toBe('e'.repeat(64));
+  });
+
   it('works with only the bot token configured, and is 404 with neither', async () => {
     delete process.env.HELIPAD_WEBHOOK_TOKEN;
     const a = createMockReqRes('POST', botBody('f'.repeat(64)), { authorization: `Bearer ${BOT_TOKEN}` });

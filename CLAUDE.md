@@ -339,7 +339,23 @@ Wired into all six manual feed-URL inputs that reach PI or podping: `SaveModal` 
 - **Podping retries — MSP has none, by design**: `notifyPodping()` is a single `fetch` with no retry or backoff; a failed send surfaces its status and stops (the user clicks the button again). The verify polling retries the *check*, never the send — a "Not received yet" result never re-sends. Hivepinger owns queue + dedup + Hive-broadcast retries, which is why MSP doesn't duplicate them. Don't confuse this with the `msp-podping-service` **consumer**'s "retry ×2 with 2s/8s backoff" — that governs fetching feeds into stablekraft-app *after* a podping is seen on Hive, a different layer entirely. Known edge from hivepinger's dedup: re-sending a ping for a feed that was pinged moments ago writes no new op, so the `since` cutoff reports "Not received yet" even though the earlier ping landed. That's the deliberate tradeoff for eliminating the false positive (see `since` above) — prefer a missed confirmation over a fabricated one. The SaveModal previously had a "Send Podping" destination; it was removed in favor of the dedicated toolbar button.
 - **Podping `medium` — load-bearing**: hivepinger uses the `medium` value to build the custom_json op id as `pp_<medium>_<reason>` (e.g. `pp_music_update`). The companion consumer in `msp-podping-service` filters `pp_music_*` only, so any code path that fires a podping WITHOUT a medium ends up as `pp_podcast_update` (hivepinger's default) and is invisible to the consumer. Every client path that can trigger a podping passes medium: hosted POST/PUT (extracted via `extractPodcastMedium()` from the XML), SaveModal's nsite follow-up and "Submit to PodcastIndex" destination (`album.medium` / `publisherFeed.medium`), `publisherPublish.ts`'s internal `notifyPodcastIndex()` helper (takes a `medium` param forwarded to `/api/pubnotify`), PublisherFeedReminderSection (`publisherFeed.medium`). The PodpingModal toolbar button reads medium from the feed (`album.medium` / `videoFeed.medium` / `publisherFeed.medium`), matching the SaveModal pattern. Publisher feeds carry `medium: 'publisher'` which produces `pp_publisher_update` — still filtered out by the music-only consumer, preserving the prior intent without special-casing. When adding a new podping trigger, always plumb through the feed's medium — the `isPodpingConfigured()` gate + `notifyPodping(url, { medium })` signature is the canonical call site pattern.
 
-### Boost capture (Helipad → MSP)
+### Boost capture (msp-bot, formerly Helipad → MSP)
+
+**Since 2026-09-26 msp-bot is the live source, and Helipad's webhook is retired.**
+boostbox's `msp-bot` reads the node's Alby Hub wallet over NWC and POSTs every MSP split
+payment — boosts, auto-boosts and streams — to `/api/boosts/ingest` with
+`source: "boostbox"`, a `payment_hash` in place of `index`, and its own
+`MSP_BOT_INGEST_TOKEN`; each token may write only its own source's records. Measured on
+2026-09-26, the bot held all 252 of Helipad's MSP boosts since 2026-01-29 and 87 more,
+mostly lightning-address (LNURL) payments whose metadata only a boost link carries —
+StableKraft, Castamatic and candr.space never reached Helipad at all. Derived weeks take
+**Helipad's records before `BOOSTBOX_CUTOVER` (2026-01-29T21:18:53Z) and the bot's from it
+on** (`selectSource`), keyed `h:<index>` / `ph:<payment_hash>` (`recordKey`); Helipad raw
+records after the cutover are kept and never counted. The importer's whole-week write
+reads the week's bot records first (`readStoredBoostboxRecords`), or re-running it would
+drop them. For bot records that name a remote item, ingest fills `remote_episode` /
+`remote_podcast` from Podcast Index before the raw write (`enrichWithRemoteTitles`),
+which is what Helipad used to do.
 
 Every feed MSP generates carries a 1% `MSP 2.0` recipient
 (`COMMUNITY_SUPPORT_RECIPIENTS` in `src/types/feed.ts`), so the splits land on Chad's
@@ -391,8 +407,9 @@ the guids for us) → `boost-link` (an app's own stable song URL) → `timesplit
 
 **Storage** is Vercel Blob, following the `accountStore.ts` "unguessable path" pattern:
 `boosts/raw/<MSP_BOOST_NAMESPACE>/<YYYY-MM>/<direction>-<index>.json` (private, verbatim)
-and `boosts/derived/<isoYear>-W<week>.json` (PII-free, weekly because that is the unit
-the chart reports in). Dedup is the raw path itself — `index` is unique per node and the
+and `boosts/derived/<MSP_BOOST_NAMESPACE>/<isoYear>-W<week>.json` (PII-free but carrying
+per-boost amounts, so behind the namespace too since 2026-09-26; weekly because that is
+the unit the chart reports in). Dedup is the raw path itself — `index` is unique per node and the
 write uses `allowOverwrite: false`. **The derived merge runs for every record in a batch
 whether or not its raw blob already existed**, which is what makes re-running the import
 script repair a lost derived write *and* re-derive history through an improved

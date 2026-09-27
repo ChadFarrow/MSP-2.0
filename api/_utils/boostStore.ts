@@ -26,8 +26,8 @@
  *     stale read could corrupt.
  */
 import { put, list } from '@vercel/blob';
-import type { DerivedBoost, ParsedBoost } from './boostRecord.js';
-import { isoWeekKey, monthKey, parseBoostPayload, toDerived } from './boostRecord.js';
+import type { BoostSource, DerivedBoost, ParsedBoost } from './boostRecord.js';
+import { BOOSTBOX_CUTOVER, isoWeekKey, monthKey, parseBoostPayload, recordKey, toDerived } from './boostRecord.js';
 
 export const DERIVED_PREFIX = 'boosts/derived/';
 
@@ -236,7 +236,7 @@ export async function rebuildWeekFromRaw(
 
   // `extra` is the caller's own just-written records. list() is not guaranteed to show a
   // blob written moments earlier, so a webhook that rebuilt purely from the listing could
-  // drop the very boost that triggered it. replaceDerivedWeek dedupes on index, so
+  // drop the very boost that triggered it. replaceDerivedWeek dedupes on recordKey, so
   // folding them in is free when the listing did already include them.
   for (const record of extra) {
     if (isoWeekKey(record.ts) === weekKey) records.push(record);
@@ -247,22 +247,35 @@ export async function rebuildWeekFromRaw(
 }
 
 /**
+ * Keep one source per period: Helipad's records before BOOSTBOX_CUTOVER, the bot's from
+ * it on. The bot holds every MSP split payment Helipad holds after the cutover, so
+ * choosing by date counts each boost once without pairing records. Helipad records
+ * after the cutover stay in raw; they are only left out here. A record with no source
+ * predates the bot and is Helipad's.
+ */
+export function selectSource<T extends { source?: BoostSource; ts: number }>(records: T[]): T[] {
+  return records.filter(r => (r.source === 'boostbox') === (r.ts >= BOOSTBOX_CUTOVER));
+}
+
+/**
  * Write one week's derived file from the complete set of that week's records.
  *
  * The caller must supply every record for the week, because this replaces the file
  * outright. That requirement is the point: with no previous version to merge, there is
- * no read, and therefore nothing a 60-second CDN cache can corrupt.
+ * no read, and therefore nothing a 60-second CDN cache can corrupt. Records are
+ * de-duplicated on recordKey after selectSource picks one source per period.
  */
 export async function replaceDerivedWeek(
   weekKey: string,
   records: ParsedBoost[]
 ): Promise<number> {
-  const byIndex = new Map<number, DerivedBoost>();
-  for (const record of records) {
+  const byKey = new Map<string, DerivedBoost>();
+  for (const record of selectSource(records)) {
     if (isoWeekKey(record.ts) !== weekKey) continue;
-    byIndex.set(record.index, toDerived(record));
+    byKey.set(recordKey(record), toDerived(record));
   }
-  const week = [...byIndex.values()].sort((a, b) => a.ts - b.ts || a.index - b.index);
+  const week = [...byKey.values()]
+    .sort((a, b) => a.ts - b.ts || recordKey(a).localeCompare(recordKey(b)));
   await putJson(derivedPath(weekKey), week, true);
   return week.length;
 }

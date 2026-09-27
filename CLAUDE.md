@@ -586,6 +586,12 @@ in `boostChart.ts` and published by `chart.ts` as counts.
   earlier months are Helipad's, which missed LNURL boosts, and the page says so under the
   graphs, or they show growth that is only a change of source. Every value on a graph is
   also in the "Show the numbers" table or the sparkline's label, so a tooltip never gates one.
+- **Both lists start folded shut** (`ChartList`, a native `<details>`), each heading saying
+  how much is behind it ("62 songs"): on real data the lists run to dozens of rows, and on a
+  phone two open lists bury everything below them (Chad, 2026-09-27). Folding a *whole* list
+  is deliberate and is not the top-ten cap `chart.ts` removed — every row is one tap away,
+  nothing is cut. A list the reader opened stays open across periods and views, and "Hide
+  list" at its foot scrolls back to the heading.
 
 **Verify a mobile layout with CDP, never with `--window-size`.** This bit again while
 building the page: a `--headless=new` screenshot at 390px looked badly clipped, and

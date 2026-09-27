@@ -11,6 +11,7 @@ import {
   rebuildWeekFromRaw,
   readStoredBoostboxRecords
 } from '../_utils/boostStore.js';
+import { enrichWithRemoteTitles } from '../_utils/remoteItemLookup.js';
 
 /**
  * Ingest for Helipad boost records.
@@ -134,7 +135,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: `Batch too large, maximum ${MAX_BATCH}` });
   }
 
-  const entries: { parsed: ParsedBoost; payload: unknown }[] = [];
+  let entries: { parsed: ParsedBoost; payload: unknown }[] = [];
   let skipped = 0;
   let tests = 0;
   for (const payload of payloads) {
@@ -170,6 +171,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
   }
+
+  // Helipad resolves a remote item's titles itself; for msp-bot's records MSP does it
+  // here, before the raw write, so the resolver's remote-guid rung keeps its names.
+  entries = await enrichWithRemoteTitles(entries);
 
   try {
     const result = await storeRawBoosts(entries, week ? 'import' : caller === 'boostbox' ? 'boostbox' : 'webhook');

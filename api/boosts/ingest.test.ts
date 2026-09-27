@@ -2,12 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Mock } from 'vitest';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-const { mockStoreRaw, mockReplaceWeek, mockRebuildWeek, mockIsConfigured, mockReadBot } = vi.hoisted(() => ({
+const { mockStoreRaw, mockReplaceWeek, mockRebuildWeek, mockIsConfigured, mockReadBot, mockEnrich } = vi.hoisted(() => ({
   mockStoreRaw: vi.fn(),
   mockReplaceWeek: vi.fn(),
   mockRebuildWeek: vi.fn(),
   mockIsConfigured: vi.fn(),
-  mockReadBot: vi.fn()
+  mockReadBot: vi.fn(),
+  mockEnrich: vi.fn()
 }));
 vi.mock('../_utils/boostStore.js', () => ({
   storeRawBoosts: mockStoreRaw,
@@ -16,6 +17,7 @@ vi.mock('../_utils/boostStore.js', () => ({
   isBoostStoreConfigured: mockIsConfigured,
   readStoredBoostboxRecords: mockReadBot
 }));
+vi.mock('../_utils/remoteItemLookup.js', () => ({ enrichWithRemoteTitles: mockEnrich }));
 
 import handler from './ingest.js';
 import { __resetRateLimiterForTests } from '../_utils/rateLimiter.js';
@@ -85,6 +87,7 @@ describe('/api/boosts/ingest', () => {
     mockReplaceWeek.mockResolvedValue(1);
     mockRebuildWeek.mockResolvedValue(7);
     mockReadBot.mockResolvedValue([]);
+    mockEnrich.mockImplementation(async (entries: unknown[]) => entries);
   });
 
   it('rejects anything but POST', async () => {
@@ -122,6 +125,15 @@ describe('/api/boosts/ingest', () => {
     expect(res.status).toHaveBeenCalledWith(200);
     expect(mockStoreRaw.mock.calls[0][1]).toBe('boostbox');
     expect(mockStoreRaw.mock.calls[0][0][0].parsed.paymentHash).toBe('f'.repeat(64));
+  });
+
+  it('stores what the Podcast Index step returns, not what arrived', async () => {
+    const enriched = [{ parsed: { source: 'boostbox', paymentHash: 'f'.repeat(64), index: 0, ts: 1790000000, direction: 'incoming' }, payload: { marker: true } }];
+    mockEnrich.mockResolvedValue(enriched);
+    const { req, res } = createMockReqRes('POST', botBody('f'.repeat(64)), { authorization: `Bearer ${BOT_TOKEN}` });
+    await handler(req, res);
+    expect(mockEnrich).toHaveBeenCalledTimes(1);
+    expect(mockStoreRaw.mock.calls[0][0]).toBe(enriched);
   });
 
   it("refuses a bot record under Helipad's token, and a Helipad record under the bot's", async () => {

@@ -271,7 +271,7 @@ Vercel serverless functions:
 - `boosts/ingest.ts` - Receives Helipad boost records (webhook or import batch). See "Boost capture" below
 - `boosts/coverage.ts` - Admin-only aggregate report over the derived boost projection. Counts only — it must never return a raw record
 - `boosts/rebuild.ts` - Rebuilds the current and previous ISO week's derived files from raw. Called daily by Vercel Cron and available for a manual repair; needs no Helipad access at all
-- `boosts/chart.ts` - The **public** music chart behind `/charts`. Unauthenticated, so what it may emit is defined narrowly: MSP splits only, **counts and never amounts**, and named tracks only. Cached at the CDN (`s-maxage=3600`) because the data only moves when the importer runs
+- `boosts/chart.ts` - The music chart behind `/charts`. **Admin-only for now** (NIP-98 admin or `MSP_ADMIN_KEY`, answered `private, no-store`), but written to go public, so what it may emit is defined narrowly: MSP splits only, **counts and never amounts**, named tracks only, and listeners as a number, never as keys
 - `_utils/boostRecord.ts` - Parsing, the track-resolution ladder, and the PII boundary (`toDerived`)
 - `_utils/boostStore.ts` - Blob paths, raw writes, derived week merge
 - `feed/[npub]/[guid].ts` - Nostr-stored feed retrieval
@@ -537,6 +537,33 @@ keys a boost-link record by link **and** normalized title, in both `topTracks` a
 totals, not listed) instead of joining some song on the same link. Guid and title keys
 keep their key: one guid names one song, and a record without a title still takes it from
 another record of that guid. No rebuild is needed — the chart groups at read time.
+
+**The chart is written for people new to Value for Value, to show them what is popular.**
+That is why the page explains every term where it appears, and why it carries three things
+beyond the two song lists: artists, listener counts and a "New" mark. All three are built
+in `boostChart.ts` and published by `chart.ts` as counts.
+
+- **Artists are read out of the artist label, never guessed** (`topArtists`). The artist
+  is the part after the last " - " of a song row's label, or the whole label when it names
+  one thing. A label that names only an album — Podcast Index's feed title for a remote
+  item is the album — joins an artist only when some row names that album together with
+  exactly one artist (`albumArtists`), which is the same "a row naming both links them"
+  rule `mergeAliases` follows. An album named with two artists maps to neither: many
+  artists release a feed called "Singles". Every such join is listed in the artist row's
+  `mergedFrom`, so `/charts` shows it with the "⚭ merged" line.
+- **A listener is one sender in one app** — the `listenerKey` HMAC of app and sender. The
+  same person in two apps counts twice; a payment that named no sender reaches no listener
+  and is counted as `unattributed` instead, which the page shows as "3+ listeners". Only
+  the size of a set of keys leaves the endpoint: a key is a stable pseudonym, and a list of
+  them is a list of people. `coverage.ts` maps chart rows to their old fields for the same
+  reason — `ChartRow` now carries the key set.
+- **"New" is dated by all time, never by the month alone** (`buildIdentity`). A month's row
+  for a song can hold only the spelling first seen that month while all time has merged it
+  with a spelling supported months earlier, so each month row is dated by the earliest
+  all-time song any of its keys belongs to. Month views also group artists with the
+  all-time album map, or an album-only label would stand as its own artist in any month
+  without the row that names it. Nothing is new in the first month with data, where
+  everything would be. `isNew` is sent only when true, and never on `allTime`.
 
 **Verify a mobile layout with CDP, never with `--window-size`.** This bit again while
 building the page: a `--headless=new` screenshot at 390px looked badly clipped, and

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNostr } from '../store/nostrStore';
 import { createAdminAuthHeader } from '../utils/adminAuth';
+import { Sparkline, SupportPerMonth } from '../components/charts/TrendGraphs';
+import type { Trend } from '../components/charts/TrendGraphs';
 
 /**
  * The music chart — admin-only for now, like its API (see api/boosts/chart.ts).
@@ -33,6 +35,8 @@ interface SongRow {
   mergedFrom?: string[];
   /** First supported in this month. Month views only. */
   isNew?: true;
+  /** Count per month along `trend.months`. All time only. */
+  trend?: number[];
 }
 
 interface ArtistRow {
@@ -44,6 +48,7 @@ interface ArtistRow {
   /** Album-only names the API gave to this artist; shown so a wrong join is visible. */
   mergedFrom?: string[];
   isNew?: true;
+  trend?: number[];
 }
 
 interface PeriodChart {
@@ -66,6 +71,7 @@ interface ChartResponse {
   generatedAt: number;
   months: MonthChart[];
   allTime: PeriodChart;
+  trend: Trend;
 }
 
 /** What one line of a list shows, whether it is a song or an artist. */
@@ -77,6 +83,7 @@ interface ListRow {
   unattributed: number;
   mergedFrom?: string[];
   isNew?: true;
+  trend?: number[];
 }
 
 type View = 'songs' | 'artists';
@@ -105,12 +112,21 @@ function listenerText(listeners: number, unattributed: number): string | null {
   return `${listeners}${plus} ${listeners === 1 && !plus ? 'listener' : 'listeners'}`;
 }
 
-function ChartList({ title, blurb, rows, unit, empty }: {
+/** The UTC month (`YYYY-MM`) of a time in milliseconds, as the API buckets it. */
+function monthOf(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function ChartList({ title, blurb, rows, unit, empty, months, thisMonth }: {
   title: string;
   blurb: string;
   rows: ListRow[];
   unit: string;
   empty: string;
+  /** The trend's months, when the rows carry a trend (all time only). */
+  months?: string[];
+  thisMonth: string;
 }) {
   return (
     <section className="chart-panel">
@@ -139,6 +155,9 @@ function ChartList({ title, blurb, rows, unit, empty }: {
                   )}
                 </span>
                 <span className="chart-count">
+                  {months && row.trend && (
+                    <Sparkline months={months} values={row.trend} unit={unit.trim()} thisMonth={thisMonth} />
+                  )}
                   {row.count}
                   <span className="chart-unit">{row.count === 1 ? unit : `${unit}s`}</span>
                   {listeners && <span className="chart-listeners">{listeners}</span>}
@@ -203,6 +222,8 @@ export function ChartsPage() {
   }, [current, view, newOnly]);
 
   const periodListeners = current ? listenerText(current.listeners, current.unattributed) : null;
+  const thisMonth = data ? monthOf(data.generatedAt) : '';
+  const trendMonths = period === ALL_TIME ? data?.trend.months : undefined;
   const empty = newOnly ? 'Nothing new in this list this month.' : 'Nothing charted for this period yet.';
 
   return (
@@ -298,6 +319,8 @@ export function ChartsPage() {
                     rows={lists.boosts}
                     unit=" boost"
                     empty={empty}
+                    months={trendMonths}
+                    thisMonth={thisMonth}
                   />
                   <ChartList
                     title="Most streamed"
@@ -305,7 +328,12 @@ export function ChartsPage() {
                     rows={lists.streams}
                     unit=" stream"
                     empty={empty}
+                    months={trendMonths}
+                    thisMonth={thisMonth}
                   />
+                  {period === ALL_TIME && data.trend.months.length > 0 && (
+                    <SupportPerMonth trend={data.trend} thisMonth={thisMonth} />
+                  )}
                 </div>
               </>
             )}
@@ -321,6 +349,11 @@ export function ChartsPage() {
                 <strong>Listeners.</strong> A listener is one person in one app, so the same
                 person in two apps counts twice. Some apps do not say who sent a payment; a
                 "+" means some payments in that row came without a name.
+              </p>
+              <p>
+                <strong>Trends.</strong> In All time, the small graph beside each count shows
+                its last twelve months, on its own scale, so you can see what is rising. The
+                last, fainter column is this month so far.
               </p>
               <p>
                 <strong>New.</strong> Marks a song or artist whose first payment MSP has seen

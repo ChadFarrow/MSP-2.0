@@ -41,6 +41,12 @@ export interface ChartRow {
   chartKeys: Set<string>;
   /** When the row's earliest record was paid, unix seconds. */
   firstTs: number;
+  /** Records per UTC month (`monthKey`) — the row's trend. */
+  byMonth: Map<string, number>;
+}
+
+function addMonths(into: Map<string, number>, from: Map<string, number>): void {
+  from.forEach((n, month) => into.set(month, (into.get(month) ?? 0) + n));
 }
 
 /**
@@ -178,7 +184,12 @@ function mergeAliases(rows: ChartRow[]): ChartRow[] {
           || lastPart(g.trackArtist) === artist || lastPart(row.trackArtist) === other;
       });
       if (!into) {
-        groups.push({ ...row, listenerKeys: new Set(row.listenerKeys), chartKeys: new Set(row.chartKeys) });
+        groups.push({
+          ...row,
+          listenerKeys: new Set(row.listenerKeys),
+          chartKeys: new Set(row.chartKeys),
+          byMonth: new Map(row.byMonth)
+        });
         continue;
       }
       into.count += row.count;
@@ -186,6 +197,7 @@ function mergeAliases(rows: ChartRow[]): ChartRow[] {
       into.firstTs = Math.min(into.firstTs, row.firstTs);
       row.listenerKeys.forEach(k => into.listenerKeys.add(k));
       row.chartKeys.forEach(k => into.chartKeys.add(k));
+      addMonths(into.byMonth, row.byMonth);
       // Record only a spelling that differs: an identical one is certain, not worth review.
       const known = [into.trackArtist, ...(into.mergedFrom ?? [])].map(a => normalize(a ?? ''));
       if (row.trackArtist && !known.includes(artist)) {
@@ -218,7 +230,8 @@ export function topTracks(records: DerivedBoost[], limit?: number): ChartRow[] {
         listenerKeys: new Set(),
         unattributed: 0,
         chartKeys: new Set([key]),
-        firstTs: record.ts
+        firstTs: record.ts,
+        byMonth: new Map()
       };
       rows.set(key, row);
     }
@@ -226,6 +239,8 @@ export function topTracks(records: DerivedBoost[], limit?: number): ChartRow[] {
     row.trackTitle ??= record.trackTitle;
     row.trackArtist ??= record.trackArtist;
     row.firstTs = Math.min(row.firstTs, record.ts);
+    const month = monthKey(record.ts);
+    row.byMonth.set(month, (row.byMonth.get(month) ?? 0) + 1);
     if (record.listenerKey) row.listenerKeys.add(record.listenerKey);
     else row.unattributed += 1;
   }
@@ -247,6 +262,8 @@ export interface ArtistRow {
   /** Album-only labels given to this artist through `albumArtists`; absent when none. */
   mergedFrom?: string[];
   firstTs: number;
+  /** Its songs' counts per month, added up. */
+  byMonth: Map<string, number>;
 }
 
 /** "Album - Artist" split at its last " - "; undefined for a label that names one thing. */
@@ -307,7 +324,10 @@ export function topArtists(rows: ChartRow[], albums: Map<string, string> = album
     let artist = byArtist.get(key);
     if (!artist) {
       // Rows arrive ranked, so the label comes from the artist's most counted song.
-      artist = { artistKey: key, artist: name, count: 0, songs: 0, listenerKeys: new Set(), unattributed: 0, firstTs: row.firstTs };
+      artist = {
+        artistKey: key, artist: name, count: 0, songs: 0,
+        listenerKeys: new Set(), unattributed: 0, firstTs: row.firstTs, byMonth: new Map()
+      };
       byArtist.set(key, artist);
     }
     artist.count += row.count;
@@ -315,6 +335,7 @@ export function topArtists(rows: ChartRow[], albums: Map<string, string> = album
     artist.unattributed += row.unattributed;
     artist.firstTs = Math.min(artist.firstTs, row.firstTs);
     row.listenerKeys.forEach(k => artist.listenerKeys.add(k));
+    addMonths(artist.byMonth, row.byMonth);
     if (inferred && normalize(inferred) !== normalize(label) && !artist.mergedFrom?.includes(label)) {
       artist.mergedFrom = [...(artist.mergedFrom ?? []), label];
     }

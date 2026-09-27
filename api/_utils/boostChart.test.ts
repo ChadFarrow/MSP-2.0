@@ -395,3 +395,36 @@ describe('topArtists', () => {
     expect(artists.map(a => a.artist)).toEqual(['Mango', 'Apple', 'Zebra']);
   });
 });
+
+describe('counts per month', () => {
+  const JUL = Math.floor(Date.UTC(2026, 6, 12) / 1000);
+  const AUG = Math.floor(Date.UTC(2026, 7, 12) / 1000);
+
+  it("counts a row's records month by month", () => {
+    const rows = topTracks([
+      record({ index: 1, ts: JUL }),
+      record({ index: 2, ts: AUG }),
+      record({ index: 3, ts: AUG })
+    ]);
+    expect(Object.fromEntries(rows[0].byMonth)).toEqual({ '2026-07': 1, '2026-08': 2 });
+  });
+
+  it('adds up the months of two spellings that merge into one song', () => {
+    const rows = topTracks([
+      record({ index: 1, ts: JUL, trackKey: 'link:a', trackTitle: 'Copenhagen Time', trackArtist: 'Kulture Collection - Matt Finlay' }),
+      record({ index: 2, ts: AUG, trackKey: 'guid:b', trackTitle: 'Copenhagen Time', trackArtist: 'Matt Finlay' }),
+      record({ index: 3, ts: AUG, trackKey: 'link:a', trackTitle: 'Copenhagen Time', trackArtist: 'Kulture Collection - Matt Finlay' })
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(Object.fromEntries(rows[0].byMonth)).toEqual({ '2026-07': 1, '2026-08': 2 });
+  });
+
+  it("adds up an artist's songs month by month", () => {
+    const artists = topArtists(topTracks([
+      record({ index: 1, ts: JUL, trackKey: 'a', trackTitle: 'Copenhagen Time', trackArtist: 'Matt Finlay' }),
+      record({ index: 2, ts: AUG, trackKey: 'b', trackTitle: 'Contrails', trackArtist: 'Matt Finlay' }),
+      record({ index: 3, ts: AUG, trackKey: 'a', trackTitle: 'Copenhagen Time', trackArtist: 'Matt Finlay' })
+    ]));
+    expect(Object.fromEntries(artists[0].byMonth)).toEqual({ '2026-07': 1, '2026-08': 2 });
+  });
+});

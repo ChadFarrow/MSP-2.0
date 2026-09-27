@@ -8,7 +8,7 @@ import {
   buildIdentity, collapseToPlays, isBoostRecord, isNewIn, songFirstSeen, topArtists, topTracks
 } from '../_utils/boostChart.js';
 import type { ArtistRow, ChartIdentity, ChartRow } from '../_utils/boostChart.js';
-import { monthKey } from '../_utils/boostRecord.js';
+import { BOOSTBOX_CUTOVER, monthKey } from '../_utils/boostRecord.js';
 import type { DerivedBoost } from '../_utils/boostRecord.js';
 
 /**
@@ -51,6 +51,8 @@ interface PublicRow {
   mergedFrom?: string[];
   /** First supported in this month. Month views only, and absent rather than false. */
   isNew?: true;
+  /** Count per month along `trend.months`. All time only. */
+  trend?: number[];
 }
 
 interface PublicArtistRow {
@@ -62,6 +64,7 @@ interface PublicArtistRow {
   /** Album-only labels given to this artist (see albumArtists); absent when none. */
   mergedFrom?: string[];
   isNew?: true;
+  trend?: number[];
 }
 
 /**
@@ -72,7 +75,7 @@ interface PublicArtistRow {
  * longest month is 28 rows and all-time is already 62, so there is nothing here a cap
  * protects a reader from.
  */
-function toPublicRows(rows: ChartRow[], isNew: (row: ChartRow) => boolean): PublicRow[] {
+function toPublicRows(rows: ChartRow[], isNew: (row: ChartRow) => boolean, axis?: string[]): PublicRow[] {
   return rows
     .filter(row => row.trackTitle)
     .map(row => ({
@@ -82,11 +85,12 @@ function toPublicRows(rows: ChartRow[], isNew: (row: ChartRow) => boolean): Publ
       listeners: row.listenerKeys.size,
       unattributed: row.unattributed,
       ...(row.mergedFrom ? { mergedFrom: row.mergedFrom } : {}),
-      ...(isNew(row) ? { isNew: true as const } : {})
+      ...(isNew(row) ? { isNew: true as const } : {}),
+      ...(axis ? { trend: axis.map(month => row.byMonth.get(month) ?? 0) } : {})
     }));
 }
 
-function toPublicArtists(rows: ArtistRow[], isNew: (row: ArtistRow) => boolean): PublicArtistRow[] {
+function toPublicArtists(rows: ArtistRow[], isNew: (row: ArtistRow) => boolean, axis?: string[]): PublicArtistRow[] {
   return rows.map(row => ({
     artist: row.artist,
     count: row.count,
@@ -94,12 +98,22 @@ function toPublicArtists(rows: ArtistRow[], isNew: (row: ArtistRow) => boolean):
     listeners: row.listenerKeys.size,
     unattributed: row.unattributed,
     ...(row.mergedFrom ? { mergedFrom: row.mergedFrom } : {}),
-    ...(isNew(row) ? { isNew: true as const } : {})
+    ...(isNew(row) ? { isNew: true as const } : {}),
+    ...(axis ? { trend: axis.map(month => row.byMonth.get(month) ?? 0) } : {})
   }));
 }
 
-/** One period's chart. `month` is set for a month view, and only a month view marks rows new. */
-function buildChart(records: DerivedBoost[], identity: ChartIdentity, month?: string) {
+/**
+ * One period's chart. A month view marks rows new; all time instead gives each row its
+ * count per month along `axis`, because one month has no trend to show.
+ */
+function buildChart(
+  records: DerivedBoost[],
+  identity: ChartIdentity,
+  view: { month: string } | { axis: string[] }
+) {
+  const month = 'month' in view ? view.month : undefined;
+  const axis = 'axis' in view ? view.axis : undefined;
   const plays = collapseToPlays(records);
   const boosts = records.filter(isBoostRecord);
   const streamRows = topTracks(plays);
@@ -118,10 +132,10 @@ function buildChart(records: DerivedBoost[], identity: ChartIdentity, month?: st
   // a track, collapsed — but "0 plays" reads like something is broken where "0 streams"
   // reads like a fact, and streams is the familiar word for a collapsed listening count.
   return {
-    streams: toPublicRows(streamRows, songIsNew),
-    boosts: toPublicRows(boostRows, songIsNew),
-    artistStreams: toPublicArtists(topArtists(streamRows, identity.albums), artistIsNew),
-    artistBoosts: toPublicArtists(topArtists(boostRows, identity.albums), artistIsNew),
+    streams: toPublicRows(streamRows, songIsNew, axis),
+    boosts: toPublicRows(boostRows, songIsNew, axis),
+    artistStreams: toPublicArtists(topArtists(streamRows, identity.albums), artistIsNew, axis),
+    artistBoosts: toPublicArtists(topArtists(boostRows, identity.albums), artistIsNew, axis),
     totalStreams: plays.length,
     totalBoosts: boosts.length,
     listeners: listeners.size,
@@ -138,6 +152,36 @@ function monthLabel(month: string): string {
   const [year, m] = month.split('-');
   return `${MONTH_NAMES[Number(m) - 1]} ${year}`;
 }
+
+/** The month after `month`, both `YYYY-MM`. */
+function nextMonth(month: string): string {
+  const [year, m] = month.split('-').map(Number);
+  return m === 12 ? `${year + 1}-01` : `${year}-${String(m + 1).padStart(2, '0')}`;
+}
+
+/**
+ * Every month from the first with data to this month, with none skipped. A month with no
+ * support is a zero on the graph, not a gap — a gap would join the months either side and
+ * hide the quiet one. It runs to this month even when this month has nothing yet, and past
+ * it if a record is dated later.
+ */
+function trendAxis(dataMonths: string[]): string[] {
+  if (dataMonths.length === 0) return [];
+  const sorted = [...dataMonths].sort();
+  const thisMonth = monthKey(Math.floor(Date.now() / 1000));
+  const last = sorted[sorted.length - 1] > thisMonth ? sorted[sorted.length - 1] : thisMonth;
+  const axis = [sorted[0]];
+  while (axis[axis.length - 1] < last) axis.push(nextMonth(axis[axis.length - 1]));
+  return axis;
+}
+
+/**
+ * The first month whose counts are complete. Before msp-bot took over (BOOSTBOX_CUTOVER,
+ * 2026-01-29) the records are Helipad's, and Helipad missed LNURL boosts — 87 of 339
+ * measured afterwards. The cutover month itself is mostly Helipad's, so it is not complete
+ * either. The page says so, or the graph shows growth that is only a change of source.
+ */
+const COMPLETE_FROM = nextMonth(monthKey(BOOSTBOX_CUTOVER));
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {
@@ -178,12 +222,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const months = [...byMonth.entries()]
       .sort((a, b) => b[0].localeCompare(a[0]))
-      .map(([month, records]) => ({ month, label: monthLabel(month), ...buildChart(records, identity, month) }));
+      .map(([month, records]) => ({ month, label: monthLabel(month), ...buildChart(records, identity, { month }) }));
+
+    const axis = trendAxis([...byMonth.keys()]);
+    const byKey = new Map(months.map(m => [m.month, m]));
+    const trend = {
+      months: axis,
+      boosts: axis.map(m => byKey.get(m)?.totalBoosts ?? 0),
+      streams: axis.map(m => byKey.get(m)?.totalStreams ?? 0),
+      listeners: axis.map(m => byKey.get(m)?.listeners ?? 0),
+      completeFrom: COMPLETE_FROM
+    };
 
     return res.status(200).json({
       generatedAt: Date.now(),
       months,
-      allTime: buildChart(mspOnly, identity)
+      allTime: buildChart(mspOnly, identity, { axis }),
+      trend
     });
   } catch (error) {
     console.error('Boost chart failed:', error);

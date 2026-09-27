@@ -564,6 +564,18 @@ in `boostChart.ts` and published by `chart.ts` as counts.
   all-time album map, or an album-only label would stand as its own artist in any month
   without the row that names it. Nothing is new in the first month with data, where
   everything would be. `isNew` is sent only when true, and never on `allTime`.
+- **Trends are graphs of the same counts, drawn without a library**
+  (`src/components/charts/TrendGraphs.tsx`, inline SVG). All time gets a "Support per month"
+  panel — boosts, streams and listeners as three small graphs, each on its own scale because
+  they count different things — and a twelve-month sparkline beside every row. The API sends
+  `trend.months` from the first month with data **to this month**, with every month in
+  between: a quiet month is a zero, never a gap, or the graph joins its neighbours and hides
+  it. Each all-time row carries `trend`, its count per month along that axis; month views
+  carry none. **This month is drawn fainter and called "so far" on every graph**, or a month
+  in progress reads as a drop. `trend.completeFrom` is the month after `BOOSTBOX_CUTOVER`:
+  earlier months are Helipad's, which missed LNURL boosts, and the page says so under the
+  graphs, or they show growth that is only a change of source. Every value on a graph is
+  also in the "Show the numbers" table or the sparkline's label, so a tooltip never gates one.
 
 **Verify a mobile layout with CDP, never with `--window-size`.** This bit again while
 building the page: a `--headless=new` screenshot at 390px looked badly clipped, and

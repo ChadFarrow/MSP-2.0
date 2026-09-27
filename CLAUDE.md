@@ -526,6 +526,18 @@ other spellings it absorbed; identical spellings are not listed), `/api/boosts/c
 passes it through, and `/charts` shows it as a "⚭ merged: …" line so a wrong merge is
 visible. On 2026-09-27 data the rule turned 131 boost rows into 112; streams were unchanged.
 
+**A boost link is not a song identity — v4vmusic reuses one across songs.** Measured on
+2026-09-27: 28 of 75 boost links carried more than one song title (144 boosts; one link
+carried six songs). Rows keyed on the link alone summed different songs under whichever
+title came first, so "Copenhagen Time" showed 19 where 14 were its own, and "Vertical",
+"Bakalator" and "Nothing Left To Say" sat in the top five on other songs' boosts — the
+Helipad-era public chart had the same inflation. `chartKey` (`boostChart.ts`) therefore
+keys a boost-link record by link **and** normalized title, in both `topTracks` and
+`collapseToPlays`; an untitled boost-link record stays in its own row (counted in the
+totals, not listed) instead of joining some song on the same link. Guid and title keys
+keep their key: one guid names one song, and a record without a title still takes it from
+another record of that guid. No rebuild is needed — the chart groups at read time.
+
 **Verify a mobile layout with CDP, never with `--window-size`.** This bit again while
 building the page: a `--headless=new` screenshot at 390px looked badly clipped, and
 measuring with `Emulation.setDeviceMetricsOverride` showed `scrollWidth === clientWidth`

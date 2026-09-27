@@ -2,17 +2,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Mock } from 'vitest';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-const { mockStoreRaw, mockReplaceWeek, mockRebuildWeek, mockIsConfigured } = vi.hoisted(() => ({
+const { mockStoreRaw, mockReplaceWeek, mockRebuildWeek, mockIsConfigured, mockReadBot } = vi.hoisted(() => ({
   mockStoreRaw: vi.fn(),
   mockReplaceWeek: vi.fn(),
   mockRebuildWeek: vi.fn(),
-  mockIsConfigured: vi.fn()
+  mockIsConfigured: vi.fn(),
+  mockReadBot: vi.fn()
 }));
 vi.mock('../_utils/boostStore.js', () => ({
   storeRawBoosts: mockStoreRaw,
   replaceDerivedWeek: mockReplaceWeek,
   rebuildWeekFromRaw: mockRebuildWeek,
-  isBoostStoreConfigured: mockIsConfigured
+  isBoostStoreConfigured: mockIsConfigured,
+  readStoredBoostboxRecords: mockReadBot
 }));
 
 import handler from './ingest.js';
@@ -69,6 +71,7 @@ describe('/api/boosts/ingest', () => {
     mockStoreRaw.mockResolvedValue({ written: 1, duplicates: 0 });
     mockReplaceWeek.mockResolvedValue(1);
     mockRebuildWeek.mockResolvedValue(7);
+    mockReadBot.mockResolvedValue([]);
   });
 
   it('rejects anything but POST', async () => {
@@ -218,6 +221,19 @@ describe('/api/boosts/ingest', () => {
     await handler(req, res);
     expect(mockReplaceWeek).toHaveBeenCalledTimes(1);
     expect(mockRebuildWeek).not.toHaveBeenCalled();
+  });
+
+  it("keeps the bot's stored records when the importer rewrites a week", async () => {
+    const botRecord = { source: 'boostbox', paymentHash: 'e'.repeat(64), index: 0, ts: 1756400000 };
+    mockReadBot.mockResolvedValue([botRecord]);
+    const { req, res } = createMockReqRes('POST', { week: '2025-W35', records: [webhookBody(1)] });
+    await handler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockReadBot).toHaveBeenCalledWith('2025-W35');
+    const [, records] = mockReplaceWeek.mock.calls[0];
+    expect(records).toHaveLength(2);
+    expect(records).toContainEqual(botRecord);
   });
 
   it('refuses a record that is not in the stated week rather than dropping it', async () => {

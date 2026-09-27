@@ -219,13 +219,11 @@ export function monthsForWeek(weekKey: string): string[] {
  * Returns null when the week has no raw records at all, so a caller can tell "nothing
  * there" from "genuinely empty" without writing an empty file over a real one.
  */
-export async function rebuildWeekFromRaw(
-  weekKey: string,
-  extra: ParsedBoost[] = []
-): Promise<number | null> {
+/** Every stored raw record of one week whose path passes `keep`. Raw is immutable, so a cached read is correct. */
+async function readRawWeek(weekKey: string, keep: (pathname: string) => boolean = () => true): Promise<ParsedBoost[]> {
   const blobs = (await Promise.all(
     monthsForWeek(weekKey).map(month => listAll(rawMonthPrefix(month)))
-  )).flat();
+  )).flat().filter(b => keep(b.pathname));
 
   const stored = await mapLimit(blobs, WRITE_CONCURRENCY, b => fetchJson<RawStoredBoost>(b.url));
   const records: ParsedBoost[] = [];
@@ -233,6 +231,23 @@ export async function rebuildWeekFromRaw(
     const parsed = record ? parseBoostPayload(record.payload) : null;
     if (parsed && isoWeekKey(parsed.ts) === weekKey) records.push(parsed);
   }
+  return records;
+}
+
+/**
+ * msp-bot's raw records for one week. The Helipad importer supplies only Helipad's
+ * records, and its whole-week write would otherwise replace the bot's with nothing.
+ */
+export async function readStoredBoostboxRecords(weekKey: string): Promise<ParsedBoost[]> {
+  const records = await readRawWeek(weekKey, pathname => pathname.includes('/incoming-ph-'));
+  return records.filter(r => r.source === 'boostbox');
+}
+
+export async function rebuildWeekFromRaw(
+  weekKey: string,
+  extra: ParsedBoost[] = []
+): Promise<number | null> {
+  const records = await readRawWeek(weekKey);
 
   // `extra` is the caller's own just-written records. list() is not guaranteed to show a
   // blob written moments earlier, so a webhook that rebuilt purely from the listing could

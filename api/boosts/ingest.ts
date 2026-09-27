@@ -8,7 +8,8 @@ import {
   isBoostStoreConfigured,
   storeRawBoosts,
   replaceDerivedWeek,
-  rebuildWeekFromRaw
+  rebuildWeekFromRaw,
+  readStoredBoostboxRecords
 } from '../_utils/boostStore.js';
 
 /**
@@ -161,8 +162,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const weekSizes: Record<string, number> = {};
 
     if (week) {
-      // The caller supplied the complete week, so write it straight out.
-      weekSizes[week] = await replaceDerivedWeek(week, entries.map(e => e.parsed));
+      // The importer supplies Helipad's records only. The bot's stored records for the
+      // week go into the same whole-week write, or re-running the importer would drop
+      // them from the chart.
+      const stored = await readStoredBoostboxRecords(week);
+      weekSizes[week] = await replaceDerivedWeek(week, [...entries.map(e => e.parsed), ...stored]);
     } else {
       // A webhook knows one boost, not a week — so rebuild that week from raw, which
       // needs no previous version of the derived file and therefore no merge. The

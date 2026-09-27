@@ -15,7 +15,8 @@ import {
   rebuildWeekFromRaw,
   weekBounds,
   monthsForWeek,
-  selectSource
+  selectSource,
+  readStoredBoostboxRecords
 } from './boostStore.js';
 import { parseBoostPayload, isoWeekKey, BOOSTBOX_CUTOVER } from './boostRecord.js';
 import type { ParsedBoost } from './boostRecord.js';
@@ -381,5 +382,38 @@ describe('replaceDerivedWeek across sources', () => {
       source: 'boostbox', payment_hash: h.repeat(64), direction: 'incoming', time: t, tlv: '{}'
     })!;
     expect(await replaceDerivedWeek('2026-W35', [bot('d'), bot('e'), bot('d')])).toBe(2);
+  });
+});
+
+describe('readStoredBoostboxRecords', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.MSP_BOOST_NAMESPACE = NAMESPACE;
+  });
+
+  it("reads only the bot's raw records for the week, never fetching Helipad's", async () => {
+    mockList.mockResolvedValue({
+      blobs: [
+        { pathname: `boosts/raw/${NAMESPACE}/2026-08/incoming-7.json`, url: 'https://blob.example/helipad-7' },
+        { pathname: `boosts/raw/${NAMESPACE}/2026-08/incoming-ph-${'d'.repeat(64)}.json`, url: 'https://blob.example/bot-d' }
+      ],
+      cursor: undefined,
+      hasMore: false
+    });
+    mockFetch.mockResolvedValue({
+      ok: true, status: 200,
+      text: () => Promise.resolve(JSON.stringify({
+        receivedAt: 1, source: 'boostbox',
+        payload: {
+          source: 'boostbox', payment_hash: 'd'.repeat(64), direction: 'incoming',
+          time: Math.floor(Date.UTC(2026, 7, 29) / 1000), tlv: '{}'
+        }
+      }))
+    });
+
+    const records = await readStoredBoostboxRecords('2026-W35');
+    expect(records.map(r => r.paymentHash)).toEqual(['d'.repeat(64)]);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch).toHaveBeenCalledWith('https://blob.example/bot-d');
   });
 });

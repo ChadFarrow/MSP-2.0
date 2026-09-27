@@ -2259,6 +2259,16 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* A row that counts several artist spellings together — kept visible so a wrong merge
+   is noticed (see mergeAliases in api/_utils/boostChart.ts). */
+.chart-merged {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--accent-secondary);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
 .chart-count {
   color: var(--accent-secondary);
   font-weight: 600;

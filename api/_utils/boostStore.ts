@@ -65,7 +65,7 @@ export function derivedPath(weekKey: string): string {
 
 export interface RawStoredBoost {
   receivedAt: number;
-  source: 'webhook' | 'import';
+  source: 'webhook' | 'import' | 'boostbox';
   payload: unknown;
 }
 

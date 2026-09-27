@@ -3,7 +3,7 @@ import { checkRateLimit } from '../_utils/rateLimiter.js';
 import { getClientIp } from '../_utils/urlSafety.js';
 import { timingSafeEqualString } from '../_utils/feedUtils.js';
 import { parseBoostPayload, isHelipadTestBoost, isoWeekKey } from '../_utils/boostRecord.js';
-import type { ParsedBoost } from '../_utils/boostRecord.js';
+import type { BoostSource, ParsedBoost } from '../_utils/boostRecord.js';
 import {
   isBoostStoreConfigured,
   storeRawBoosts,
@@ -38,6 +38,11 @@ import {
  *
  * A live webhook cannot know a whole week, so it writes raw only and the chart catches
  * up on the next importer run. Raw is the source of truth and is always complete.
+ *
+ * A second caller, msp-bot (boostbox), posts the same record shape with
+ * `source: "boostbox"` and a `payment_hash` in place of `index`, under its own
+ * MSP_BOT_INGEST_TOKEN. Since 2026-09-26 it is the chart's live source; Helipad's
+ * records count only before BOOSTBOX_CUTOVER (see boostRecord.ts).
  */
 
 /**
@@ -69,11 +74,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const expectedToken = process.env.HELIPAD_WEBHOOK_TOKEN;
+  const helipadToken = process.env.HELIPAD_WEBHOOK_TOKEN;
+  const botToken = process.env.MSP_BOT_INGEST_TOKEN;
 
-  // 404 rather than 401 when unconfigured: until both env vars are set the feature
-  // does not exist, and saying so invites nobody to guess at the token.
-  if (!expectedToken || !isBoostStoreConfigured()) {
+  // 404 rather than 401 when unconfigured: until a token and the namespace are set the
+  // feature does not exist, and saying so invites nobody to guess at a token.
+  if ((!helipadToken && !botToken) || !isBoostStoreConfigured()) {
     return res.status(404).json({ error: 'Not found' });
   }
 
@@ -84,7 +90,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // Constant-time, and the string variant on purpose: timingSafeEqualHex would run
   // Buffer.from(x, 'hex') over a free-form secret and compare two truncations equal.
-  if (!presented || !timingSafeEqualString(presented, expectedToken)) {
+  // Each token names its caller, and a caller may only write its own source's records.
+  const caller: BoostSource | null =
+    presented && helipadToken && timingSafeEqualString(presented, helipadToken) ? 'helipad'
+    : presented && botToken && timingSafeEqualString(presented, botToken) ? 'boostbox'
+    : null;
+
+  if (!caller) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
@@ -128,6 +140,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   for (const payload of payloads) {
     const parsed = parseBoostPayload(payload);
     if (!parsed) { skipped += 1; continue; }
+    // A leaked bot token must not be able to forge Helipad history, nor the reverse.
+    if (parsed.source !== caller) { skipped += 1; continue; }
     // Accepted and acknowledged, never stored — see isHelipadTestBoost.
     if (isHelipadTestBoost(parsed)) { tests += 1; continue; }
     entries.push({ parsed, payload });
@@ -158,7 +172,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const result = await storeRawBoosts(entries, week ? 'import' : 'webhook');
+    const result = await storeRawBoosts(entries, week ? 'import' : caller === 'boostbox' ? 'boostbox' : 'webhook');
     const weekSizes: Record<string, number> = {};
 
     if (week) {

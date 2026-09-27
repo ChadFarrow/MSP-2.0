@@ -21,6 +21,7 @@ import handler from './ingest.js';
 import { __resetRateLimiterForTests } from '../_utils/rateLimiter.js';
 
 const TOKEN = 'helipad-token-value';
+const BOT_TOKEN = 'bot-token-value-xyz';
 
 type MockRes = VercelResponse & { status: Mock; json: Mock; setHeader: Mock };
 
@@ -62,11 +63,23 @@ function webhookBody(index: number) {
   };
 }
 
+function botBody(hash: string) {
+  return {
+    source: 'boostbox',
+    payment_hash: hash,
+    direction: 'incoming',
+    time: 1790000000,
+    value_msat: 1000,
+    tlv: JSON.stringify({ name: 'MSP 2.0', action: 'boost', app_name: 'Castamatic' })
+  };
+}
+
 describe('/api/boosts/ingest', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     __resetRateLimiterForTests();
     process.env.HELIPAD_WEBHOOK_TOKEN = TOKEN;
+    process.env.MSP_BOT_INGEST_TOKEN = BOT_TOKEN;
     mockIsConfigured.mockReturnValue(true);
     mockStoreRaw.mockResolvedValue({ written: 1, duplicates: 0 });
     mockReplaceWeek.mockResolvedValue(1);
@@ -81,6 +94,7 @@ describe('/api/boosts/ingest', () => {
   });
 
   it('is 404 until both the token and the namespace are configured', async () => {
+    delete process.env.MSP_BOT_INGEST_TOKEN;
     delete process.env.HELIPAD_WEBHOOK_TOKEN;
     const a = createMockReqRes('POST', webhookBody(1));
     await handler(a.req, a.res);
@@ -100,6 +114,37 @@ describe('/api/boosts/ingest', () => {
       expect(res.status).toHaveBeenCalledWith(401);
     }
     expect(mockStoreRaw).not.toHaveBeenCalled();
+  });
+
+  it('stores a bot record sent with the bot token, labelled as the bot', async () => {
+    const { req, res } = createMockReqRes('POST', botBody('f'.repeat(64)), { authorization: `Bearer ${BOT_TOKEN}` });
+    await handler(req, res);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockStoreRaw.mock.calls[0][1]).toBe('boostbox');
+    expect(mockStoreRaw.mock.calls[0][0][0].parsed.paymentHash).toBe('f'.repeat(64));
+  });
+
+  it("refuses a bot record under Helipad's token, and a Helipad record under the bot's", async () => {
+    const a = createMockReqRes('POST', botBody('f'.repeat(64)));
+    await handler(a.req, a.res);
+    expect(a.res.status).toHaveBeenCalledWith(400);
+
+    const b = createMockReqRes('POST', webhookBody(1), { authorization: `Bearer ${BOT_TOKEN}` });
+    await handler(b.req, b.res);
+    expect(b.res.status).toHaveBeenCalledWith(400);
+    expect(mockStoreRaw).not.toHaveBeenCalled();
+  });
+
+  it('works with only the bot token configured, and is 404 with neither', async () => {
+    delete process.env.HELIPAD_WEBHOOK_TOKEN;
+    const a = createMockReqRes('POST', botBody('f'.repeat(64)), { authorization: `Bearer ${BOT_TOKEN}` });
+    await handler(a.req, a.res);
+    expect(a.res.status).toHaveBeenCalledWith(200);
+
+    delete process.env.MSP_BOT_INGEST_TOKEN;
+    const b = createMockReqRes('POST', botBody('f'.repeat(64)), { authorization: `Bearer ${BOT_TOKEN}` });
+    await handler(b.req, b.res);
+    expect(b.res.status).toHaveBeenCalledWith(404);
   });
 
   it('stores a single webhook body and answers exactly 200', async () => {

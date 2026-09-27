@@ -33,7 +33,8 @@ A `.env` file is required with the following variables:
 - `PODCASTINDEX_API_KEY` - Podcast Index API key
 - `PODCASTINDEX_API_SECRET` - Podcast Index API secret
 - `BLOB_READ_WRITE_TOKEN` - Vercel Blob storage token. **Read-write: it is the key to every hosted feed** (`feeds/*.xml`, the meta blobs, and the whole `accounts/` namespace whose privacy model is "unguessable paths"). Vercel owns this one — the Blob store injects it into connected projects, and rotating it in the dashboard updates the env var automatically, but **active deployments must be redeployed to pick it up**. It was committed to this public repo in `63c2de2` (Jan 2026) and removed the same day in `5535933`; removing a file does not remove its blob, so it stayed readable in history — and in the Desktop App fork — until rotated in Aug 2026. If you ever rotate again, do **not** take Vercel's "delay expiration of old credentials" option when the reason is exposure: that keeps the leaked key alive for up to 30 days
-- `MSP_ADMIN_PUBKEYS` - Admin public keys for authentication
+- `MSP_ADMIN_PUBKEYS` - Admin public keys for authentication. **Hex only**, comma-separated — an npub here never matches. Full admin: list, restore and delete every hosted feed, the coverage report's sats totals, rebuilds, and the chart
+- `MSP_CHART_PUBKEYS` - Keys that may read `/charts` and **nothing else** (`parseChartAuthHeader`). Comma-separated npubs or hex. The way to share the private chart without handing out admin rights; a change needs a redeploy to take effect
 - `MSP_ADMIN_KEY` - **Second, static full-admin path that bypasses NIP-98 entirely.** A long-lived bearer secret accepted via the admin header by `api/hosted/index.ts` and `api/hosted/[feedId].ts`; if set, it grants restore/delete/backup on any feed with no Nostr signature. It went undocumented here for a long time — if you don't need it, unset it rather than leaving a spare key under the mat. Compared with `timingSafeEqualString()` (see the hardening notes below for why not the hex variant)
 - `VITE_CANONICAL_URL` - Canonical URL for the application
 - `PODPING_ENDPOINT_URL` - Full URL to MSP's self-hosted podping-hivepinger Railway service, trailing slash (optional; podping notifications are skipped when unset)
@@ -274,7 +275,7 @@ Vercel serverless functions:
 - `boosts/ingest.ts` - Receives Helipad boost records (webhook or import batch). See "Boost capture" below
 - `boosts/coverage.ts` - Admin-only aggregate report over the derived boost projection. Counts only — it must never return a raw record
 - `boosts/rebuild.ts` - Rebuilds the current and previous ISO week's derived files from raw. Called daily by Vercel Cron and available for a manual repair; needs no Helipad access at all
-- `boosts/chart.ts` - The music chart behind `/charts`. **Admin-only for now** (NIP-98 admin or `MSP_ADMIN_KEY`, answered `private, no-store`), but written to go public, so what it may emit is defined narrowly: MSP splits only, **counts and never amounts**, named tracks only, and listeners as a number, never as keys
+- `boosts/chart.ts` - The music chart behind `/charts`. **Private for now** (NIP-98 admin, a key on `MSP_CHART_PUBKEYS`, or `MSP_ADMIN_KEY`; answered `private, no-store`), but written to go public, so what it may emit is defined narrowly: MSP splits only, **counts and never amounts**, named tracks only, and listeners as a number, never as keys
 - `_utils/boostRecord.ts` - Parsing, the track-resolution ladder, and the PII boundary (`toDerived`)
 - `_utils/boostStore.ts` - Blob paths, raw writes, derived week merge
 - `feed/[npub]/[guid].ts` - Nostr-stored feed retrieval
@@ -489,12 +490,14 @@ for one.
 - Reading derived for the chart is fine through the cache — 60 seconds of lag on a
   weekly chart is not worth a single line of code.
 
-**The chart is admin-only for now (since 2026-09-26).** It shipped public in #130; Chad
-took it private while charts are still being worked out. `/api/boosts/chart` is gated
-exactly like `/api/boosts/coverage` (NIP-98 admin or `MSP_ADMIN_KEY`), and answers
+**The chart is private for now (since 2026-09-26).** It shipped public in #130; Chad
+took it private while charts are still being worked out. `/api/boosts/chart` opens to an
+admin (NIP-98 on `MSP_ADMIN_PUBKEYS`, or `MSP_ADMIN_KEY`, as `/api/boosts/coverage` does)
+**or to a key on `MSP_CHART_PUBKEYS`**, a chart-only list added so Chad can share the chart
+without handing out admin rights, which include deleting any hosted feed. It answers
 `private, no-store` — including its 401 — because a CDN copy of an authenticated response
 is served to anyone. `/charts` sits inside `NostrProvider` like `/admin` and shows nothing
-about the chart until an admin signs in. **Publishing it again means reverting both the
+about the chart until an allowed key signs in. **Publishing it again means reverting both the
 gate and the cache header together**; the paragraphs below describe the chart as it will
 be when it is public.
 

@@ -512,6 +512,20 @@ track title and artist. Real data: an album called `Various &amp; Assorted` reac
 chart with the entity intact, which shows an artist their own title misspelled. The
 ampersand is decoded **last**, or `&amp;lt;` would decode twice into `<`.
 
+**One song under several artist spellings is merged, and the chart marks it.** A track's
+key depends on which resolver rung answered, and its "artist" is whatever that source
+said: the message scrape gives "Album - Artist", Podcast Index's feed title gives the
+album, some apps give the artist. `mergeAliases` (`boostChart.ts`) folds rows with the same
+normalized title when one artist string is a prefix of the other **or equals the other's
+last " - " part** — so "Kulture Collection", "Matt Finlay" and "Kulture Collection - Matt
+Finlay" are one "Copenhagen Time" (14 boosts, not three rows). Chad's rule (2026-09-27):
+same title and same artist is the same song, whatever the release. A bare suffix match is
+not used ("Fred" must not join "Right Said Fred"), and "Album" alone never joins "Artist"
+alone — only a row naming both links them. Every merged row carries `mergedFrom` (the
+other spellings it absorbed; identical spellings are not listed), `/api/boosts/chart`
+passes it through, and `/charts` shows it as a "⚭ merged: …" line so a wrong merge is
+visible. On 2026-09-27 data the rule turned 131 boost rows into 112; streams were unchanged.
+
 **Verify a mobile layout with CDP, never with `--window-size`.** This bit again while
 building the page: a `--headless=new` screenshot at 390px looked badly clipped, and
 measuring with `Emulation.setDeviceMetricsOverride` showed `scrollWidth === clientWidth`

@@ -4,7 +4,7 @@
  *   boosts/raw/<MSP_BOOST_NAMESPACE>/<YYYY-MM>/<direction>-<index | ph-<payment_hash>>.json
  *       The verbatim payload, listener message and sender name included. Written once,
  *       never rewritten, never served by any endpoint.
- *   boosts/derived/<isoYear>-W<week>.json
+ *   boosts/derived/<MSP_BOOST_NAMESPACE>/<isoYear>-W<week>.json
  *       The PII-free projection a chart reads. Written whole, never merged.
  *
  * The namespace segment is load-bearing: Helipad's `index` is a small incrementing
@@ -28,8 +28,6 @@
 import { put, list } from '@vercel/blob';
 import type { BoostSource, DerivedBoost, ParsedBoost } from './boostRecord.js';
 import { BOOSTBOX_CUTOVER, isoWeekKey, monthKey, parseBoostPayload, recordKey, toDerived } from './boostRecord.js';
-
-export const DERIVED_PREFIX = 'boosts/derived/';
 
 /** Rejects a misconfigured namespace rather than letting it build a path we didn't mean. */
 const NAMESPACE_RE = /^[A-Za-z0-9_-]{16,128}$/;
@@ -59,8 +57,18 @@ export function rawPath(boost: ParsedBoost): string {
   return `${rawMonthPrefix(monthKey(boost.ts))}${boost.direction}-${id}.json`;
 }
 
+/**
+ * Weekly chart files, behind the same secret namespace as raw. They are public blobs at
+ * fixed names and carry per-boost amounts the chart itself never shows, so a guessable
+ * path would publish them. Until 2026-09-26 they lived at boosts/derived/<week>.json;
+ * tools/migrate-derived-to-namespace.mjs moved them.
+ */
+export function derivedPrefix(): string {
+  return `boosts/derived/${namespace()}/`;
+}
+
 export function derivedPath(weekKey: string): string {
-  return `${DERIVED_PREFIX}${weekKey}.json`;
+  return `${derivedPrefix()}${weekKey}.json`;
 }
 
 export interface RawStoredBoost {
@@ -126,7 +134,7 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
 
 /** Read every derived week. Safe to serve from cache — a chart tolerates 60s of lag. */
 export async function readAllDerived(): Promise<DerivedBoost[]> {
-  const blobs = await listAll(DERIVED_PREFIX);
+  const blobs = await listAll(derivedPrefix());
   blobs.sort((a, b) => a.pathname.localeCompare(b.pathname));
   const weeks = await mapLimit(blobs, WRITE_CONCURRENCY, b => fetchJson<DerivedBoost[]>(b.url));
   return weeks.flatMap(week => week ?? []);

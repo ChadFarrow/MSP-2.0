@@ -16,7 +16,8 @@ import {
   weekBounds,
   monthsForWeek,
   selectSource,
-  readStoredBoostboxRecords
+  readStoredBoostboxRecords,
+  readAllDerived
 } from './boostStore.js';
 import { parseBoostPayload, isoWeekKey, BOOSTBOX_CUTOVER } from './boostRecord.js';
 import type { ParsedBoost } from './boostRecord.js';
@@ -88,8 +89,8 @@ describe('paths', () => {
     expect(rawPath(boost(10695))).toBe(`boosts/raw/${NAMESPACE}/2025-08/incoming-10695.json`);
   });
 
-  it('buckets derived by ISO week, with no namespace since it holds nothing private', () => {
-    expect(derivedPath('2025-W35')).toBe('boosts/derived/2025-W35.json');
+  it('puts derived weeks behind the namespace too, since they carry per-boost amounts', () => {
+    expect(derivedPath('2025-W35')).toBe(`boosts/derived/${NAMESPACE}/2025-W35.json`);
   });
 
   it('files a bot record under its payment hash, beside the Helipad ones', () => {
@@ -237,7 +238,7 @@ describe('rebuildWeekFromRaw', () => {
 
     expect(await rebuildWeekFromRaw('2025-W35')).toBe(3);
     const write = mockPut.mock.calls.find(c => String(c[0]).startsWith('boosts/derived/'))!;
-    expect(write[0]).toBe('boosts/derived/2025-W35.json');
+    expect(write[0]).toBe(`boosts/derived/${NAMESPACE}/2025-W35.json`);
     expect(JSON.parse(write[1] as string)).toHaveLength(3);
   });
 
@@ -306,7 +307,7 @@ describe('replaceDerivedWeek', () => {
   it('writes the whole week and reports its size', async () => {
     const size = await replaceDerivedWeek('2025-W35', [boost(1), boost(2), boost(3)]);
     expect(size).toBe(3);
-    expect(mockPut.mock.calls[0][0]).toBe('boosts/derived/2025-W35.json');
+    expect(mockPut.mock.calls[0][0]).toBe(`boosts/derived/${NAMESPACE}/2025-W35.json`);
     expect(mockPut.mock.calls[0][2]).toMatchObject({ allowOverwrite: true });
     expect(JSON.parse(mockPut.mock.calls[0][1] as string)).toHaveLength(3);
   });
@@ -415,5 +416,15 @@ describe('readStoredBoostboxRecords', () => {
     expect(records.map(r => r.paymentHash)).toEqual(['d'.repeat(64)]);
     expect(mockFetch).toHaveBeenCalledTimes(1);
     expect(mockFetch).toHaveBeenCalledWith('https://blob.example/bot-d');
+  });
+});
+
+describe('readAllDerived', () => {
+  it('reads only the namespaced weekly files, never the old public ones', async () => {
+    vi.clearAllMocks();
+    process.env.MSP_BOOST_NAMESPACE = NAMESPACE;
+    mockList.mockResolvedValue({ blobs: [], cursor: undefined, hasMore: false });
+    await readAllDerived();
+    expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ prefix: `boosts/derived/${NAMESPACE}/` }));
   });
 });

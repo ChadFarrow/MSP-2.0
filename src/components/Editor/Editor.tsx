@@ -337,6 +337,12 @@ export function Editor() {
                   labelSuffix={<InfoIcon text={FIELD_INFO.explicit} />}
                 />
                 <Toggle
+                  checked={album.itunesBlock ?? false}
+                  onChange={val => dispatch({ type: 'UPDATE_ALBUM', payload: { itunesBlock: val } })}
+                  label="Hide from podcast directories"
+                  labelSuffix={<InfoIcon text={FIELD_INFO.itunesBlock} />}
+                />
+                <Toggle
                   checked={album.op3}
                   onChange={val => dispatch({ type: 'UPDATE_ALBUM', payload: { op3: val } })}
                   label={<>

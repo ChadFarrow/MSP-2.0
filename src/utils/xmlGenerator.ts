@@ -390,6 +390,11 @@ const generateCommonChannelElements = (data: BaseChannelData, medium: string, le
   // Explicit
   lines.push(`${indent(level)}<itunes:explicit>${data.explicit ? 'true' : 'false'}</itunes:explicit>`);
 
+  // Block — written only when on. Apple and Podcast Index stop listing the feed.
+  if (data.itunesBlock) {
+    lines.push(`${indent(level)}<itunes:block>Yes</itunes:block>`);
+  }
+
   // Owner
   if (data.ownerName || data.ownerEmail) {
     lines.push(`${indent(level)}<itunes:owner>`);

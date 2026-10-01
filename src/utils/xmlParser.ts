@@ -36,6 +36,7 @@ const KNOWN_CHANNEL_KEYS = new Set([
   'itunes:category',
   'itunes:keywords',
   'itunes:explicit',
+  'itunes:block',
   'itunes:owner',
   'itunes:image',
   'podcast:guid',
@@ -135,6 +136,9 @@ export const parseRssFeed = (xmlString: string): Album => {
   // Explicit
   const explicitVal = channel['itunes:explicit'];
   album.explicit = explicitVal === true || explicitVal === 'true' || getText(explicitVal) === 'true';
+
+  // Block — modelled, so it is in KNOWN_CHANNEL_KEYS and does not also pass through
+  album.itunesBlock = isItunesBlock(channel['itunes:block']);
 
   // Owner
   const owner = channel['itunes:owner'];
@@ -503,6 +507,9 @@ function parseCommonChannelElements(channel: Record<string, unknown>): Omit<Base
   const explicitVal = channel['itunes:explicit'];
   const explicit = explicitVal === true || explicitVal === 'true' || getText(explicitVal) === 'true';
 
+  // Block — modelled, so it is in KNOWN_CHANNEL_KEYS and does not also pass through
+  const itunesBlock = isItunesBlock(channel['itunes:block']);
+
   // Owner
   const owner = channel['itunes:owner'];
   const ownerName = owner ? getText((owner as Record<string, unknown>)['itunes:name']) || '' : '';
@@ -557,6 +564,7 @@ function parseCommonChannelElements(channel: Record<string, unknown>): Omit<Base
     categories,
     keywords,
     explicit,
+    itunesBlock,
     ownerName,
     ownerEmail,
     imageUrl,
@@ -570,6 +578,13 @@ function parseCommonChannelElements(channel: Record<string, unknown>): Omit<Base
     value,
     funding
   };
+}
+
+// Apple honours only "Yes" (any case); every other value means "not blocked".
+// Reading the other values as false and writing nothing for them changes the
+// file but not what any directory does with it.
+function isItunesBlock(node: unknown): boolean {
+  return (getText(node) || '').trim().toLowerCase() === 'yes';
 }
 
 // Parse remote item (for publisher feeds and podroll)

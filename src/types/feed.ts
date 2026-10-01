@@ -127,6 +127,9 @@ export interface BaseChannelData {
   categories: string[];
   keywords: string;
   explicit: boolean;
+  // <itunes:block>Yes</itunes:block> — asks podcast directories not to list the feed.
+  // Optional so feeds saved before the field existed still load. See fieldInfo.itunesBlock.
+  itunesBlock?: boolean;
   ownerName: string;
   ownerEmail: string;
   imageUrl: string;
@@ -202,6 +205,9 @@ export interface Album {
   categories: string[];
   keywords: string;
   explicit: boolean;
+  // <itunes:block>Yes</itunes:block> — asks podcast directories not to list the feed.
+  // Optional so feeds saved before the field existed still load. See fieldInfo.itunesBlock.
+  itunesBlock?: boolean;
   ownerName: string;
   ownerEmail: string;
 
@@ -261,6 +267,9 @@ export interface PublisherFeed {
   categories: string[];
   keywords: string;
   explicit: boolean;
+  // <itunes:block>Yes</itunes:block> — asks podcast directories not to list the feed.
+  // Optional so feeds saved before the field existed still load. See fieldInfo.itunesBlock.
+  itunesBlock?: boolean;
   ownerName: string;
   ownerEmail: string;
 

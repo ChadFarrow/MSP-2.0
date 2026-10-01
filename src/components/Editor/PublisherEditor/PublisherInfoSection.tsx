@@ -100,6 +100,14 @@ export function PublisherInfoSection({ publisherFeed, dispatch }: PublisherInfoS
           />
         </div>
         <div className="form-group">
+          <Toggle
+            checked={publisherFeed.itunesBlock ?? false}
+            onChange={val => dispatch({ type: 'UPDATE_PUBLISHER_FEED', payload: { itunesBlock: val } })}
+            label="Hide from podcast directories"
+            labelSuffix={<InfoIcon text={FIELD_INFO.itunesBlock} />}
+          />
+        </div>
+        <div className="form-group">
           <label className="form-label">Keywords<InfoIcon text={FIELD_INFO.keywords} /></label>
           <input
             type="text"

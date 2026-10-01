@@ -174,9 +174,11 @@ export function DownloadCatalogSection({ publisherFeed, feedInstance }: Download
       const album = parseRssFeed(xml);
 
       // Add publisher reference and update lastBuildDate
+      // rel mirrors this album's entry in the publisher feed, so both sides agree.
       album.publisher = {
         feedGuid: publisherFeed.podcastGuid,
-        feedUrl: publisherFeedUrl
+        feedUrl: publisherFeedUrl,
+        rel: item.rel
       };
       album.lastBuildDate = new Date().toUTCString();
 
@@ -214,9 +216,11 @@ export function DownloadCatalogSection({ publisherFeed, feedInstance }: Download
         const album = parseRssFeed(xml);
 
         // Add publisher reference and update lastBuildDate
+        // rel mirrors this album's entry in the publisher feed, so both sides agree.
         album.publisher = {
           feedGuid: publisherFeed.podcastGuid,
-          feedUrl: publisherFeedUrl
+          feedUrl: publisherFeedUrl,
+          rel: item.rel
         };
         album.lastBuildDate = new Date().toUTCString();
 

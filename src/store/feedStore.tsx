@@ -5,6 +5,7 @@ import type { Album, Track, Person, PersonRole, ValueRecipient, Funding, Publish
 import { createEmptyAlbum, createEmptyTrack, createEmptyPerson, createEmptyPersonRole, createEmptyRecipient, createEmptyFunding, createEmptyPublisherFeed, createEmptyRemoteItem, createEmptyVideoAlbum, createSupportRecipients, isCommunitySupport, hasUserRecipients, fillPersonalSplitDefault, rebalancePersonalForSupport } from '../types/feed';
 import { albumStorage, videoStorage, publisherStorage, feedTypeStorage } from '../utils/storage';
 import { nextTrackPubDate, resequenceTrackDates, trackOrderIssue } from '../utils/trackOrder';
+import { catalogRole, withRole } from '../utils/publisherRole';
 
 export type { FeedType };
 
@@ -47,6 +48,7 @@ export type FeedAction =
   | { type: 'UPDATE_REMOTE_ITEM'; payload: { index: number; item: RemoteItem } }
   | { type: 'REMOVE_REMOTE_ITEM'; payload: number }
   | { type: 'REORDER_REMOTE_ITEMS'; payload: { fromIndex: number; toIndex: number } }
+  | { type: 'SET_PUBLISHER_ROLE'; payload: string }
   | { type: 'CREATE_NEW_PUBLISHER_FEED' }
   | { type: 'ADD_PUBLISHER_RECIPIENT'; payload?: ValueRecipient }
   | { type: 'UPDATE_PUBLISHER_RECIPIENT'; payload: { index: number; recipient: ValueRecipient } }
@@ -517,13 +519,32 @@ export function feedReducer(state: FeedState, action: FeedAction): FeedState {
         isDirty: true
       };
 
-    case 'ADD_REMOTE_ITEM':
+    case 'ADD_REMOTE_ITEM': {
+      if (!state.publisherFeed) return state;
+      // A new catalog item takes the role the rest of the catalog states, so
+      // the publisher chooses it once rather than per feed.
+      const newItem = action.payload || createEmptyRemoteItem();
+      const role = catalogRole(state.publisherFeed.remoteItems);
+      return {
+        ...state,
+        publisherFeed: {
+          ...state.publisherFeed,
+          remoteItems: [
+            ...state.publisherFeed.remoteItems,
+            role && newItem.rel === undefined ? withRole(newItem, role) : newItem
+          ]
+        },
+        isDirty: true
+      };
+    }
+
+    case 'SET_PUBLISHER_ROLE':
       if (!state.publisherFeed) return state;
       return {
         ...state,
         publisherFeed: {
           ...state.publisherFeed,
-          remoteItems: [...state.publisherFeed.remoteItems, action.payload || createEmptyRemoteItem()]
+          remoteItems: state.publisherFeed.remoteItems.map(item => withRole(item, action.payload))
         },
         isDirty: true
       };

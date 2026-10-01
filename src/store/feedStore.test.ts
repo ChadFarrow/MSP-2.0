@@ -17,8 +17,8 @@ vi.hoisted(() => {
 
 import { feedReducer } from './feedStore';
 import type { FeedState } from './feedStore';
-import { createEmptyAlbum, createEmptyTrack } from '../types/feed';
-import type { Album } from '../types/feed';
+import { createEmptyAlbum, createEmptyPublisherFeed, createEmptyRemoteItem, createEmptyTrack } from '../types/feed';
+import type { Album, RemoteItem } from '../types/feed';
 
 const ALBUM_PUB_DATE = 'Sat, 01 Feb 2025 00:00:00 GMT';
 
@@ -174,5 +174,53 @@ describe('feedReducer video feeds', () => {
       { type: 'ADD_TRACK', payload: createEmptyTrack(1, 'video/mp4') }
     );
     expect(state.videoFeed!.tracks[0].pubDate).toBe(ALBUM_PUB_DATE);
+  });
+});
+
+describe('feedReducer publisher role', () => {
+  const remote = (feedGuid: string, rel?: string): RemoteItem => ({
+    ...createEmptyRemoteItem(),
+    feedGuid,
+    ...(rel === undefined ? {} : { rel })
+  });
+  const publisherState = (items: RemoteItem[]): FeedState => ({
+    ...makeState(createEmptyAlbum()),
+    feedType: 'publisher',
+    publisherFeed: { ...createEmptyPublisherFeed(), remoteItems: items }
+  });
+
+  it('sets the role on every catalog item', () => {
+    const state = feedReducer(
+      publisherState([remote('a'), remote('b', 'artist')]),
+      { type: 'SET_PUBLISHER_ROLE', payload: 'label' }
+    );
+    expect(state.publisherFeed!.remoteItems.map(i => i.rel)).toEqual(['label', 'label']);
+    expect(state.isDirty).toBe(true);
+  });
+
+  it('removes rel from every item for "Not stated"', () => {
+    const state = feedReducer(
+      publisherState([remote('a', 'label'), remote('b', 'label')]),
+      { type: 'SET_PUBLISHER_ROLE', payload: '' }
+    );
+    expect(state.publisherFeed!.remoteItems.every(i => !('rel' in i))).toBe(true);
+  });
+
+  it('gives a new catalog item the role the catalog states', () => {
+    const state = feedReducer(
+      publisherState([remote('a', 'artist')]),
+      { type: 'ADD_REMOTE_ITEM', payload: remote('b') }
+    );
+    expect(state.publisherFeed!.remoteItems[1].rel).toBe('artist');
+  });
+
+  it('leaves a new item without a role when the catalog states none or differs', () => {
+    const none = feedReducer(publisherState([remote('a')]), { type: 'ADD_REMOTE_ITEM', payload: remote('b') });
+    const mixed = feedReducer(
+      publisherState([remote('a', 'artist'), remote('b', 'label')]),
+      { type: 'ADD_REMOTE_ITEM', payload: remote('c') }
+    );
+    expect(none.publisherFeed!.remoteItems[1]).not.toHaveProperty('rel');
+    expect(mixed.publisherFeed!.remoteItems[2]).not.toHaveProperty('rel');
   });
 });

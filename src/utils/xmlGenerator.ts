@@ -390,9 +390,13 @@ const generateCommonChannelElements = (data: BaseChannelData, medium: string, le
   // Explicit
   lines.push(`${indent(level)}<itunes:explicit>${data.explicit ? 'true' : 'false'}</itunes:explicit>`);
 
-  // Block — written only when on. Apple and Podcast Index stop listing the feed.
+  // Block tags (utils/listing.ts) — written only when set. Blocks that name one
+  // service are not modelled and come out through unknownChannelElements.
   if (data.itunesBlock) {
     lines.push(`${indent(level)}<itunes:block>Yes</itunes:block>`);
+  }
+  if (data.podcastBlock) {
+    lines.push(`${indent(level)}<podcast:block>yes</podcast:block>`);
   }
 
   // Owner

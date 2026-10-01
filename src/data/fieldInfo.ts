@@ -14,7 +14,7 @@ export const FIELD_INFO = {
   ownerName: "The feed owner's name. Used for podcast directory contact info.",
   ownerEmail: "The feed owner's email address. Used for podcast directory contact info.",
   explicit: "Mark if your content contains explicit language or themes.",
-  itunesBlock: "Adds <itunes:block>Yes</itunes:block>. Apple Podcasts and Podcast Index stop listing this feed. The feed stays online at its URL, and other services decide by their own rules. Save/update your hosted feed after toggling for the change to take effect.",
+  listing: "Where this feed asks to be listed. \"Hidden from podcast directories\" adds <itunes:block>Yes</itunes:block>: Apple Podcasts and Podcast Index stop listing the feed, and services such as music apps decide by their own rules. \"Hidden everywhere\" also adds <podcast:block>yes</podcast:block>, which asks every Podcasting 2.0 service not to list it. The feed stays online at its URL either way. Save/update your hosted feed after changing this for it to take effect.",
   op3: "Enable OP3 (Open Podcast Prefix Project) analytics. Adds a transparent prefix to track URLs for open, privacy-respecting download stats. Free, no signup required. Save/update your hosted feed after toggling for changes to take effect.",
 
   // Artwork

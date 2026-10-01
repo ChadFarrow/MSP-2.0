@@ -12,6 +12,7 @@ import { getFeedUrlError, normalizeFeedUrl } from '../../utils/urlValidation';
 import { trackOrderIssue } from '../../utils/trackOrder';
 import { verifyFeedUrl, isGuardRefusal, FORCED_SUBMIT_NOTE } from '../../utils/verifyFeedUrl';
 import { InfoIcon } from '../InfoIcon';
+import { ListingSelect } from '../ListingSelect';
 import { Section } from '../Section';
 import { Toggle } from '../Toggle';
 import { AddRecipientSelect } from '../AddRecipientSelect';
@@ -329,18 +330,16 @@ export function Editor() {
                   ))}
                 </select>
               </div>
+              <div className="form-group">
+                <label className="form-label">Listing<InfoIcon text={FIELD_INFO.listing} /></label>
+                <ListingSelect value={album} onChange={flags => dispatch({ type: 'UPDATE_ALBUM', payload: flags })} />
+              </div>
               <div className="form-group" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', paddingTop: '28px', gap: '10px' }}>
                 <Toggle
                   checked={album.explicit}
                   onChange={val => dispatch({ type: 'UPDATE_ALBUM', payload: { explicit: val } })}
                   label="Explicit Content"
                   labelSuffix={<InfoIcon text={FIELD_INFO.explicit} />}
-                />
-                <Toggle
-                  checked={album.itunesBlock ?? false}
-                  onChange={val => dispatch({ type: 'UPDATE_ALBUM', payload: { itunesBlock: val } })}
-                  label="Hide from podcast directories"
-                  labelSuffix={<InfoIcon text={FIELD_INFO.itunesBlock} />}
                 />
                 <Toggle
                   checked={album.op3}

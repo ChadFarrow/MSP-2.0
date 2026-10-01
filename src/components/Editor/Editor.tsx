@@ -12,6 +12,7 @@ import { getFeedUrlError, normalizeFeedUrl } from '../../utils/urlValidation';
 import { trackOrderIssue } from '../../utils/trackOrder';
 import { verifyFeedUrl, isGuardRefusal, FORCED_SUBMIT_NOTE } from '../../utils/verifyFeedUrl';
 import { InfoIcon } from '../InfoIcon';
+import { ListingSelect } from '../ListingSelect';
 import { Section } from '../Section';
 import { Toggle } from '../Toggle';
 import { AddRecipientSelect } from '../AddRecipientSelect';
@@ -328,6 +329,10 @@ export function Editor() {
                     <option key={lang.value} value={lang.value}>{lang.label}</option>
                   ))}
                 </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Listing<InfoIcon text={FIELD_INFO.listing} /></label>
+                <ListingSelect value={album} onChange={flags => dispatch({ type: 'UPDATE_ALBUM', payload: flags })} />
               </div>
               <div className="form-group" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', paddingTop: '28px', gap: '10px' }}>
                 <Toggle

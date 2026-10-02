@@ -1,34 +1,12 @@
 import { useState } from 'react';
 import type { PublisherReference } from '../../types/feed';
-import { PUBLISHER_ROLES } from '../../utils/publisherRole';
 import { getFeedUrlError, normalizeFeedUrl } from '../../utils/urlValidation';
 import { withRel } from '../../utils/publisherParties';
 import { InfoIcon } from '../InfoIcon';
+import { FIELD_INFO } from '../../data/fieldInfo';
+import { RolePicker } from '../RolePicker';
+import { samePublisher } from '../../utils/publisherParties';
 
-const PARTY_INFO = {
-  role: 'What this publisher is to this release. MSP writes it as rel on the publisher reference. The publisher feed should list this release with the same rel, so the two feeds agree. "Not stated" writes nothing.',
-  others: 'Other publisher feeds that also take part in this release, for example the label when the publisher above is the artist. Each one must list this release in its own feed for apps to confirm it. Several publishers are proposed in podcast-namespace PR #793.',
-};
-
-/**
- * The role control for one publisher party. An imported value that is not one
- * of PUBLISHER_ROLES (for example "artist producer") is kept and shown as is.
- */
-export function PartyRoleSelect({ rel, onChange }: { rel?: string; onChange: (rel: string) => void }) {
-  const value = rel ?? '';
-  const known = PUBLISHER_ROLES.some(role => role.value === value);
-  return (
-    <div className="form-group">
-      <label className="form-label">This publisher is<InfoIcon text={PARTY_INFO.role} /></label>
-      <select className="form-select" value={value} onChange={e => onChange(e.target.value)}>
-        {!known && <option value={value}>{value}</option>}
-        {PUBLISHER_ROLES.map(role => (
-          <option key={role.value} value={role.value}>{role.label}</option>
-        ))}
-      </select>
-    </div>
-  );
-}
 
 type LookupState = { loading: boolean; error: string | null; title: string | null };
 
@@ -37,11 +15,15 @@ type LookupState = { loading: boolean; error: string | null; title: string | nul
  * gives a feed URL, looks up its GUID in Podcast Index, and states a role.
  */
 export function AdditionalPublishers({
+  primary,
   parties,
   onChange,
+  onMakePrimary,
 }: {
+  primary?: PublisherReference;
   parties: PublisherReference[];
   onChange: (parties: PublisherReference[]) => void;
+  onMakePrimary: (index: number) => void;
 }) {
   const [lookups, setLookups] = useState<Record<number, LookupState>>({});
 
@@ -76,10 +58,13 @@ export function AdditionalPublishers({
 
   return (
     <div className="form-group" style={{ marginTop: '20px' }}>
-      <label className="form-label">Other publishers<InfoIcon text={PARTY_INFO.others} /></label>
+      <label className="form-label">Other publishers<InfoIcon text={FIELD_INFO.otherPublishers} /></label>
       {parties.map((party, index) => {
         const state = lookups[index];
         const urlError = getFeedUrlError(party.feedUrl || '');
+        // PR #793: one entry per party. The same feed twice looks like two.
+        const others = [...(primary ? [primary] : []), ...parties.filter((_, i) => i !== index)];
+        const duplicate = (party.feedGuid || party.feedUrl) && others.some(other => samePublisher(other, party));
         return (
           <div
             key={index}
@@ -104,6 +89,14 @@ export function AdditionalPublishers({
               </button>
               <button
                 className="btn btn-secondary"
+                onClick={() => onMakePrimary(index)}
+                title="Write this publisher first. An app that reads only one publisher shows the first."
+                style={{ fontSize: '12px', padding: '6px 12px', whiteSpace: 'nowrap' }}
+              >
+                Make primary
+              </button>
+              <button
+                className="btn btn-secondary"
                 onClick={() => remove(index)}
                 aria-label="Remove this publisher"
                 style={{ fontSize: '12px', padding: '6px 12px' }}
@@ -111,6 +104,11 @@ export function AdditionalPublishers({
                 Remove
               </button>
             </div>
+            {duplicate && (
+              <p style={{ color: 'var(--error, #ef4444)', fontSize: '12px', marginTop: '6px', marginBottom: 0 }}>
+                This publisher is already named. Give it one entry, with all its roles.
+              </p>
+            )}
             {urlError && (
               <p style={{ color: 'var(--error, #ef4444)', fontSize: '12px', marginTop: '6px', marginBottom: 0 }}>{urlError}</p>
             )}
@@ -129,7 +127,7 @@ export function AdditionalPublishers({
               )
             )}
             <div style={{ marginTop: '8px' }}>
-              <PartyRoleSelect rel={party.rel} onChange={rel => update(index, withRel(party, rel))} />
+              <RolePicker rel={party.rel} info={FIELD_INFO.publisherRole} onChange={rel => update(index, withRel(party, rel))} />
             </div>
           </div>
         );

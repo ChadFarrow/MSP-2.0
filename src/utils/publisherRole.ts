@@ -6,18 +6,59 @@ import type { RemoteItem } from '../types/feed';
 // <podcast:publisher>. Both sides carry the same value, so an index sees them
 // agree.
 //
-// `rel` on <podcast:remoteItem> is not in the spec yet. It is proposed in
-// podcast-namespace discussion #579. Conforming parsers ignore an attribute they
-// don't know, so writing it costs other readers nothing (the same reasoning that
-// keeps `feedImg`).
+// `rel` on <podcast:remoteItem> is not in the spec yet. podcast-namespace PR
+// #793 proposes it: a space-separated set of role tokens, so one party with two
+// roles keeps one remoteItem (rel="artist producer"). Conforming parsers ignore
+// an attribute they don't know, so writing it costs other readers nothing (the
+// same reasoning that keeps `feedImg`).
 //
 // An absent rel means "not stated". MSP never writes a default role, so an index
 // does not show a guess as a fact.
+
+/** The starting role tokens of podcast-namespace PR #793, in its order. */
+export const ROLE_TOKENS = [
+  { value: 'artist', label: 'Artist' },
+  { value: 'host', label: 'Host' },
+  { value: 'author', label: 'Author' },
+  { value: 'label', label: 'Label' },
+  { value: 'producer', label: 'Producer' },
+  { value: 'network', label: 'Network' },
+  { value: 'hosting', label: 'Hosting' },
+  { value: 'sponsor', label: 'Sponsor' },
+] as const;
+
+/** The choices of the one-role control that sets a whole catalog at once. */
 export const PUBLISHER_ROLES = [
   { value: '', label: 'Not stated' },
-  { value: 'artist', label: 'Artist' },
-  { value: 'label', label: 'Label' },
+  ...ROLE_TOKENS,
 ] as const;
+
+/**
+ * The tokens of a rel value, in their order, with no duplicates. PR #793
+ * separates tokens with spaces; a comma is read as a separator too, because
+ * some feeds wrote one before the PR. An unknown token is kept.
+ */
+export function roleTokens(rel: string | undefined): string[] {
+  const tokens = (rel ?? '').split(/[\s,]+/).filter(Boolean);
+  return [...new Set(tokens)];
+}
+
+/**
+ * The rel value with `token` turned on or off. The known tokens keep the order
+ * of ROLE_TOKENS, and an unknown token keeps its place after them. Gives '' when
+ * no token is left, which means "not stated".
+ */
+export function withRoleToken(rel: string | undefined, token: string, on: boolean): string {
+  const current = roleTokens(rel);
+  const next = on
+    ? (current.includes(token) ? current : [...current, token])
+    : current.filter(existing => existing !== token);
+  const known: string[] = ROLE_TOKENS.map(role => role.value);
+  return [
+    ...known.filter(value => next.includes(value)),
+    ...next.filter(value => !known.includes(value)),
+  ].join(' ');
+}
 
 /**
  * The role every catalog item states: '' when none states one (or the catalog

@@ -19,7 +19,8 @@ import { RecipientsList } from '../RecipientsList';
 import { FundingFields } from '../FundingFields';
 import { ArtworkFields } from '../ArtworkFields';
 import { PodcastImagesList } from '../PodcastImagesList';
-import { AdditionalPublishers, PartyRoleSelect } from './PublisherParties';
+import { AdditionalPublishers } from './PublisherParties';
+import { RolePicker } from '../RolePicker';
 import { withRel } from '../../utils/publisherParties';
 
 // Roles Reference Modal
@@ -794,8 +795,9 @@ export function Editor() {
               )}
             </div>
             {album.publisher?.feedUrl && (
-              <PartyRoleSelect
+              <RolePicker
                 rel={album.publisher.rel}
+                info={FIELD_INFO.publisherRole}
                 onChange={rel => album.publisher && dispatch({
                   type: 'UPDATE_ALBUM',
                   payload: { publisher: withRel(album.publisher, rel) }
@@ -805,7 +807,20 @@ export function Editor() {
             {/* Further parties of this release (utils/publisherParties.ts) */}
             {album.publisher?.feedUrl && (
               <AdditionalPublishers
+                primary={album.publisher}
                 parties={album.additionalPublishers ?? []}
+                onMakePrimary={index => {
+                  const others = album.additionalPublishers ?? [];
+                  if (!album.publisher || !others[index]) return;
+                  // Swap: the chosen party is written first, the old primary takes its place.
+                  dispatch({
+                    type: 'UPDATE_ALBUM',
+                    payload: {
+                      publisher: others[index],
+                      additionalPublishers: others.map((party, i) => (i === index ? album.publisher! : party))
+                    }
+                  });
+                }}
                 onChange={parties => dispatch({
                   type: 'UPDATE_ALBUM',
                   payload: { additionalPublishers: parties.length > 0 ? parties : undefined }

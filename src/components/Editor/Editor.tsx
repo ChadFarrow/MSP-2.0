@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useFeed } from '../../store/feedStore';
 import { useNostr } from '../../store/nostrStore';
 import { LANGUAGES, PERSON_GROUPS, PERSON_ROLES, createEmptyPersonRole, createEmptyTrack, isVideoMedium, isCommunitySupport, createSupportRecipients, hasUserRecipients, TRANSCRIPT_TYPES, DEFAULT_TRANSCRIPT_TYPE } from '../../types/feed';
@@ -19,6 +19,9 @@ import { RecipientsList } from '../RecipientsList';
 import { FundingFields } from '../FundingFields';
 import { ArtworkFields } from '../ArtworkFields';
 import { PodcastImagesList } from '../PodcastImagesList';
+import { AdditionalPublishers } from './PublisherParties';
+import { RolePicker } from '../RolePicker';
+import { withRel } from '../../utils/publisherParties';
 
 // Roles Reference Modal
 function RolesModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
@@ -142,6 +145,14 @@ export function Editor() {
   const publisherFeedUrlError = getFeedUrlError(album.publisher?.feedUrl || '');
 
   // Auto-lookup publisher feed in Podcast Index when URL changes
+  // The lookup fills in the GUID and keeps the stated role. It reads the role
+  // through a ref, because a dependency on the album would rerun the lookup
+  // effect after each dispatch of the lookup itself.
+  const publisherRelRef = useRef(album.publisher?.rel);
+  useEffect(() => {
+    publisherRelRef.current = album.publisher?.rel;
+  }, [album.publisher?.rel]);
+
   const lookupPublisherFeed = useCallback(async (feedUrl: string) => {
     if (!feedUrl) {
       setPublisherLookup({ loading: false, error: null, feedTitle: null, feedImage: null });
@@ -170,9 +181,11 @@ export function Editor() {
         dispatch({
           type: 'UPDATE_ALBUM',
           payload: {
+            // Keep the stated role: the lookup only fills in the GUID.
             publisher: {
               feedGuid: feed.podcastGuid,
-              feedUrl: feedUrl
+              feedUrl: feedUrl,
+              ...(publisherRelRef.current ? { rel: publisherRelRef.current } : {})
             }
           }
         });
@@ -718,6 +731,7 @@ export function Editor() {
                     type: 'UPDATE_ALBUM',
                     payload: {
                       publisher: {
+                        ...album.publisher,
                         feedGuid: '',
                         feedUrl: normalizeFeedUrl(e.target.value)
                       }
@@ -780,6 +794,39 @@ export function Editor() {
                 </div>
               )}
             </div>
+            {album.publisher?.feedUrl && (
+              <RolePicker
+                rel={album.publisher.rel}
+                info={FIELD_INFO.publisherRole}
+                onChange={rel => album.publisher && dispatch({
+                  type: 'UPDATE_ALBUM',
+                  payload: { publisher: withRel(album.publisher, rel) }
+                })}
+              />
+            )}
+            {/* Further parties of this release (utils/publisherParties.ts) */}
+            {album.publisher?.feedUrl && (
+              <AdditionalPublishers
+                primary={album.publisher}
+                parties={album.additionalPublishers ?? []}
+                onMakePrimary={index => {
+                  const others = album.additionalPublishers ?? [];
+                  if (!album.publisher || !others[index]) return;
+                  // Swap: the chosen party is written first, the old primary takes its place.
+                  dispatch({
+                    type: 'UPDATE_ALBUM',
+                    payload: {
+                      publisher: others[index],
+                      additionalPublishers: others.map((party, i) => (i === index ? album.publisher! : party))
+                    }
+                  });
+                }}
+                onChange={parties => dispatch({
+                  type: 'UPDATE_ALBUM',
+                  payload: { additionalPublishers: parties.length > 0 ? parties : undefined }
+                })}
+              />
+            )}
           </Section>
 
           {/* Tracks/Videos Section */}

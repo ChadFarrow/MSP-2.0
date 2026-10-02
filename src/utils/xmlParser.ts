@@ -5,6 +5,7 @@ import { createEmptyTrack, LEGACY_MSP_NODE_PUBKEY, MSP_SUPPORT_RECIPIENT, DEFAUL
 import { areValueBlocksStrictEqual, arePersonsEqual } from './comparison';
 import { detectAddressType } from './addressUtils';
 import { MIN_PLAUSIBLE_MEDIA_BYTES } from './audioUtils';
+import { fromParties } from './publisherParties';
 
 // OP3 prefix pattern: https://op3.dev/e/ or https://op3.dev/e,pg=GUID/
 export const OP3_PREFIX_RE = /^https:\/\/op3\.dev\/e(?:,[^/]*)?\//;
@@ -181,7 +182,7 @@ export const parseRssFeed = (xmlString: string): Album => {
   // Publisher reference (if this album belongs to a publisher)
   const publisher = channel['podcast:publisher'];
   if (publisher) {
-    album.publisher = parsePublisherReference(publisher);
+    Object.assign(album, fromParties(parsePublisherReferences(publisher)));
   }
 
   // Some feeds point at their publisher with a bare channel-level
@@ -602,41 +603,48 @@ function parseRemoteItem(node: unknown): RemoteItem | null {
 /**
  * Parse a publisher reference (for albums that belong to a publisher).
  *
- * The spec form is a <podcast:publisher> wrapping exactly one
- * <podcast:remoteItem medium="publisher">, and that is what the generator emits.
+ * The spec form is a <podcast:publisher> wrapping one
+ * <podcast:remoteItem medium="publisher"> per party (podcast-namespace PR #793
+ * allows several; the current spec says exactly one), and that is what the
+ * generator emits.
  * Two malformed shapes also occur in the wild and both used to return undefined
  * — which silently *deleted* them, because 'podcast:publisher' is in
  * KNOWN_CHANNEL_KEYS and so is excluded from unknownChannelElements too. Since
  * the Download Feed flow is a parse→regenerate, that lost the tag outright.
  * Reading them here normalizes all three to the canonical form on output.
  */
-function parsePublisherReference(node: unknown): PublisherReference | undefined {
-  if (!node) return undefined;
+function parsePublisherReferences(node: unknown): PublisherReference[] {
+  if (!node) return [];
 
   const publisherNode = node as Record<string, unknown>;
   const raw = publisherNode['podcast:remoteItem'];
 
   // fast-xml-parser returns an array when the child repeats, and getAttr returns
   // '' for an array — so more than one remoteItem used to drop the publisher
-  // entirely. The spec allows exactly one; take the first usable entry.
-  const candidates: unknown[] = raw ? (Array.isArray(raw) ? raw : [raw]) : [];
-  // Attributes written directly on <podcast:publisher> with no child element.
-  // Out of spec, but reading it beats discarding the user's data.
-  candidates.push(publisherNode);
-
-  for (const candidate of candidates) {
+  // entirely, and then only the first was kept. Each item is a party
+  // (utils/publisherParties.ts, podcast-namespace PR #793), so keep them all,
+  // in order.
+  const items: unknown[] = raw ? (Array.isArray(raw) ? raw : [raw]) : [];
+  const toReference = (candidate: unknown): PublisherReference | undefined => {
     const feedGuid = getAttr(candidate, 'feedGuid');
     const feedUrl = getAttr(candidate, 'feedUrl');
-    if (feedGuid || feedUrl) {
-      return {
-        feedGuid: feedGuid || '',
-        feedUrl: feedUrl || undefined,
-        rel: getAttr(candidate, 'rel') || undefined
-      };
-    }
-  }
+    if (!feedGuid && !feedUrl) return undefined;
+    return {
+      feedGuid: feedGuid || '',
+      feedUrl: feedUrl || undefined,
+      rel: getAttr(candidate, 'rel') || undefined
+    };
+  };
 
-  return undefined;
+  const parties = items
+    .map(toReference)
+    .filter((party): party is PublisherReference => party !== undefined);
+  if (parties.length > 0) return parties;
+
+  // Attributes written directly on <podcast:publisher> with no child element.
+  // Out of spec, but reading it beats discarding the user's data.
+  const bare = toReference(publisherNode);
+  return bare ? [bare] : [];
 }
 
 // Parse track/item

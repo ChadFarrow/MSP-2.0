@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { catalogRole, withRole } from './publisherRole';
+import { catalogRole, roleTokens, withRole, withRoleToken } from './publisherRole';
 import { generateRssFeed, generatePublisherRssFeed } from './xmlGenerator';
 import { parseRssFeed, parsePublisherRssFeed } from './xmlParser';
 import { createEmptyAlbum, createEmptyPublisherFeed, createEmptyRemoteItem } from '../types/feed';
@@ -115,3 +115,34 @@ describe('rel on the album side', () => {
     expect(generateRssFeed(parseRssFeed(source))).toContain('rel="label"');
   });
 });
+
+describe('roleTokens (podcast-namespace PR #793)', () => {
+  it('is empty when no role is stated', () => {
+    expect(roleTokens(undefined)).toEqual([]);
+    expect(roleTokens('')).toEqual([]);
+  });
+
+  it('splits a space-separated set, and drops a repeated token', () => {
+    expect(roleTokens('artist  producer artist')).toEqual(['artist', 'producer']);
+  });
+
+  it('reads a comma as a separator too, for feeds written before the PR', () => {
+    expect(roleTokens('artist, producer')).toEqual(['artist', 'producer']);
+  });
+});
+
+describe('withRoleToken', () => {
+  it('adds a token in the order of the PR, whatever order the user clicks', () => {
+    expect(withRoleToken('producer', 'artist', true)).toBe('artist producer');
+  });
+
+  it('removes a token, and gives "" (not stated) when none is left', () => {
+    expect(withRoleToken('artist producer', 'producer', false)).toBe('artist');
+    expect(withRoleToken('artist', 'artist', false)).toBe('');
+  });
+
+  it('keeps a token MSP does not know, after the known ones', () => {
+    expect(withRoleToken('mastering', 'artist', true)).toBe('artist mastering');
+  });
+});
+

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useFeed } from '../../store/feedStore';
 import { useNostr } from '../../store/nostrStore';
 import { LANGUAGES, PERSON_GROUPS, PERSON_ROLES, createEmptyPersonRole, createEmptyTrack, isVideoMedium, isCommunitySupport, createSupportRecipients, hasUserRecipients, TRANSCRIPT_TYPES, DEFAULT_TRANSCRIPT_TYPE } from '../../types/feed';
@@ -19,6 +19,8 @@ import { RecipientsList } from '../RecipientsList';
 import { FundingFields } from '../FundingFields';
 import { ArtworkFields } from '../ArtworkFields';
 import { PodcastImagesList } from '../PodcastImagesList';
+import { AdditionalPublishers, PartyRoleSelect } from './PublisherParties';
+import { withRel } from '../../utils/publisherParties';
 
 // Roles Reference Modal
 function RolesModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
@@ -142,6 +144,14 @@ export function Editor() {
   const publisherFeedUrlError = getFeedUrlError(album.publisher?.feedUrl || '');
 
   // Auto-lookup publisher feed in Podcast Index when URL changes
+  // The lookup fills in the GUID and keeps the stated role. It reads the role
+  // through a ref, because a dependency on the album would rerun the lookup
+  // effect after each dispatch of the lookup itself.
+  const publisherRelRef = useRef(album.publisher?.rel);
+  useEffect(() => {
+    publisherRelRef.current = album.publisher?.rel;
+  }, [album.publisher?.rel]);
+
   const lookupPublisherFeed = useCallback(async (feedUrl: string) => {
     if (!feedUrl) {
       setPublisherLookup({ loading: false, error: null, feedTitle: null, feedImage: null });
@@ -170,9 +180,11 @@ export function Editor() {
         dispatch({
           type: 'UPDATE_ALBUM',
           payload: {
+            // Keep the stated role: the lookup only fills in the GUID.
             publisher: {
               feedGuid: feed.podcastGuid,
-              feedUrl: feedUrl
+              feedUrl: feedUrl,
+              ...(publisherRelRef.current ? { rel: publisherRelRef.current } : {})
             }
           }
         });
@@ -718,6 +730,7 @@ export function Editor() {
                     type: 'UPDATE_ALBUM',
                     payload: {
                       publisher: {
+                        ...album.publisher,
                         feedGuid: '',
                         feedUrl: normalizeFeedUrl(e.target.value)
                       }
@@ -780,6 +793,25 @@ export function Editor() {
                 </div>
               )}
             </div>
+            {album.publisher?.feedUrl && (
+              <PartyRoleSelect
+                rel={album.publisher.rel}
+                onChange={rel => album.publisher && dispatch({
+                  type: 'UPDATE_ALBUM',
+                  payload: { publisher: withRel(album.publisher, rel) }
+                })}
+              />
+            )}
+            {/* Further parties of this release (utils/publisherParties.ts) */}
+            {album.publisher?.feedUrl && (
+              <AdditionalPublishers
+                parties={album.additionalPublishers ?? []}
+                onChange={parties => dispatch({
+                  type: 'UPDATE_ALBUM',
+                  payload: { additionalPublishers: parties.length > 0 ? parties : undefined }
+                })}
+              />
+            )}
           </Section>
 
           {/* Tracks/Videos Section */}

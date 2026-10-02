@@ -6,6 +6,7 @@ import { generateRssFeed, downloadXml } from '../../../utils/xmlGenerator';
 import { getHostedFeedInfo, buildHostedUrl } from '../../../utils/hostedFeed';
 import { getFeedUrlError, normalizeFeedUrl } from '../../../utils/urlValidation';
 import { verifyFeedUrl, isGuardRefusal, FORCED_SUBMIT_NOTE } from '../../../utils/verifyFeedUrl';
+import { withPublisherParty } from '../../../utils/publisherParties';
 
 interface DownloadCatalogSectionProps {
   publisherFeed: PublisherFeed;
@@ -175,11 +176,13 @@ export function DownloadCatalogSection({ publisherFeed, feedInstance }: Download
 
       // Add publisher reference and update lastBuildDate
       // rel mirrors this album's entry in the publisher feed, so both sides agree.
-      album.publisher = {
+      // Set this publisher's party, and keep any other party the album names
+      // (utils/publisherParties.ts). This used to overwrite album.publisher.
+      Object.assign(album, withPublisherParty(album, {
         feedGuid: publisherFeed.podcastGuid,
         feedUrl: publisherFeedUrl,
         rel: item.rel
-      };
+      }));
       album.lastBuildDate = new Date().toUTCString();
 
       // Generate new XML with publisher reference
@@ -217,11 +220,13 @@ export function DownloadCatalogSection({ publisherFeed, feedInstance }: Download
 
         // Add publisher reference and update lastBuildDate
         // rel mirrors this album's entry in the publisher feed, so both sides agree.
-        album.publisher = {
+        // Set this publisher's party, and keep any other party the album names
+        // (utils/publisherParties.ts). This used to overwrite album.publisher.
+        Object.assign(album, withPublisherParty(album, {
           feedGuid: publisherFeed.podcastGuid,
           feedUrl: publisherFeedUrl,
           rel: item.rel
-        };
+        }));
         album.lastBuildDate = new Date().toUTCString();
 
         // Generate new XML with publisher reference

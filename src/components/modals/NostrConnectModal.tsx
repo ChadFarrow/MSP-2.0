@@ -169,12 +169,16 @@ export function NostrConnectModal({ onClose }: NostrConnectModalProps) {
             {!connectUri ? (
               <>
                 <p className="connect-description">
-                  Connect using a remote signer like Primal (iOS/Android), Amber (Android), or any NIP-46 compatible app.
+                  Connect using a remote signer like Primal (iOS/Android), Amber (Android), Clave (iOS), or any NIP-46 compatible app.
                 </p>
 
                 <div className="connect-option">
                   <h4>Option 1: Scan QR Code</h4>
                   <p>Generate a connection QR code to scan with your signer app.</p>
+                  <p>
+                    Signer app on this same iPhone? Use Option 2 instead — iOS pauses this page
+                    while the signer app is open, so its reply to the QR code gets lost.
+                  </p>
                   <button
                     className="btn btn-primary"
                     onClick={handleGenerateQR}
@@ -212,7 +216,7 @@ export function NostrConnectModal({ onClose }: NostrConnectModalProps) {
             ) : (
               <div className="connect-qr-container">
                 <p className="connect-description">
-                  Scan this QR code with your Nostr signer app (Amber, etc.)
+                  Scan this QR code with your Nostr signer app (Amber, Primal, Clave, etc.)
                 </p>
 
                 <div className="qr-code-wrapper">

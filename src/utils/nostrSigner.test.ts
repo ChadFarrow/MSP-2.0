@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { finalizeEvent, generateSecretKey, getPublicKey } from 'nostr-tools/pure';
 import type { NostrEvent } from 'nostr-tools/pure';
 import { matchFilters } from 'nostr-tools/filter';
@@ -36,11 +36,26 @@ const network = {
   sockets: [] as FakeRelaySocket[],
   subscriptions: [] as RelaySubscription[],
   remoteSigner: null as FakeRemoteSigner | null,
+  subscriptionWaiters: [] as { matches: (filters: Filter[]) => boolean; resolve: () => void }[],
 
   reset() {
     this.sockets = [];
     this.subscriptions = [];
     this.remoteSigner = null;
+    this.subscriptionWaiters = [];
+  },
+
+  // Resolves once some client subscribes with filters that `matches` accepts.
+  whenSubscribed(matches: (filters: Filter[]) => boolean): Promise<void> {
+    if (this.subscriptions.some(s => matches(s.filters))) return Promise.resolve();
+    return new Promise(resolve => this.subscriptionWaiters.push({ matches, resolve }));
+  },
+
+  subscribe(subscription: RelaySubscription) {
+    this.subscriptions.push(subscription);
+    for (const waiter of this.subscriptionWaiters.filter(w => w.matches(subscription.filters))) {
+      waiter.resolve();
+    }
   },
 
   openSocketUrls(): string[] {
@@ -89,7 +104,7 @@ class FakeRelaySocket {
     const [type, ...rest] = JSON.parse(data);
     if (type === 'REQ') {
       const [id, ...filters] = rest as [string, ...Filter[]];
-      network.subscriptions.push({ socket: this, id, filters });
+      network.subscribe({ socket: this, id, filters });
       this.deliver(['EOSE', id]);
     } else if (type === 'CLOSE') {
       network.subscriptions = network.subscriptions.filter(s => !(s.socket === this && s.id === rest[0]));
@@ -123,16 +138,30 @@ class FakeRemoteSigner {
   private relays: string[];
   // The answer to `switch_relays`. A signer that prefers other relays moves there once asked.
   preferredRelays: string[] | null = null;
+  // The relays it takes requests on, when that is fewer than the relays it answers on.
+  // Clave is woken by a push proxy that always watches wss://relay.powr.build.
+  requestRelays: string[] | null = null;
+  // How many get_public_key requests it misses before it answers one; Infinity never answers.
+  missedPublicKeyRequests = 0;
+  // The client publishes each request to every relay; a signer handles it once.
+  private readonly handled = new Set<string>();
 
   constructor(relays: string[] = []) {
     this.relays = relays.map(normalizeURL);
   }
 
   receive(relay: string, event: NostrEvent) {
-    if (!this.relays.includes(relay) || event.kind !== NOSTR_CONNECT_KIND) return;
+    const listeningOn = this.requestRelays?.map(normalizeURL) ?? this.relays;
+    if (!listeningOn.includes(relay) || event.kind !== NOSTR_CONNECT_KIND) return;
     if (!event.tags.some(t => t[0] === 'p' && t[1] === this.pubkey)) return;
+    if (this.handled.has(event.id)) return;
+    this.handled.add(event.id);
 
     const { id, method } = JSON.parse(decrypt(event.content, getConversationKey(this.secretKey, event.pubkey)));
+    if (method === 'get_public_key' && this.missedPublicKeyRequests > 0) {
+      this.missedPublicKeyRequests--;
+      return;
+    }
     const result =
       method === 'get_public_key' ? this.userPubkey
       : method === 'switch_relays' ? JSON.stringify(this.preferredRelays)
@@ -149,11 +178,7 @@ class FakeRemoteSigner {
   async scanConnectUri(uri: string, clientPubkey: string) {
     const params = new URL(uri).searchParams;
     this.relays = params.getAll('relay').map(normalizeURL);
-    await vi.waitFor(() => {
-      if (!network.subscriptions.some(s => s.filters.some(f => f['#p']?.includes(clientPubkey)))) {
-        throw new Error('client is not listening yet');
-      }
-    });
+    await network.whenSubscribed(filters => filters.some(f => f['#p']?.includes(clientPubkey)));
     this.reply(clientPubkey, { id: 'nostrconnect', result: params.get('secret') });
   }
 
@@ -176,10 +201,36 @@ async function loadSigner() {
   return import('./nostrSigner');
 }
 
+type SignerModule = Awaited<ReturnType<typeof loadSigner>>;
+
+// The three ways a NIP-46 session starts, each resolving to the user's pubkey (null: gave up).
+const LOGINS: [string, (signer: SignerModule, remote: FakeRemoteSigner) => Promise<string | null>][] = [
+  ['QR code', (signer, remote) =>
+    signer.waitForNip46Connection((uri, clientPubkey) => { void remote.scanConnectUri(uri, clientPubkey); }, 300_000)],
+  ['bunker URI', (signer, remote) =>
+    signer.initNip46SignerFromBunker(`bunker://${remote.pubkey}?relay=wss://relay.powr.build&secret=s3cret`)],
+  ['reconnect after a reload', (signer, remote) => {
+    signer.storeBunkerPointer({ pubkey: remote.pubkey, relays: ['wss://relay.powr.build'], secret: 's3cret' });
+    return signer.reconnectNip46(10_000);
+  }],
+];
+
+const STILL_WAITING = 'still waiting';
+
+// A promise's value if it has settled by now, else STILL_WAITING — for use after fake time ran.
+function settled<T>(promise: Promise<T>): Promise<Awaited<T> | typeof STILL_WAITING> {
+  return Promise.race([promise, Promise.resolve<typeof STILL_WAITING>(STILL_WAITING)]);
+}
+
 describe('NIP-46 remote signer', () => {
   beforeEach(() => {
     storage.clear();
     network.reset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it('reconnects after a reload from a QR-code login, even when the signer prefers other relays', async () => {
@@ -224,6 +275,48 @@ describe('NIP-46 remote signer', () => {
 
     expect(await nostrSigner.reconnectNip46(200)).toBeNull();
     expect(network.sockets.length).toBeGreaterThan(0);
+    expect(network.openSocketUrls()).toEqual([]);
+  });
+
+  it('pairs by QR code with a signer that takes requests only on relay.powr.build (Clave)', async () => {
+    const clave = new FakeRemoteSigner();
+    clave.requestRelays = ['wss://relay.powr.build'];
+    network.remoteSigner = clave;
+
+    const nostrSigner = await loadSigner();
+    const pubkey = await nostrSigner.waitForNip46Connection(
+      (uri, clientPubkey) => { void clave.scanConnectUri(uri, clientPubkey); },
+      5000
+    );
+
+    expect(pubkey).toBe(clave.userPubkey);
+  });
+
+  it.each(LOGINS)('%s: asks again when the signer misses the first get_public_key', async (_name, login) => {
+    vi.useFakeTimers();
+    const remote = new FakeRemoteSigner(['wss://relay.powr.build']);
+    remote.missedPublicKeyRequests = 1;
+    network.remoteSigner = remote;
+
+    const nostrSigner = await loadSigner();
+    const pubkey = login(nostrSigner, remote);
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    expect(await settled(pubkey)).toBe(remote.userPubkey);
+  });
+
+  it.each(LOGINS)('%s: stops waiting and closes its sockets when get_public_key never gets an answer', async (_name, login) => {
+    vi.useFakeTimers();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const remote = new FakeRemoteSigner(['wss://relay.powr.build']);
+    remote.missedPublicKeyRequests = Infinity;
+    network.remoteSigner = remote;
+
+    const nostrSigner = await loadSigner();
+    const outcome = login(nostrSigner, remote).then(pubkey => pubkey ?? 'gave up', () => 'gave up');
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    expect(await settled(outcome)).toBe('gave up');
     expect(network.openSocketUrls()).toEqual([]);
   });
 });

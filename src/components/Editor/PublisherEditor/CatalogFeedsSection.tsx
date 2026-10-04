@@ -7,7 +7,8 @@ import { createAdminAuthHeader } from '../../../utils/adminAuth';
 import { checkSignerConnection } from '../../../utils/nostrSigner';
 import { getFeedUrlError, normalizeFeedUrl } from '../../../utils/urlValidation';
 import { verifyFeedUrl, isGuardRefusal, FORCED_SUBMIT_NOTE } from '../../../utils/verifyFeedUrl';
-import { PUBLISHER_ROLES, catalogRole } from '../../../utils/publisherRole';
+import { PUBLISHER_ROLES, catalogRole, withRole } from '../../../utils/publisherRole';
+import { RolePicker } from '../../RolePicker';
 import { InfoIcon } from '../../InfoIcon';
 import { Section } from '../../Section';
 
@@ -32,7 +33,8 @@ const PUBLISHER_FIELD_INFO = {
   remoteItemFeedGuid: 'The podcast:guid of the feed you want to include in your publisher catalog. This is the unique identifier that links to the feed.',
   remoteItemFeedUrl: 'The URL of the RSS feed (optional but recommended). This helps apps find the feed if they cannot resolve the GUID.',
   remoteItemTitle: 'A display title for this feed (optional). If not provided, apps will fetch the title from the feed itself.',
-  publisherRole: 'Tells apps whether this publisher is the artist of these feeds or a label. MSP writes it as rel on each catalog feed, and on the publisher reference of each album when you publish. "Not stated" writes nothing. rel is proposed in podcast-namespace discussion #579.',
+  publisherRole: 'Sets one role on every catalog feed at once, for example Artist or Label. You can also set the roles of each feed below, for example Artist and Producer for one album. MSP writes them as rel on each catalog feed, and on the publisher reference of each album when you publish. "Not stated" writes nothing. rel is proposed in podcast-namespace PR #793.',
+  itemRole: 'What this publisher is to this feed. The feed should name this publisher with the same roles, so the two feeds agree. With none on, MSP writes nothing.',
 };
 
 interface CatalogFeedsSectionProps {
@@ -295,8 +297,15 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
           onChange={e => dispatch({ type: 'SET_PUBLISHER_ROLE', payload: e.target.value })}
         >
           {catalogRole(publisherFeed.remoteItems) === null && (
-            <option value="mixed" disabled>Mixed (the imported feeds state different roles)</option>
+            <option value="mixed" disabled>Mixed (the feeds state different roles)</option>
           )}
+          {/* A set of roles, or an imported token, that is not one of the choices. */}
+          {(() => {
+            const role = catalogRole(publisherFeed.remoteItems);
+            return role && !PUBLISHER_ROLES.some(choice => choice.value === role)
+              ? <option value={role} disabled>{role}</option>
+              : null;
+          })()}
           {PUBLISHER_ROLES.map(role => (
             <option key={role.value} value={role.value}>{role.label}</option>
           ))}
@@ -656,6 +665,12 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
                     )}
                   </div>
                 </div>
+                {/* The roles of this one link (podcast-namespace PR #793) */}
+                <RolePicker
+                  rel={item.rel}
+                  info={PUBLISHER_FIELD_INFO.itemRole}
+                  onChange={rel => dispatch({ type: 'UPDATE_REMOTE_ITEM', payload: { index, item: withRole(item, rel) } })}
+                />
               </div>
             </div>
             <div className="repeatable-item-actions">

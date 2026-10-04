@@ -2,6 +2,7 @@
 import type { Album, Track, Person, ValueBlock, ValueRecipient, Funding, PublisherFeed, RemoteItem, PublisherReference, BaseChannelData, PodcastImage } from '../types/feed';
 import { DEFAULT_TRANSCRIPT_TYPE } from '../types/feed';
 import { formatRFC822Date } from './dateUtils';
+import { publisherParties } from './publisherParties';
 
 // Escape XML special characters
 const escapeXml = (str: string): string => {
@@ -270,23 +271,26 @@ const generateRemoteItemXml = (item: RemoteItem, level: number): string => {
   return `${indent(level)}<podcast:remoteItem ${attrs.join(' ')} />`;
 };
 
-// Generate publisher reference XML (for albums that reference their publisher)
-const generatePublisherXml = (publisher: PublisherReference, level: number): string => {
-  if (!publisher.feedGuid && !publisher.feedUrl) return '';
+// Generate publisher reference XML (for albums that reference their publisher).
+// One remoteItem per party, primary first (utils/publisherParties.ts).
+const generatePublisherXml = (parties: PublisherReference[], level: number): string => {
+  const items = parties
+    .filter(publisher => publisher.feedGuid || publisher.feedUrl)
+    .map(publisher => {
+      const attrs: string[] = [`medium="publisher"`];
+      if (publisher.feedGuid) attrs.push(`feedGuid="${escapeXml(publisher.feedGuid)}"`);
+      if (publisher.feedUrl) attrs.push(`feedUrl="${escapeXml(publisher.feedUrl)}"`);
+      // The same role as the publisher feed states for this album (utils/publisherRole.ts).
+      if (publisher.rel?.trim()) attrs.push(`rel="${escapeXml(publisher.rel.trim())}"`);
+      return `${indent(level + 1)}<podcast:remoteItem ${attrs.join(' ')} />`;
+    });
+  if (items.length === 0) return '';
 
-  const lines: string[] = [];
-  lines.push(`${indent(level)}<podcast:publisher>`);
-
-  const attrs: string[] = [`medium="publisher"`];
-  if (publisher.feedGuid) attrs.push(`feedGuid="${escapeXml(publisher.feedGuid)}"`);
-  if (publisher.feedUrl) attrs.push(`feedUrl="${escapeXml(publisher.feedUrl)}"`);
-  // The same role as the publisher feed states for this album (utils/publisherRole.ts).
-  if (publisher.rel?.trim()) attrs.push(`rel="${escapeXml(publisher.rel.trim())}"`);
-
-  lines.push(`${indent(level + 1)}<podcast:remoteItem ${attrs.join(' ')} />`);
-  lines.push(`${indent(level)}</podcast:publisher>`);
-
-  return lines.join('\n');
+  return [
+    `${indent(level)}<podcast:publisher>`,
+    ...items,
+    `${indent(level)}</podcast:publisher>`,
+  ].join('\n');
 };
 
 // Generate common channel elements shared between Album and PublisherFeed
@@ -536,10 +540,8 @@ export const generateRssFeed = (album: Album): string => {
   lines.push(...generateCommonChannelElements(album, album.medium, 2));
 
   // Publisher reference (if this album belongs to a publisher)
-  if (album.publisher) {
-    const publisherXml = generatePublisherXml(album.publisher, 2);
-    if (publisherXml) lines.push(publisherXml);
-  }
+  const publisherXml = generatePublisherXml(publisherParties(album), 2);
+  if (publisherXml) lines.push(publisherXml);
 
   // Unknown/unsupported channel elements (preserved from import)
   if (album.unknownChannelElements) {

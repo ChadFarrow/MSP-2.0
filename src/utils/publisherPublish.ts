@@ -18,6 +18,7 @@ import {
 import { hasSigner } from './nostrSigner';
 import { fetchFeedFromUrl, parseRssFeed } from './xmlParser';
 import { generateRssFeed } from './xmlGenerator';
+import { withPublisherParty } from './publisherParties';
 
 // Types for publish flow
 export type PublishStep = 'idle' | 'hosting-catalog' | 'hosting' | 'notifying' | 'updating-catalog' | 'complete' | 'error';
@@ -299,11 +300,13 @@ async function processCatalogFeed(
 
     // Add/update publisher reference
     // rel mirrors this album's entry in the publisher feed, so both sides agree.
-    album.publisher = {
+    // Set this publisher's party, and keep any other party the album names
+    // (utils/publisherParties.ts). This used to overwrite album.publisher.
+    Object.assign(album, withPublisherParty(album, {
       feedGuid: publisherGuid,
       feedUrl: publisherFeedUrl,
       rel: item.rel
-    };
+    }));
 
     // Update build date to reflect the modification
     album.lastBuildDate = new Date().toUTCString();

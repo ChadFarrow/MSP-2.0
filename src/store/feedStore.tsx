@@ -7,7 +7,7 @@ import { albumStorage, videoStorage, publisherStorage, feedTypeStorage } from '.
 import { nextTrackPubDate, resequenceTrackDates, trackOrderIssue } from '../utils/trackOrder';
 import { catalogRole, withRole } from '../utils/publisherRole';
 import { bindSourceFindings, type FeedIssue, type FeedSnapshot } from '../utils/feedChecks';
-import { collectLinkTargets, runLinkCheck, type LinkResult, type LinkTarget } from '../utils/linkCheck';
+import { collectLinkTargets, runLinkCheck, LINK_CHECK_LIMIT, type LinkResult, type LinkTarget } from '../utils/linkCheck';
 import { probeLink } from '../utils/mediaProbe';
 
 export type { FeedType };
@@ -151,7 +151,8 @@ function withFeedCheckReset(state: FeedState): FeedState {
 // Start a link run over the feed's current links, dropping the previous run's results.
 function startLinkRun(state: FeedState, check: FeedCheckState): FeedCheckState {
   const id = check.runSeq + 1;
-  return { ...check, runSeq: id, linkRun: { id, targets: collectLinkTargets(feedSnapshot(state)) }, links: {} };
+  const targets = collectLinkTargets(feedSnapshot(state)).slice(0, LINK_CHECK_LIMIT);
+  return { ...check, runSeq: id, linkRun: { id, targets }, links: {} };
 }
 
 // Keep a value block's splits summing to 100 after a recipient edit. Editing a

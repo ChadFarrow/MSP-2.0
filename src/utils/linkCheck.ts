@@ -32,6 +32,14 @@ export type LinkProbe = (target: LinkTarget, signal: AbortSignal) => Promise<Lin
 export const LINK_CHECK_CONCURRENCY = 4;
 
 /**
+ * A music album has a few dozen links; a long-running podcast imported by mistake
+ * can have ten thousand, and loading every enclosure's metadata would pull
+ * gigabytes and re-render the editor once per result. The run takes the first
+ * this many — the cover, then tracks in order — and the panel says so.
+ */
+export const LINK_CHECK_LIMIT = 100;
+
+/**
  * Every http(s) link in the feed, one entry per URL. Empty and non-web URLs are
  * left to the live rules, which report them without a network request.
  */
@@ -104,11 +112,15 @@ export interface LinkSummary {
   broken: number;
   /** http:// links, deliberately not probed. */
   httpSkipped: number;
+  /** The feed has more links than one run checks (LINK_CHECK_LIMIT). */
+  limited: boolean;
 }
 
 /** Progress over the feed's CURRENT links, so an edited URL counts as unchecked. */
 export function summarizeLinks(targets: LinkTarget[], links: Record<string, LinkResult>): LinkSummary {
-  const summary: LinkSummary = { total: targets.length, checked: 0, broken: 0, httpSkipped: 0 };
+  const summary: LinkSummary = {
+    total: targets.length, checked: 0, broken: 0, httpSkipped: 0, limited: targets.length > LINK_CHECK_LIMIT
+  };
   for (const target of targets) {
     const result = links[target.url];
     if (!result) continue;

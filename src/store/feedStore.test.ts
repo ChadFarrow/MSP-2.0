@@ -20,6 +20,7 @@ import type { FeedState } from './feedStore';
 import { createEmptyAlbum, createEmptyPublisherFeed, createEmptyRemoteItem, createEmptyTrack } from '../types/feed';
 import type { Album, RemoteItem } from '../types/feed';
 import type { FeedIssue } from '../utils/feedChecks';
+import { LINK_CHECK_LIMIT } from '../utils/linkCheck';
 
 const ALBUM_PUB_DATE = 'Sat, 01 Feb 2025 00:00:00 GMT';
 
@@ -249,6 +250,13 @@ describe('feedReducer feed check', () => {
     expect(state.feedCheck.linkRun?.targets.map(t => t.url)).toEqual([
       'https://example.com/art.jpg', 'https://example.com/0.mp3', 'https://example.com/1.mp3'
     ]);
+  });
+
+  it('checks at most LINK_CHECK_LIMIT links in one run', () => {
+    const big = { ...imported(), tracks: Array.from({ length: 150 }, (_, i) => ({ ...createEmptyTrack(i + 1), enclosureUrl: `https://example.com/${i}.mp3` })) };
+    const state = feedReducer(feedReducer(makeState(createEmptyAlbum()), { type: 'SET_ALBUM', payload: big }), { type: 'OPEN_FEED_CHECK' });
+    expect(state.feedCheck.linkRun?.targets).toHaveLength(LINK_CHECK_LIMIT);
+    expect(state.feedCheck.linkRun?.targets[0].url).toBe('https://example.com/art.jpg');
   });
 
   it('keeps findings and results when closed and reopened', () => {

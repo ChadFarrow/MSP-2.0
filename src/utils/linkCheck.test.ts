@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { collectLinkTargets, runLinkCheck, summarizeLinks, type LinkResult, type LinkTarget } from './linkCheck';
+import { collectLinkTargets, runLinkCheck, summarizeLinks, LINK_CHECK_LIMIT, type LinkResult, type LinkTarget } from './linkCheck';
 import { checkFeed, linkIssues, type FeedSnapshot } from './feedChecks';
 import { createEmptyAlbum, createEmptyPublisherFeed, createEmptyTrack } from '../types/feed';
 import type { Album, Track } from '../types/feed';
@@ -131,7 +131,12 @@ describe('summarizeLinks', () => {
       'https://example.com/1.mp3': { status: 'broken' },
       'https://example.com/old.mp3': { status: 'broken' }
     };
-    expect(summarizeLinks(targets, links)).toEqual({ total: 3, checked: 2, broken: 1, httpSkipped: 0 });
+    expect(summarizeLinks(targets, links)).toEqual({ total: 3, checked: 2, broken: 1, httpSkipped: 0, limited: false });
+  });
+
+  it('says when the feed has more links than one run checks', () => {
+    const many = album({ tracks: Array.from({ length: LINK_CHECK_LIMIT }, (_, i) => track(i + 1)) });
+    expect(summarizeLinks(collectLinkTargets(snapshot(many)), {}).limited).toBe(true);
   });
 });
 

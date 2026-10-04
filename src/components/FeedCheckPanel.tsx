@@ -1,7 +1,11 @@
 import { useMemo, useState } from 'react';
 import { useFeed } from '../store/feedStore';
 import { checkFeed, issueLocationLabel, type FeedIssue, type FeedSnapshot } from '../utils/feedChecks';
-import type { LinkSummary } from '../utils/linkCheck';
+import { LINK_CHECK_LIMIT, type LinkSummary } from '../utils/linkCheck';
+
+// A feed with thousands of tracks can produce thousands of items; past this many a
+// group says how many more there are instead of rendering them all.
+const MAX_ITEMS_SHOWN = 100;
 
 /**
  * The Feed check panel at the top of the editor. Opens by itself after an
@@ -96,6 +100,7 @@ function linkLine(links: LinkSummary, checking: boolean): string {
   const parts = [`Links checked: ${links.checked} of ${links.total}`];
   if (links.broken > 0) parts.push(`${links.broken} couldn't load`);
   if (links.httpSkipped > 0) parts.push(`${links.httpSkipped} use http:// (not checked)`);
+  if (links.limited) parts.push(`MSP checks the first ${LINK_CHECK_LIMIT}`);
   return parts.join(' — ') + (checking ? ' · checking…' : '');
 }
 
@@ -110,13 +115,15 @@ function IssueGroup({ tone, title, issues, feed }: { tone: 'error' | 'warning'; 
 }
 
 function IssueList({ issues, feed }: { issues: FeedIssue[]; feed: FeedSnapshot }) {
+  const hidden = issues.length - MAX_ITEMS_SHOWN;
   return (
     <ul>
-      {issues.map((issue, i) => (
+      {issues.slice(0, MAX_ITEMS_SHOWN).map((issue, i) => (
         <li key={`${issue.code}-${issue.trackId ?? issue.area}-${i}`}>
           <span className="feed-check-where">{issueLocationLabel(issue, feed)}:</span> {issue.message}
         </li>
       ))}
+      {hidden > 0 && <li>…and {hidden} more.</li>}
     </ul>
   );
 }

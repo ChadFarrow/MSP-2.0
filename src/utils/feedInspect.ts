@@ -54,25 +54,35 @@ const count = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' :
 // Apple's older itunes:explicit vocabulary, and what MSP writes for each word.
 const LEGACY_EXPLICIT_WORDS = new Map([['yes', true], ['explicit', true], ['no', false], ['clean', false]]);
 
-/** The XML validator's complaint, or null when the document is well formed. */
+/**
+ * The XML validator's complaint, or null when the document is well formed.
+ * Leading whitespace is skipped — a paste often starts with a newline, and the
+ * validator would otherwise reject the `<?xml` declaration as "not at the start"
+ * — but counted back into the line number, so it still matches what the user has.
+ */
 function xmlError(xml: string): { line: number; col: number; msg: string } | null {
-  const result = XMLValidator.validate(xml);
-  return result === true ? null : { line: result.err.line, col: result.err.col, msg: result.err.msg };
+  const body = xml.trimStart();
+  const skippedLines = (xml.slice(0, xml.length - body.length).match(/\n/g) ?? []).length;
+  const result = XMLValidator.validate(body);
+  return result === true ? null : { line: result.err.line + skippedLines, col: result.err.col, msg: result.err.msg };
 }
 
 /**
- * The message for an import that failed outright. Prefers the validator's
- * line/column, since the parser's own errors ("Closing Tag is not closed.") say
- * where nothing is.
+ * The message for an import that failed outright.
+ * - No <rss><channel> — a web page, an Atom feed — says so first. Real HTML is
+ *   almost never well-formed XML, so letting the validator speak would describe
+ *   a stray </head> instead of the actual problem.
+ * - Otherwise the validator's line/column, since the parser's own errors
+ *   ("Closing Tag is not closed.") say where nothing is.
  */
 export function describeImportError(xml: string, err: unknown): string {
-  const position = xml.trim() ? xmlError(xml) : null;
-  if (position) {
-    return `Couldn't import this feed: XML error at line ${position.line}, column ${position.col} — ${position.msg}`;
-  }
   const message = err instanceof Error ? err.message : String(err ?? 'Unknown error');
   if (message.includes('missing channel element')) {
     return "Couldn't import this feed: it has no <rss><channel>. MSP imports RSS feeds — Atom feeds and web pages won't load.";
+  }
+  const position = xml.trim() ? xmlError(xml) : null;
+  if (position) {
+    return `Couldn't import this feed: XML error at line ${position.line}, column ${position.col} — ${position.msg}`;
   }
   return `Couldn't import this feed: ${message}`;
 }

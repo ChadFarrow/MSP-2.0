@@ -267,8 +267,25 @@ describe('describeImportError', () => {
       .toBe("Couldn't import this feed: it has no <rss><channel>. MSP imports RSS feeds — Atom feeds and web pages won't load.");
   });
 
+  it('explains a real web page, which is never well-formed XML', () => {
+    const html = '<!DOCTYPE html>\n<html><head><meta charset="utf-8"><link rel="stylesheet" href="a.css"></head><body><p>Hi<br></p></body></html>';
+    expect(describeImportError(html, new Error('Invalid RSS feed: missing channel element')))
+      .toBe("Couldn't import this feed: it has no <rss><channel>. MSP imports RSS feeds — Atom feeds and web pages won't load.");
+  });
+
+  it('counts leading blank lines into the line number', () => {
+    expect(describeImportError('\n\n<rss><channel><title>A</title></channel></rss', new Error('Closing Tag is not closed.')))
+      .toMatch(/^Couldn't import this feed: XML error at line 3,/);
+  });
+
   it('falls back to the error message', () => {
     expect(describeImportError('', new Error('boom'))).toBe("Couldn't import this feed: boom");
+  });
+});
+
+describe('pasted XML with leading whitespace', () => {
+  it('is not reported as malformed', () => {
+    expect(inspectFeedXml(`\n  \n${CLEAN_FEED}`)).toEqual([]);
   });
 });
 

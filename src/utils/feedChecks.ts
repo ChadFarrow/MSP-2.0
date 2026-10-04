@@ -295,7 +295,10 @@ export function bindSourceFindings(findings: FeedIssue[], tracks: Track[]): Feed
  */
 export function openSourceFindings(findings: FeedIssue[], feed: FeedSnapshot): FeedIssue[] {
   const isPublisher = feed.feedType === 'publisher';
-  const trackOf = (finding: FeedIssue) => feed.album.tracks.find(track => track.id === finding.trackId);
+  // One lookup table per call: this runs on every render while the panel is open,
+  // and a large feed can carry a finding for most of its tracks.
+  const tracksById = new Map(feed.album.tracks.map(track => [track.id, track]));
+  const trackOf = (finding: FeedIssue) => (finding.trackId ? tracksById.get(finding.trackId) : undefined);
   return findings.filter(finding => {
     if (finding.trackId && !isPublisher && !trackOf(finding)) return false;
     switch (finding.code) {

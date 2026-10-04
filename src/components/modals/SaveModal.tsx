@@ -35,7 +35,7 @@ import { useExperimental } from '../../store/experimentalStore';
 import { checkSignerConnection } from '../../utils/nostrSigner';
 import { getFeedUrlError, normalizeFeedUrl } from '../../utils/urlValidation';
 import { verifyFeedUrl, isGuardRefusal, FORCED_SUBMIT_NOTE } from '../../utils/verifyFeedUrl';
-import { getValueRecipientErrors } from '../../utils/valueValidation';
+import { getSaveBlockers, formatSaveBlockers, type SaveTarget } from '../../utils/feedChecks';
 import { ModalWrapper } from './ModalWrapper';
 
 const DEFAULT_BLOSSOM_SERVER = 'https://blossom.primal.net/';
@@ -460,50 +460,19 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
     setMessage(null);
     setProgress(null);
 
-    // Validate required fields only for publishing modes (not local/download/clipboard/podcastIndex)
-    const requiresValidation = !['local', 'download', 'clipboard', 'podcastIndex'].includes(mode);
-    if (requiresValidation) {
-      const errors: string[] = [];
-
-      if (isPublisherMode && publisherFeed) {
-        // Publisher feed validation
-        if (!publisherFeed.author?.trim()) errors.push('Artist Name');
-        if (!publisherFeed.title?.trim()) errors.push('Catalog Title');
-        if (!publisherFeed.description?.trim()) errors.push('Description');
-        if (!publisherFeed.podcastGuid?.trim()) errors.push('Publisher GUID');
-        // Every value recipient needs a non-zero split or its sats silently redistribute.
-        errors.push(...getValueRecipientErrors(publisherFeed.value?.recipients, 'Value recipient'));
-      } else {
-        // Album validation
-        // Nostr Music (kind 36787 / 34139) doesn't carry description, file size,
-        // or require numeric duration — skip those so imported Nostr Music
-        // albums can be re-published without adding fields the events don't use.
-        const isNostrMusicMode = mode === 'nostrMusic';
-
-        if (!album.author?.trim()) errors.push('Artist/Band');
-        if (!album.title?.trim()) errors.push('Album Title');
-        if (!isNostrMusicMode && !album.description?.trim()) errors.push('Description');
-        if (!album.imageUrl?.trim()) errors.push('Album Art URL');
-        if (!album.language?.trim()) errors.push('Language');
-        if (!album.podcastGuid?.trim()) errors.push('Podcast GUID');
-
-        // Feed-level value recipients: every one needs a non-zero split.
-        errors.push(...getValueRecipientErrors(album.value?.recipients, 'Value recipient'));
-
-        const itemLabel = isVideoMode ? 'Video' : 'Track';
-        const urlLabel = isVideoMode ? 'Video URL' : 'MP3 URL';
-        album.tracks.forEach((track, i) => {
-          if (!track.title?.trim()) errors.push(`${itemLabel} ${i + 1} Title`);
-          if (!isNostrMusicMode && !track.duration?.trim()) errors.push(`${itemLabel} ${i + 1} Duration`);
-          if (!track.enclosureUrl?.trim()) errors.push(`${itemLabel} ${i + 1} ${urlLabel}`);
-          if (!isNostrMusicMode && !track.enclosureLength?.trim()) errors.push(`${itemLabel} ${i + 1} File Size`);
-          // Per-track value recipients (optional block, but if present each needs a split).
-          errors.push(...getValueRecipientErrors(track.value?.recipients, `${itemLabel} ${i + 1} value recipient`));
-        });
-      }
-
-      if (errors.length > 0) {
-        setMessage({ type: 'error', text: `Missing required fields: ${errors.join(', ')}` });
+    // Validate required fields only for publishing modes (not local/download/clipboard/podcastIndex).
+    // The rules live in feedChecks.ts so the Feed check panel shows exactly what this refuses.
+    // A new hosted feed is keyed by its GUID, which the server requires to be a UUID —
+    // catching that here beats an opaque 400 after the upload starts.
+    const saveTarget: SaveTarget | null =
+      ['local', 'download', 'clipboard', 'podcastIndex'].includes(mode) ? null
+        : mode === 'nostrMusic' ? 'nostrMusic'
+          : mode === 'hosted' && !hostedInfo ? 'hostedCreate'
+            : 'publish';
+    if (saveTarget) {
+      const blockers = getSaveBlockers({ feedType, album, publisherFeed: publisherFeed ?? null }, saveTarget);
+      if (blockers.length > 0) {
+        setMessage({ type: 'error', text: formatSaveBlockers(blockers) });
         setLoading(false);
         return;
       }

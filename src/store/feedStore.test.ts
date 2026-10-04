@@ -302,6 +302,23 @@ describe('feedReducer feed check', () => {
     expect(reopened.feedCheck.linkRun?.id).toBe(2);
   });
 
+  it('keeps the panel when a publish re-dispatches the same publisher feed', () => {
+    const publisher = createEmptyPublisherFeed();
+    const publisherFinding: FeedIssue = { code: 'publisher-items-dropped', level: 'should', area: 'file', message: 'items' };
+    let state = feedReducer(makeState(createEmptyAlbum()), { type: 'SET_PUBLISHER_FEED', payload: publisher });
+    state = feedReducer(state, { type: 'OPEN_FEED_CHECK', payload: { sourceFindings: [publisherFinding] } });
+    const before = state.feedCheck;
+
+    // PublishSection: same GUID, rewritten catalog URLs.
+    state = feedReducer(state, { type: 'SET_PUBLISHER_FEED', payload: { ...publisher, lastBuildDate: 'later' } });
+    expect(state.feedCheck).toBe(before);
+
+    // A different publisher feed still resets.
+    state = feedReducer(state, { type: 'SET_PUBLISHER_FEED', payload: createEmptyPublisherFeed() });
+    expect(state.feedCheck.open).toBe(false);
+    expect(state.feedCheck.sourceFindings).toEqual([]);
+  });
+
   it('drops the findings and checks again after a switch to another feed type', () => {
     let state = openAfterImport();
     state = feedReducer(state, { type: 'SET_FEED_TYPE', payload: 'publisher' });

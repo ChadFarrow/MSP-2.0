@@ -557,15 +557,24 @@ export function feedReducer(state: FeedState, action: FeedAction): FeedState {
       feedTypeStorage.save(action.payload);
       return { ...state, feedType: action.payload };
 
-    case 'SET_PUBLISHER_FEED':
+    case 'SET_PUBLISHER_FEED': {
       feedTypeStorage.save('publisher');
-      return withFeedCheckReset({
+      const next: FeedState = {
         ...state,
         publisherFeed: action.payload,
         feedType: 'publisher',
         isDirty: false,
         publisherFeedInstance: state.publisherFeedInstance + 1
-      });
+      };
+      // PublishSection re-dispatches the SAME feed after a publish rewrites its
+      // catalog URLs. That is not a new feed, so the Feed check keeps its findings
+      // and links. An import of a feed with the same GUID still gets fresh ones:
+      // handleImport follows SET_* with OPEN_FEED_CHECK, which replaces them.
+      const sameFeed = state.feedType === 'publisher'
+        && !!state.publisherFeed
+        && state.publisherFeed.podcastGuid === action.payload.podcastGuid;
+      return sameFeed ? next : withFeedCheckReset(next);
+    }
 
     case 'UPDATE_PUBLISHER_FEED':
       if (!state.publisherFeed) return state;

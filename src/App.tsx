@@ -11,7 +11,7 @@ import { pendingHostedStorage, hostedFeedStorage } from './utils/storage';
 import { generateTestAlbum } from './utils/testData';
 import { regenerateAlbumGuids, withoutIdentityPassthrough } from './utils/regenerateGuids';
 import { resolveMediaSize, hhmmssToSeconds } from './utils/audioUtils';
-import { describeImportError } from './utils/feedInspect';
+import { describeImportError, inspectFeedXml } from './utils/feedInspect';
 import { NostrLoginButton } from './components/NostrLoginButton';
 import { ImportModal } from './components/modals/ImportModal';
 import { SaveModal } from './components/modals/SaveModal';
@@ -178,6 +178,9 @@ function AppContent() {
   // regenerateGuids: used by the template/"duplicate this feed" flow so a new feed
   // gets fresh feed + per-track GUIDs instead of inheriting the source's identities.
   const handleImport = (xml: string, sourceUrl?: string, regenerateGuids = false) => {
+    // Open the Feed check on the feed just swapped in, with what the source XML
+    // says. Dispatched after SET_*, so findings bind to the new feed's tracks.
+    const openFeedCheck = () => dispatch({ type: 'OPEN_FEED_CHECK', payload: { sourceFindings: inspectFeedXml(xml) } });
     try {
       // Check if this is a publisher feed
       if (isPublisherFeed(xml)) {
@@ -197,6 +200,7 @@ function AppContent() {
           publisherFeed.unknownChannelElements = withoutIdentityPassthrough(publisherFeed.unknownChannelElements);
         }
         dispatch({ type: 'SET_PUBLISHER_FEED', payload: publisherFeed });
+        openFeedCheck();
         return;
       }
 
@@ -204,6 +208,7 @@ function AppContent() {
       if (isVideoFeed(xml)) {
         const videoFeed = parseRssFeed(xml);
         dispatch({ type: 'SET_VIDEO_FEED', payload: regenerateGuids ? regenerateAlbumGuids(videoFeed) : videoFeed });
+        openFeedCheck();
         backfillEnclosureSizes(videoFeed.tracks);
         return;
       }
@@ -224,6 +229,7 @@ function AppContent() {
       }
 
       dispatch({ type: 'SET_ALBUM', payload: regenerateGuids ? regenerateAlbumGuids(album) : album });
+      openFeedCheck();
       backfillEnclosureSizes(album.tracks);
     } catch (err) {
       // Thrown, not alert()ed: every caller (ImportModal's handlers, SaveModal's
@@ -237,6 +243,8 @@ function AppContent() {
     // Clear stale hosted credentials - Nostr/music imports don't use pending hosted storage
     pendingHostedStorage.clear();
     dispatch({ type: 'SET_ALBUM', payload: album });
+    // No source XML on the Nostr paths, so only the live checks and links.
+    dispatch({ type: 'OPEN_FEED_CHECK' });
     backfillEnclosureSizes(album.tracks);
   };
 
@@ -275,6 +283,7 @@ function AppContent() {
   const handleTemplateLoadAlbum = (album: Album) => {
     pendingHostedStorage.clear();
     dispatch({ type: 'SET_ALBUM', payload: regenerateAlbumGuids(album) });
+    dispatch({ type: 'OPEN_FEED_CHECK' });
   };
 
   const handleSwitchFeedType = (feedType: FeedType) => {

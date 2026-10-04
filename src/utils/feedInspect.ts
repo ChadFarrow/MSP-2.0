@@ -184,7 +184,7 @@ function inspectChannelCommon(channel: XmlNode, add: Add) {
 
   if (Array.isArray(channel['podcast:value'])) {
     add('should', 'value-blocks-multiple', 'value',
-      `The feed has ${channel['podcast:value'].length} <podcast:value> blocks. MSP reads only one, so it could not read these and the feed's splits are empty. Enter them again in the Value Block section.`);
+      `The feed has ${channel['podcast:value'].length} <podcast:value> blocks. MSP can read only a single block, so it read none of them and the feed's splits are empty. Enter them again in the Value Block section.`);
   }
 }
 
@@ -253,7 +253,7 @@ function inspectItems(items: unknown[], itemWord: string, add: Add) {
 
     if (Array.isArray(item['podcast:value'])) {
       add('should', 'value-blocks-multiple', 'tracks',
-        `This ${itemWord} has ${item['podcast:value'].length} <podcast:value> blocks. MSP could not read them, so it now pays the feed's splits. Turn on its own value block and enter the splits again if it needs them.`, index);
+        `This ${itemWord} has ${item['podcast:value'].length} <podcast:value> blocks. MSP can read only a single block, so it read none of them and the ${itemWord} now pays the feed's splits. Turn on its own value block and enter the splits again if it needs them.`, index);
     }
     if (Array.isArray(item['podcast:transcript'])) {
       add('should', 'transcripts-multiple', 'tracks',
@@ -271,7 +271,9 @@ function inspectItems(items: unknown[], itemWord: string, add: Add) {
   }
   if (missingGuid > 0) {
     add('outdated', 'item-guid-missing', 'tracks',
-      `${count(missingGuid, itemWord)} had no <guid>, so MSP gave each a new one. Apps may list them as new episodes.`);
+      missingGuid === 1
+        ? `1 ${itemWord} had no <guid>, so MSP gave it a new one. Apps may list it as a new episode.`
+        : `${missingGuid} ${itemWord}s had no <guid>, so MSP gave each a new one. Apps may list them as new episodes.`);
   }
   if (missingPubDate > 0) {
     add('outdated', 'pubdate-missing', 'tracks',

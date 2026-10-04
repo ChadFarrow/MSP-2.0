@@ -11,6 +11,7 @@ import { pendingHostedStorage, hostedFeedStorage } from './utils/storage';
 import { generateTestAlbum } from './utils/testData';
 import { regenerateAlbumGuids, withoutIdentityPassthrough } from './utils/regenerateGuids';
 import { resolveMediaSize, hhmmssToSeconds } from './utils/audioUtils';
+import { describeImportError } from './utils/feedInspect';
 import { NostrLoginButton } from './components/NostrLoginButton';
 import { ImportModal } from './components/modals/ImportModal';
 import { SaveModal } from './components/modals/SaveModal';
@@ -225,7 +226,10 @@ function AppContent() {
       dispatch({ type: 'SET_ALBUM', payload: regenerateGuids ? regenerateAlbumGuids(album) : album });
       backfillEnclosureSizes(album.tracks);
     } catch (err) {
-      alert('Failed to parse feed: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      // Thrown, not alert()ed: every caller (ImportModal's handlers, SaveModal's
+      // Import & Restore) already catches and shows the message inline, and an
+      // alert followed by the modal closing threw away the XML the user pasted.
+      throw new Error(describeImportError(xml, err));
     }
   };
 

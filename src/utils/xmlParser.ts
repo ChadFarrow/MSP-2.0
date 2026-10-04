@@ -84,7 +84,8 @@ const KNOWN_ITEM_KEYS = new Set([
 ]);
 
 /**
- * The one parser configuration every feed read uses.
+ * The one parser configuration every feed read uses. Exported so the import-time
+ * inspector (feedInspect.ts) sees exactly the tree the importer does.
  *
  * Values stay strings: number coercion is off for both text and attributes.
  * With it on, fast-xml-parser rewrote anything number-shaped, and everything
@@ -94,7 +95,7 @@ const KNOWN_ITEM_KEYS = new Set([
  * id rounded to `1.2345678901234568e+22`. Modelled fields all go through
  * getText/getAttr and parseInt, which read strings the same way.
  */
-const createFeedXmlParser = (): XMLParser => new XMLParser({
+export const createFeedXmlParser = (): XMLParser => new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
   textNodeName: '#text',

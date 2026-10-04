@@ -127,6 +127,10 @@ export interface BaseChannelData {
   categories: string[];
   keywords: string;
   explicit: boolean;
+  // <itunes:block>Yes</itunes:block> and a plain <podcast:block>yes</podcast:block>.
+  // See utils/listing.ts. Optional so feeds saved before these existed still load.
+  itunesBlock?: boolean;
+  podcastBlock?: boolean;
   ownerName: string;
   ownerEmail: string;
   imageUrl: string;
@@ -202,6 +206,10 @@ export interface Album {
   categories: string[];
   keywords: string;
   explicit: boolean;
+  // <itunes:block>Yes</itunes:block> and a plain <podcast:block>yes</podcast:block>.
+  // See utils/listing.ts. Optional so feeds saved before these existed still load.
+  itunesBlock?: boolean;
+  podcastBlock?: boolean;
   ownerName: string;
   ownerEmail: string;
 
@@ -261,6 +269,10 @@ export interface PublisherFeed {
   categories: string[];
   keywords: string;
   explicit: boolean;
+  // <itunes:block>Yes</itunes:block> and a plain <podcast:block>yes</podcast:block>.
+  // See utils/listing.ts. Optional so feeds saved before these existed still load.
+  itunesBlock?: boolean;
+  podcastBlock?: boolean;
   ownerName: string;
   ownerEmail: string;
 

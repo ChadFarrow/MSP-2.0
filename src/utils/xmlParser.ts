@@ -36,6 +36,7 @@ const KNOWN_CHANNEL_KEYS = new Set([
   'itunes:category',
   'itunes:keywords',
   'itunes:explicit',
+  'itunes:block',
   'itunes:owner',
   'itunes:image',
   'podcast:guid',
@@ -227,7 +228,9 @@ export const parseRssFeed = (xmlString: string): Album => {
   }
 
   // Capture unknown channel elements
-  album.unknownChannelElements = captureUnknownElements(channel, ALBUM_CHANNEL_KEYS);
+  album.unknownChannelElements = keepNamedPodcastBlocks(
+    captureUnknownElements(channel, ALBUM_CHANNEL_KEYS)
+  );
 
   // Keep only the podroll entries in the passthrough. Any publisher-medium one
   // was consumed into album.publisher just above, and the generator writes that
@@ -503,6 +506,11 @@ function parseCommonChannelElements(channel: Record<string, unknown>): Omit<Base
   const explicitVal = channel['itunes:explicit'];
   const explicit = explicitVal === true || explicitVal === 'true' || getText(explicitVal) === 'true';
 
+  // Block tags (utils/listing.ts). itunes:block is in KNOWN_CHANNEL_KEYS. A plain
+  // podcast:block is removed from the passthrough by keepNamedPodcastBlocks().
+  const itunesBlock = isItunesBlock(channel['itunes:block']);
+  const podcastBlock = isPlainPodcastBlock(channel['podcast:block']);
+
   // Owner
   const owner = channel['itunes:owner'];
   const ownerName = owner ? getText((owner as Record<string, unknown>)['itunes:name']) || '' : '';
@@ -557,6 +565,8 @@ function parseCommonChannelElements(channel: Record<string, unknown>): Omit<Base
     categories,
     keywords,
     explicit,
+    itunesBlock,
+    podcastBlock,
     ownerName,
     ownerEmail,
     imageUrl,
@@ -570,6 +580,41 @@ function parseCommonChannelElements(channel: Record<string, unknown>): Omit<Base
     value,
     funding
   };
+}
+
+// Apple honours only "Yes" (any case); every other value means "not blocked".
+// Reading the other values as false and writing nothing for them changes the
+// file but not what any directory does with it.
+function isItunesBlock(node: unknown): boolean {
+  return (getText(node) || '').trim().toLowerCase() === 'yes';
+}
+
+const asArray = (node: unknown): unknown[] =>
+  node === undefined || node === null ? [] : Array.isArray(node) ? node : [node];
+
+// A plain <podcast:block> (no id) addresses every service, and is modelled as
+// podcastBlock. "yes" in any case is a block; anything else is not.
+function isPlainPodcastBlock(node: unknown): boolean {
+  return asArray(node).some(
+    block => !getAttr(block, 'id') && getText(block).trim().toLowerCase() === 'yes'
+  );
+}
+
+// podcast:block can repeat, one per service. The plain entries are modelled
+// (podcastBlock) and written by the generator, so they must leave the
+// passthrough or they come out twice. Blocks that name a service stay, untouched.
+function keepNamedPodcastBlocks(
+  unknown: Record<string, unknown> | undefined
+): Record<string, unknown> | undefined {
+  if (!unknown?.['podcast:block']) return unknown;
+  const named = asArray(unknown['podcast:block']).filter(block => getAttr(block, 'id'));
+  const next = { ...unknown };
+  if (named.length === 0) {
+    delete next['podcast:block'];
+  } else {
+    next['podcast:block'] = named.length === 1 ? named[0] : named;
+  }
+  return Object.keys(next).length > 0 ? next : undefined;
 }
 
 // Parse remote item (for publisher feeds and podroll)
@@ -919,7 +964,7 @@ export const parsePublisherRssFeed = (xmlString: string): PublisherFeed => {
   const feed: PublisherFeed = {
     ...common,
     medium: 'publisher',
-    unknownChannelElements: captureUnknownElements(channel, KNOWN_CHANNEL_KEYS),
+    unknownChannelElements: keepNamedPodcastBlocks(captureUnknownElements(channel, KNOWN_CHANNEL_KEYS)),
     remoteItems: []
   };
 

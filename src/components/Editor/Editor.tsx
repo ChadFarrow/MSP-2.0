@@ -1400,7 +1400,7 @@ export function Editor() {
                                       newRecipients[rIndex] = { ...recipient, name: e.target.value };
                                       dispatch({
                                         type: 'UPDATE_TRACK',
-                                        payload: { index, track: { value: { type: 'lightning', method: 'keysend', recipients: newRecipients } } }
+                                        payload: { index, track: { value: { ...track.value, type: 'lightning', method: 'keysend', recipients: newRecipients } } }
                                       });
                                     }}
                                   />
@@ -1419,7 +1419,7 @@ export function Editor() {
                                       newRecipients[rIndex] = { ...recipient, address, type: detectedType };
                                       dispatch({
                                         type: 'UPDATE_TRACK',
-                                        payload: { index, track: { value: { type: 'lightning', method: 'keysend', recipients: newRecipients } } }
+                                        payload: { index, track: { value: { ...track.value, type: 'lightning', method: 'keysend', recipients: newRecipients } } }
                                       });
                                     }}
                                   />
@@ -1438,7 +1438,7 @@ export function Editor() {
                                       newRecipients[rIndex] = { ...recipient, split: parseInt(e.target.value) || 0 };
                                       dispatch({
                                         type: 'UPDATE_TRACK',
-                                        payload: { index, track: { value: { type: 'lightning', method: 'keysend', recipients: newRecipients } } }
+                                        payload: { index, track: { value: { ...track.value, type: 'lightning', method: 'keysend', recipients: newRecipients } } }
                                       });
                                     }}
                                   />
@@ -1453,7 +1453,7 @@ export function Editor() {
                                   newRecipients.splice(rIndex, 1);
                                   dispatch({
                                     type: 'UPDATE_TRACK',
-                                    payload: { index, track: { value: { type: 'lightning', method: 'keysend', recipients: newRecipients } } }
+                                    payload: { index, track: { value: { ...track.value, type: 'lightning', method: 'keysend', recipients: newRecipients } } }
                                   });
                                 }}
                               >
@@ -1465,7 +1465,7 @@ export function Editor() {
                         })}
                         <AddRecipientSelect onAdd={recipient => {
                           const newRecipients = [...trackRecipients, recipient];
-                          dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { value: { type: 'lightning', method: 'keysend', recipients: newRecipients } } } });
+                          dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { value: { ...track.value, type: 'lightning', method: 'keysend', recipients: newRecipients } } } });
                         }} />
                         {trackPlatformRecipients.length === 0 && trackHasUserWithAddress && (
                           <div style={{
@@ -1487,7 +1487,7 @@ export function Editor() {
                               style={{ fontSize: '13px' }}
                               onClick={() => {
                                 const newRecipients = [...trackRecipients, ...createSupportRecipients()];
-                                dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { value: { type: 'lightning', method: 'keysend', recipients: newRecipients } } } });
+                                dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { value: { ...track.value, type: 'lightning', method: 'keysend', recipients: newRecipients } } } });
                               }}
                             >
                               Add Community Support
@@ -1558,7 +1558,7 @@ export function Editor() {
                                           newRecipients[rIndex] = { ...recipient, split: parseInt(e.target.value) || 0 };
                                           dispatch({
                                             type: 'UPDATE_TRACK',
-                                            payload: { index, track: { value: { type: 'lightning', method: 'keysend', recipients: newRecipients } } }
+                                            payload: { index, track: { value: { ...track.value, type: 'lightning', method: 'keysend', recipients: newRecipients } } }
                                           });
                                         }}
                                       />
@@ -1573,7 +1573,7 @@ export function Editor() {
                                       newRecipients.splice(rIndex, 1);
                                       dispatch({
                                         type: 'UPDATE_TRACK',
-                                        payload: { index, track: { value: { type: 'lightning', method: 'keysend', recipients: newRecipients } } }
+                                        payload: { index, track: { value: { ...track.value, type: 'lightning', method: 'keysend', recipients: newRecipients } } }
                                       });
                                     }}
                                   >

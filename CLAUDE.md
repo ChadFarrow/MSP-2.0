@@ -139,7 +139,7 @@ Real findings from the Aug 2026 audit, left open on purpose because each is larg
 
 ### Key Libraries
 - fast-xml-parser 5.3
-- nostr-tools 2.19
+- nostr-tools 2.25
 - @vercel/blob 2.0
 
 ### Development
@@ -785,6 +785,12 @@ Bare `signer.signEvent()` and `signer.getPublicKey()` calls hang the UI when a N
 Both reject with a user-friendly "open your signer app and approve" message on timeout. Note: NIP-46 has no cancellation primitive, so the remote request continues on the signer's side — we just stop waiting on the UI.
 
 Before any user-triggered handler that ends up signing (Save modes that touch Nostr, "Load from Nostr", "Browse My MSP Feeds", "Host on MSP" with Nostr linked, "Link Nostr Identity"), call `checkSignerConnection()` as a pre-flight and bail with `health.error` if `connected` is false — this catches a dead signer in ≤5 s instead of waiting the full per-call timeout. `SaveModal.tsx` `handleSave` is the canonical reference. The pre-flight is best-effort, not a substitute for the per-call timeouts (state can degrade between the check and the actual call).
+
+**Only the NIP-46 signer uses nostr-tools' relay code.** Publishing, queries and the Blossom pointer go through MSP's own sockets in `src/utils/nostrRelay.ts`; Blossom uploads themselves are HTTP. So a nostr-tools relay bug reaches NIP-46 users only; NIP-07 (extension) users never open a nostr-tools socket. Two rules for the `SimplePool` in `nostrSigner.ts`, both covered by `nostrSigner.test.ts` (an in-memory relay network under the real nostr-tools pool and NIP-46 code):
+- **Tear a pool down with `pool.destroy()`, never `pool.close(NIP46_RELAYS)`.** A `bunker://` URI can name relays outside that list, and `close()` only closes the relays it is given — so their sockets stayed open after every logout and reconnect.
+- **`fromURI` passes `skipSwitchRelays: true`.** Since nostr-tools 2.23.4, the QR-code flow asks the signer which relays it prefers and moves the session there, but `waitForNip46Connection` stores `NIP46_RELAYS` as the pointer. A signer that preferred other relays would answer at login and never again after a reload. If you ever want the switch, store `bunkerSigner.bp.relays` instead — and note the switch races a 1 s timer, so it can land after `fromURI` resolves.
+
+nostr-tools pins exact `@noble/*` versions, and 2.25 moved them to 2.x, which exports subpaths **with** `.js` only (`@noble/hashes/utils.js`; the extensionless `utils` no longer resolves). `@noble/hashes` is now a direct dependency, locked at the version nostr-tools pins (2.0.1), so the import no longer depends on what nostr-tools happens to hoist and the two dedupe to one copy. A plain `npm i @noble/hashes` pulls the latest 2.x and adds a second copy — bump the two together. Versions before 2.25.2 leak a WebSocket on every failed relay connect (nbd-wtf/nostr-tools#550) — don't go below it.
 
 ### Community Support Recipients
 MSP 2.0 and Podcastindex.org are auto-added as value recipients with small splits. Two different behaviors by context:

@@ -683,6 +683,10 @@ Spec-valid tags MSP has no editor for must survive a parse→regenerate untouche
 
 `itunes:explicit` also reads Apple's legacy words: `yes`/`explicit` are explicit, `no`/`clean` are not. Reading only `true` had turned every legacy explicit feed clean.
 
+**Values stay strings.** Every feed read goes through `createFeedXmlParser()` (`xmlParser.ts`), which turns fast-xml-parser's number coercion **off** for text and attributes. With it on, anything number-shaped that rides the passthrough came back changed on save: a txt token `0012345` as `12345`, a valueTimeSplit `itemGuid="0012345"` as `12345` — a different payment target — `5e10` expanded, a 23-digit id rounded to `1.2345678901234568e+22`. Modelled fields read through `getText`/`getAttr`/`parseInt`, which treat strings identically, so nothing else changed. Don't turn it back on, and don't build a second `XMLParser` with its own options.
+
+**Templates drop the source's identity passthrough.** Keeping txt tags means a "Use Template" import would otherwise inherit the source feed's verification tokens. `withoutIdentityPassthrough()` (`regenerateGuids.ts`) removes every passthrough `podcast:txt` and an `atom:link rel="self"`, from album/video templates (inside `regenerateAlbumGuids`) and from publisher templates (`handleImport`).
+
 #### Track lyrics (`<podcast:transcript>`)
 Track-level only, surfaced as "Lyrics URL" in the editor. `TRANSCRIPT_TYPES` in `types/feed.ts` is the single source of truth for the type dropdown and carries the spec's five MIME types. Note `DEFAULT_TRANSCRIPT_TYPE` is `application/x-subrip` — the spec's name for SubRip. MSP wrote the non-spec `application/srt` for a long time; the default and the *missing-attribute fallback* both changed, but nothing rewrites a type a feed states explicitly, and the dropdown renders an unrecognized value as its own option rather than snapping it to SubRip. Multiple `<podcast:transcript>` per item (several languages) is still lossy — `getAttr` reads one node.
 

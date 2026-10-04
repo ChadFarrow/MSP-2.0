@@ -727,6 +727,31 @@ describe('harmless extras round-trip', () => {
     expect(parseRssFeed(xml).tracks[0].explicit).toBe(true);
   });
 
+  it('passes number-shaped values through exactly as written', () => {
+    const xml = buildFeedWithExtras()
+      .replace('abc-123', '0012345')
+      .replace('itemGuid="guest-track"', 'itemGuid="0012345"')
+      .replace('<itunes:duration>03:45</itunes:duration>',
+        '<itunes:duration>03:45</itunes:duration>\n      <custom:id xmlns:custom="https://example.com/ns" big="12345678901234567890123">5e10</custom:id>');
+    const out = generateRssFeed(parseRssFeed(xml));
+    expect(out).toContain('<podcast:txt purpose="applepodcastsverify">0012345</podcast:txt>');
+    expect(out).toContain('itemGuid="0012345"');
+    expect(out).toContain('big="12345678901234567890123"');
+    expect(out).toContain('>5e10</custom:id>');
+  });
+
+  it('survives a category named like a built-in object key', () => {
+    const xml = buildFeedWithExtras().replace(
+      '<itunes:category text="Music">',
+      '<itunes:category text="constructor"><itunes:category text="Sub"/></itunes:category>\n    <itunes:category text="Music">'
+    );
+    const album = parseRssFeed(xml);
+    expect(album.subcategories).toEqual({ constructor: ['Sub'], Music: ['Music History'] });
+    expect(generateRssFeed(album)).toMatch(/<itunes:category text="constructor">\s*<itunes:category text="Sub" \/>/);
+    album.subcategories = { Music: ['Music History'] };
+    expect(generateRssFeed(album)).toContain('<itunes:category text="constructor" />');
+  });
+
   it('keeps <podcast:locked> when the feed names no owner', () => {
     const album = parseRssFeed(buildFeedWithExtras());
     expect(album.locked).toBe(true);

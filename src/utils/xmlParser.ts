@@ -83,15 +83,29 @@ const KNOWN_ITEM_KEYS = new Set([
   'podcast:value'
 ]);
 
+/**
+ * The one parser configuration every feed read uses.
+ *
+ * Values stay strings: number coercion is off for both text and attributes.
+ * With it on, fast-xml-parser rewrote anything number-shaped, and everything
+ * that round-trips through a passthrough came back changed on save — a
+ * `podcast:txt` token `0012345` as `12345`, a valueTimeSplit `itemGuid="0012345"`
+ * as `12345` (a different payment target), `5e10` as `50000000000`, a 23-digit
+ * id rounded to `1.2345678901234568e+22`. Modelled fields all go through
+ * getText/getAttr and parseInt, which read strings the same way.
+ */
+const createFeedXmlParser = (): XMLParser => new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: '@_',
+  textNodeName: '#text',
+  parseAttributeValue: false,
+  parseTagValue: false,
+  trimValues: true
+});
+
 // Parse XML string to Album object
 export const parseRssFeed = (xmlString: string): Album => {
-  const parser = new XMLParser({
-    ignoreAttributes: false,
-    attributeNamePrefix: '@_',
-    textNodeName: '#text',
-    parseAttributeValue: true,
-    trimValues: true
-  });
+  const parser = createFeedXmlParser();
 
   const result = parser.parse(xmlString);
   const channel = result?.rss?.channel;
@@ -385,7 +399,8 @@ function parseCategories(node: unknown): { categories: string[]; subcategories?:
     const subs = (Array.isArray(nested) ? nested : [nested])
       .map(sub => getAttr(sub, 'text') || getText(sub))
       .filter(Boolean);
-    if (subs.length > 0) subcategories[name] = [...(subcategories[name] ?? []), ...subs];
+    // hasOwn, not `??`: a category named "constructor" would otherwise read Object's.
+    if (subs.length > 0) subcategories[name] = [...(Object.hasOwn(subcategories, name) ? subcategories[name] : []), ...subs];
   }
   return Object.keys(subcategories).length > 0 ? { categories, subcategories } : { categories };
 }
@@ -906,13 +921,7 @@ export const fetchFeedFromUrl = async (url: string): Promise<string> => {
 
 // Detect if XML is a video feed based on medium tag
 export const isVideoFeed = (xmlString: string): boolean => {
-  const parser = new XMLParser({
-    ignoreAttributes: false,
-    attributeNamePrefix: '@_',
-    textNodeName: '#text',
-    parseAttributeValue: true,
-    trimValues: true
-  });
+  const parser = createFeedXmlParser();
 
   try {
     const result = parser.parse(xmlString);
@@ -928,13 +937,7 @@ export const isVideoFeed = (xmlString: string): boolean => {
 
 // Detect if XML is a publisher feed based on medium tag
 export const isPublisherFeed = (xmlString: string): boolean => {
-  const parser = new XMLParser({
-    ignoreAttributes: false,
-    attributeNamePrefix: '@_',
-    textNodeName: '#text',
-    parseAttributeValue: true,
-    trimValues: true
-  });
+  const parser = createFeedXmlParser();
 
   try {
     const result = parser.parse(xmlString);
@@ -950,13 +953,7 @@ export const isPublisherFeed = (xmlString: string): boolean => {
 
 // Parse XML string to PublisherFeed object
 export const parsePublisherRssFeed = (xmlString: string): PublisherFeed => {
-  const parser = new XMLParser({
-    ignoreAttributes: false,
-    attributeNamePrefix: '@_',
-    textNodeName: '#text',
-    parseAttributeValue: true,
-    trimValues: true
-  });
+  const parser = createFeedXmlParser();
 
   const result = parser.parse(xmlString);
   const channel = result?.rss?.channel;

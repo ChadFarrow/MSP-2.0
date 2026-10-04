@@ -345,7 +345,10 @@ const generateCommonChannelElements = (data: BaseChannelData, medium: string, le
   const categories = data.categories.length > 0 ? data.categories : ['Music'];
   const nestedWritten = new Set<string>();
   categories.forEach(cat => {
-    const subs = nestedWritten.has(cat) ? [] : (data.subcategories?.[cat] ?? []);
+    // hasOwn: a category named "constructor" must not read Object's own property.
+    const subs = !nestedWritten.has(cat) && data.subcategories && Object.hasOwn(data.subcategories, cat)
+      ? data.subcategories[cat]
+      : [];
     if (subs.length === 0) {
       lines.push(`${indent(level)}<itunes:category text="${escapeXml(cat)}" />`);
       return;

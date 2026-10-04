@@ -11,6 +11,7 @@ import type { Album, FeedType, PublisherFeed, Track } from '../types/feed';
 import { getValueRecipientErrors } from './valueValidation';
 import { hhmmssToSeconds } from './audioUtils';
 import { trackOrderIssue } from './trackOrder';
+import { collectLinkTargets, summarizeLinks, type LinkResult, type LinkSummary, type LinkTarget } from './linkCheck';
 
 export type IssueLevel = 'must' | 'should' | 'outdated';
 
@@ -273,6 +274,93 @@ export function getShouldFixIssues(feed: FeedSnapshot): FeedIssue[] {
   }
 
   return issues;
+}
+
+// Apple Podcasts' cover-art rule, which other apps follow: square, 1400–3000 px.
+export const ARTWORK_MIN_PX = 1400;
+export const ARTWORK_MAX_PX = 3000;
+
+/**
+ * Link-check results as issues, for the feed's CURRENT links only — a result
+ * for a URL the user has since replaced is ignored. One issue per URL, however
+ * many tracks share it. Extra <podcast:image>s are wide by design (banner,
+ * canvas), so they are checked for reachability only, never for shape.
+ */
+export function linkIssues(targets: LinkTarget[], links: Record<string, LinkResult>, feed: FeedSnapshot): FeedIssue[] {
+  const issues: FeedIssue[] = [];
+  const isVideo = feed.feedType === 'video';
+  const coverLabel = feed.feedType === 'publisher' ? 'Publisher artwork' : isVideo ? 'Video artwork' : 'Album art';
+
+  for (const target of targets) {
+    const result = links[target.url];
+    if (!result) continue;
+    // A URL used as the cover too (track art often is) is reported once, as the cover.
+    const trackId = target.trackIds[0];
+    const where: { area: IssueArea; trackId?: string } =
+      target.roles.includes('artwork') || !trackId ? { area: 'artwork' } : { area: 'tracks', trackId };
+    const label = target.roles.includes('enclosure') ? (isVideo ? 'The video file' : 'The audio file')
+      : target.roles.includes('artwork') ? coverLabel
+        : target.roles.includes('trackArt') ? `The ${isVideo ? 'video' : 'track'} art`
+          : 'An extra image (podcast:image)';
+
+    if (result.status === 'broken') {
+      issues.push({
+        ...where, code: 'link-broken', level: 'should',
+        message: `${label} didn't load in your browser (${target.url}). Check the file is still at that address; podcast apps will fail the same way.`
+      });
+      continue;
+    }
+
+    const isCover = target.roles.includes('artwork') || target.roles.includes('trackArt');
+    if (result.status !== 'ok' || !isCover || !result.width || !result.height) continue;
+    const size = `${result.width}×${result.height}`;
+    if (result.width !== result.height) {
+      issues.push({ ...where, code: 'artwork-not-square', level: 'should', message: `${label} is ${size}. Apps crop or letterbox art that isn't square; use a square image of ${ARTWORK_MIN_PX}–${ARTWORK_MAX_PX} px.` });
+    } else if (result.width < ARTWORK_MIN_PX || result.width > ARTWORK_MAX_PX) {
+      issues.push({ ...where, code: 'artwork-size', level: 'should', message: `${label} is ${size}. Apple Podcasts and others want ${ARTWORK_MIN_PX}–${ARTWORK_MAX_PX} px square.` });
+    }
+  }
+  return issues;
+}
+
+export interface FeedCheckReport {
+  must: FeedIssue[];
+  should: FeedIssue[];
+  outdated: FeedIssue[];
+  links: LinkSummary;
+}
+
+// Editor order, so the panel reads top to bottom like the page below it.
+const AREA_ORDER: Record<IssueArea, number> = { file: 0, feed: 1, artwork: 2, value: 3, catalog: 4, tracks: 5 };
+
+function inEditorOrder(issues: FeedIssue[], feed: FeedSnapshot): FeedIssue[] {
+  const trackIndex = new Map(feed.album.tracks.map((track, i) => [track.id, i]));
+  const rank = (issue: FeedIssue) => {
+    const index = issue.trackId === undefined ? undefined : trackIndex.get(issue.trackId);
+    return index === undefined ? AREA_ORDER[issue.area] : AREA_ORDER.tracks + 1 + index;
+  };
+  return issues
+    .map((issue, i) => ({ issue, i, rank: rank(issue) }))
+    .sort((a, b) => a.rank - b.rank || a.i - b.i)
+    .map(({ issue }) => issue);
+}
+
+/** Everything the Feed check panel shows, computed from the current feed. */
+export function checkFeed(feed: FeedSnapshot, sourceFindings: FeedIssue[], links: Record<string, LinkResult>): FeedCheckReport {
+  const targets = collectLinkTargets(feed);
+  const source = openSourceFindings(sourceFindings, feed);
+  const all = inEditorOrder([
+    ...getSaveBlockers(feed, 'hostedCreate'),
+    ...getShouldFixIssues(feed),
+    ...linkIssues(targets, links, feed),
+    ...source
+  ], feed);
+  return {
+    must: all.filter(issue => issue.level === 'must'),
+    should: all.filter(issue => issue.level === 'should'),
+    outdated: all.filter(issue => issue.level === 'outdated'),
+    links: summarizeLinks(targets, links)
+  };
 }
 
 /**

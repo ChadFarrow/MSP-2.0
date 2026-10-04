@@ -19,6 +19,7 @@ import { RecipientsList } from '../RecipientsList';
 import { FundingFields } from '../FundingFields';
 import { ArtworkFields } from '../ArtworkFields';
 import { PodcastImagesList } from '../PodcastImagesList';
+import { FeedCheckPanel } from '../FeedCheckPanel';
 
 // Roles Reference Modal
 function RolesModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
@@ -284,6 +285,7 @@ export function Editor() {
     <>
       <div className="main-content">
         <div className="editor-panel">
+          <FeedCheckPanel />
           {/* Album/Video Info Section */}
           <Section title={isVideo ? "Video Info" : "Album Info"} icon={isVideo ? "🎬" : "💿"}>
             <div className="form-grid">

@@ -15,10 +15,11 @@ vi.hoisted(() => {
   } as Storage;
 });
 
-import { feedReducer } from './feedStore';
+import { feedReducer, emptyFeedCheck } from './feedStore';
 import type { FeedState } from './feedStore';
 import { createEmptyAlbum, createEmptyPublisherFeed, createEmptyRemoteItem, createEmptyTrack } from '../types/feed';
 import type { Album, RemoteItem } from '../types/feed';
+import type { FeedIssue } from '../utils/feedChecks';
 
 const ALBUM_PUB_DATE = 'Sat, 01 Feb 2025 00:00:00 GMT';
 
@@ -28,7 +29,8 @@ const makeState = (album: Album): FeedState => ({
   videoFeed: null,
   publisherFeed: null,
   isDirty: false,
-  publisherFeedInstance: 0
+  publisherFeedInstance: 0,
+  feedCheck: emptyFeedCheck()
 });
 
 const albumWith = (pubDates: string[]): Album => {
@@ -222,5 +224,82 @@ describe('feedReducer publisher role', () => {
     );
     expect(none.publisherFeed!.remoteItems[1]).not.toHaveProperty('rel');
     expect(mixed.publisherFeed!.remoteItems[2]).not.toHaveProperty('rel');
+  });
+});
+
+describe('feedReducer feed check', () => {
+  const imported = (): Album => ({
+    ...albumWith([ALBUM_PUB_DATE, ALBUM_PUB_DATE]),
+    imageUrl: 'https://example.com/art.jpg',
+    tracks: albumWith([ALBUM_PUB_DATE, ALBUM_PUB_DATE]).tracks.map((t, i) => ({ ...t, enclosureUrl: `https://example.com/${i}.mp3` }))
+  });
+  const finding: FeedIssue = { code: 'transcripts-multiple', level: 'should', area: 'tracks', message: 'two transcripts', itemIndex: 1 };
+
+  const openAfterImport = () => {
+    const state = feedReducer(makeState(createEmptyAlbum()), { type: 'SET_ALBUM', payload: imported() });
+    return feedReducer(state, { type: 'OPEN_FEED_CHECK', payload: { sourceFindings: [finding] } });
+  };
+
+  it('opens, binds findings to tracks by document order, and starts a link run', () => {
+    const state = openAfterImport();
+    expect(state.feedCheck.open).toBe(true);
+    expect(state.feedCheck.feedType).toBe('album');
+    expect(state.feedCheck.sourceFindings[0].trackId).toBe(state.album.tracks[1].id);
+    expect(state.feedCheck.linkRun?.id).toBe(1);
+    expect(state.feedCheck.linkRun?.targets.map(t => t.url)).toEqual([
+      'https://example.com/art.jpg', 'https://example.com/0.mp3', 'https://example.com/1.mp3'
+    ]);
+  });
+
+  it('keeps findings and results when closed and reopened', () => {
+    let state = openAfterImport();
+    state = feedReducer(state, { type: 'LINK_CHECK_RESULT', payload: { runId: 1, url: 'https://example.com/0.mp3', result: { status: 'broken' } } });
+    state = feedReducer(state, { type: 'CLOSE_FEED_CHECK' });
+    expect(state.feedCheck.open).toBe(false);
+    state = feedReducer(state, { type: 'OPEN_FEED_CHECK' });
+    expect(state.feedCheck.linkRun?.id).toBe(1);
+    expect(state.feedCheck.links['https://example.com/0.mp3']).toEqual({ status: 'broken' });
+    expect(state.feedCheck.sourceFindings).toHaveLength(1);
+  });
+
+  it('ignores a result from an earlier run', () => {
+    let state = openAfterImport();
+    state = feedReducer(state, { type: 'RUN_LINK_CHECK' });
+    expect(state.feedCheck.linkRun?.id).toBe(2);
+    const stale = feedReducer(state, { type: 'LINK_CHECK_RESULT', payload: { runId: 1, url: 'https://example.com/0.mp3', result: { status: 'broken' } } });
+    expect(stale).toBe(state);
+  });
+
+  it('Check again clears the previous results', () => {
+    let state = openAfterImport();
+    state = feedReducer(state, { type: 'LINK_CHECK_RESULT', payload: { runId: 1, url: 'https://example.com/0.mp3', result: { status: 'ok' } } });
+    state = feedReducer(state, { type: 'RUN_LINK_CHECK' });
+    expect(state.feedCheck.links).toEqual({});
+  });
+
+  it('resets on every whole-feed swap but never reuses a run id', () => {
+    const swaps = [
+      { type: 'SET_ALBUM' as const, payload: imported() },
+      { type: 'SET_VIDEO_FEED' as const, payload: imported() },
+      { type: 'SET_PUBLISHER_FEED' as const, payload: createEmptyPublisherFeed() },
+      { type: 'CREATE_NEW_VIDEO_FEED' as const },
+      { type: 'CREATE_NEW_PUBLISHER_FEED' as const },
+      { type: 'RESET' as const }
+    ];
+    for (const swap of swaps) {
+      const state = feedReducer(openAfterImport(), swap);
+      expect(state.feedCheck).toEqual({ ...emptyFeedCheck(), runSeq: 1 });
+    }
+    const reopened = feedReducer(feedReducer(openAfterImport(), { type: 'RESET' }), { type: 'OPEN_FEED_CHECK' });
+    expect(reopened.feedCheck.linkRun?.id).toBe(2);
+  });
+
+  it('drops the findings and checks again after a switch to another feed type', () => {
+    let state = openAfterImport();
+    state = feedReducer(state, { type: 'SET_FEED_TYPE', payload: 'publisher' });
+    state = feedReducer({ ...state, publisherFeed: createEmptyPublisherFeed() }, { type: 'OPEN_FEED_CHECK' });
+    expect(state.feedCheck.feedType).toBe('publisher');
+    expect(state.feedCheck.sourceFindings).toEqual([]);
+    expect(state.feedCheck.linkRun?.id).toBe(2);
   });
 });

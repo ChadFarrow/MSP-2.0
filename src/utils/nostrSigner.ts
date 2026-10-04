@@ -2,7 +2,7 @@
 import { BunkerSigner, parseBunkerInput, createNostrConnectURI } from 'nostr-tools/nip46';
 import { SimplePool } from 'nostr-tools/pool';
 import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
-import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
+import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
 import type { EventTemplate, VerifiedEvent } from 'nostr-tools/pure';
 import type { BunkerPointer } from 'nostr-tools/nip46';
 
@@ -68,7 +68,9 @@ class Nip46SignerWrapper implements NostrSigner {
 
   close(): void {
     this.bunkerSigner.close();
-    this.pool.close(NIP46_RELAYS);
+    // destroy(), not close(NIP46_RELAYS): a bunker:// URI can name relays outside that list,
+    // and their sockets would stay open after every logout and reconnect.
+    this.pool.destroy();
   }
 }
 
@@ -196,8 +198,11 @@ export async function waitForNip46Connection(
   const pool = new SimplePool();
 
   try {
-    // BunkerSigner.fromURI waits for the bunker to connect and returns ready-to-use signer
-    const bunkerSigner = await BunkerSigner.fromURI(clientSk, uri, { pool }, timeoutMs);
+    // BunkerSigner.fromURI waits for the bunker to connect and returns ready-to-use signer.
+    // skipSwitchRelays: since nostr-tools 2.23.4 fromURI asks the signer which relays it
+    // prefers and moves the session there, but the pointer stored below names NIP46_RELAYS —
+    // so a signer that prefers other relays could never be reached again after a reload.
+    const bunkerSigner = await BunkerSigner.fromURI(clientSk, uri, { pool, skipSwitchRelays: true }, timeoutMs);
 
     // Get the user's public key
     const userPubkey = await bunkerSigner.getPublicKey();
@@ -218,7 +223,7 @@ export async function waitForNip46Connection(
 
     return userPubkey;
   } catch {
-    pool.close(NIP46_RELAYS);
+    pool.destroy();
     throw new Error('Connection timeout - no response from signer');
   }
 }
@@ -264,7 +269,7 @@ export async function reconnectNip46(timeoutMs: number = 10000): Promise<string 
     return pubkey;
   } catch (e) {
     console.error('Failed to reconnect NIP-46:', e);
-    pool.close(NIP46_RELAYS);
+    pool.destroy();
     // Never clear stored credentials automatically — connection failures are transient
     // (network outage, relay down, signer app in background). The user explicitly logs
     // out to clear credentials. Silently wiping them causes data loss.

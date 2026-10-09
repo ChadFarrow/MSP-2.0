@@ -76,5 +76,4 @@ export const FIELD_INFO = {
   alternateEnclosureLength: "File size in bytes. MSP fills it in when your host reports it.",
   alternateEnclosureDefault: "Marks this version as the same file as the main enclosure. Only one version can be the default.",
   alternateEnclosureRel: "Versions with the same group name are alternatives of one another, e.g. the same recording in two formats. 32 characters at most.",
-  alternateEnclosureIntegrity: "Optional checksum apps can use to verify the download: an SRI hash (sha384-...) or a PGP signature.",
 };

@@ -221,40 +221,11 @@ export function AlternateEnclosuresList({ enclosures, onChange }: AlternateEnclo
                       <input
                         type="text"
                         className="form-input"
-                        placeholder="e.g., music-video"
+                        placeholder="e.g., lossless"
                         maxLength={SPEC_MAX_LEN}
                         value={enc.rel || ''}
                         onChange={e => update(enc.id, { rel: e.target.value.trim() || undefined })}
                       />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Integrity<InfoIcon text={FIELD_INFO.alternateEnclosureIntegrity} /></label>
-                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                        <select
-                          className="form-select"
-                          style={{ flex: '0 0 auto' }}
-                          aria-label="Integrity type"
-                          value={enc.integrity?.type || 'sri'}
-                          onChange={e => update(enc.id, {
-                            integrity: { type: e.target.value as 'sri' | 'pgp-signature', value: enc.integrity?.value || '' }
-                          })}
-                        >
-                          <option value="sri">SRI hash</option>
-                          <option value="pgp-signature">PGP signature</option>
-                        </select>
-                        <input
-                          type="text"
-                          className="form-input"
-                          style={{ flex: '1 1 160px', minWidth: 0 }}
-                          placeholder="sha384-..."
-                          value={enc.integrity?.value || ''}
-                          onChange={e => update(enc.id, {
-                            integrity: e.target.value.trim()
-                              ? { type: enc.integrity?.type || 'sri', value: e.target.value.trim() }
-                              : undefined
-                          })}
-                        />
-                      </div>
                     </div>
                   </div>
                 </details>

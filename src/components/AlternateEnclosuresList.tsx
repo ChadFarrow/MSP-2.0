@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import type { AlternateEnclosure, AlternateEnclosureSource } from '../types/feed';
+import type { AlternateEnclosure } from '../types/feed';
 import { ALTERNATE_ENCLOSURE_MIME_TYPES, createEmptyAlternateEnclosure, guessAlternateEnclosureType } from '../types/feed';
 import { detectMediaSize } from '../utils/audioUtils';
 import { FIELD_INFO } from '../data/fieldInfo';
@@ -20,8 +20,7 @@ const AUDIO_TYPES = ALTERNATE_ENCLOSURE_MIME_TYPES.filter(t => t.value.startsWit
 
 /**
  * Editor for a track's <podcast:alternateEnclosure> list. Each version has its
- * own type and metadata, and one or more <podcast:source> addresses for the
- * same file. Rows are keyed and updated by `id`, never by index, so an async
+ * own type, metadata and one file URL (its first <podcast:source>). Rows are keyed and updated by `id`, never by index, so an async
  * size lookup that resolves after a removal can't write onto the wrong row.
  */
 export function AlternateEnclosuresList({ enclosures, onChange }: AlternateEnclosuresListProps) {
@@ -40,10 +39,13 @@ export function AlternateEnclosuresList({ enclosures, onChange }: AlternateEnclo
     onChange(enclosuresRef.current.map(enc => (enc.id === id ? { ...enc, ...patch } : enc)));
   };
 
-  const updateSource = (id: string, sourceIndex: number, patch: Partial<AlternateEnclosureSource>) => {
+  // The editor shows one address per version: the first <podcast:source>.
+  // Extra sources from an imported feed (mirrors of the same file) are kept as is.
+  const updateFirstSourceUri = (id: string, uri: string) => {
     const enc = enclosuresRef.current.find(e => e.id === id);
     if (!enc) return;
-    update(id, { sources: enc.sources.map((s, i) => (i === sourceIndex ? { ...s, ...patch } : s)) });
+    const [first, ...rest] = enc.sources;
+    update(id, { sources: [{ ...first, uri }, ...rest] });
   };
 
   const add = () => {
@@ -54,18 +56,6 @@ export function AlternateEnclosuresList({ enclosures, onChange }: AlternateEnclo
     typeChosen.current.delete(id);
     measuredUrls.current.delete(id);
     onChange(enclosuresRef.current.filter(enc => enc.id !== id));
-  };
-
-  const addSource = (id: string) => {
-    const enc = enclosuresRef.current.find(e => e.id === id);
-    if (!enc) return;
-    update(id, { sources: [...enc.sources, { uri: '' }] });
-  };
-
-  const removeSource = (id: string, sourceIndex: number) => {
-    const enc = enclosuresRef.current.find(e => e.id === id);
-    if (!enc || enc.sources.length <= 1) return;
-    update(id, { sources: enc.sources.filter((_, i) => i !== sourceIndex) });
   };
 
   // Only one version may be the default. Checking one clears the others.
@@ -112,7 +102,7 @@ export function AlternateEnclosuresList({ enclosures, onChange }: AlternateEnclo
       <div className="repeatable-list">
         {enclosures.map((enc, index) => {
           const firstUri = enc.sources[0]?.uri?.trim() || '';
-          const hasAnyUri = enc.sources.some(s => s.uri?.trim());
+          const extraSources = enc.sources.length - 1;
           return (
             <div key={enc.id} className="repeatable-item">
               <div className="repeatable-item-content">
@@ -159,39 +149,21 @@ export function AlternateEnclosuresList({ enclosures, onChange }: AlternateEnclo
                     />
                   </div>
                   <div className="form-group full-width">
-                    <label className="form-label">
-                      File URL <span className="required">*</span>
-                      <InfoIcon text={FIELD_INFO.alternateEnclosureSources} />
-                    </label>
-                    {enc.sources.map((source, sourceIndex) => (
-                      <div key={sourceIndex} style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '6px' }}>
-                        <input
-                          type="url"
-                          className="form-input"
-                          style={{ flex: '1 1 auto', minWidth: 0 }}
-                          aria-label={sourceIndex === 0 ? `Version ${index + 1} URL` : `Version ${index + 1} mirror ${sourceIndex}`}
-                          placeholder={sourceIndex === 0
-                            ? 'https://example.com/track.flac'
-                            : 'Another address for the same file (mirror, IPFS, torrent)'}
-                          value={source.uri}
-                          onChange={e => updateSource(enc.id, sourceIndex, { uri: e.target.value })}
-                          onBlur={sourceIndex === 0 ? e => handleFirstSourceBlur(enc.id, e.target.value) : undefined}
-                        />
-                        {enc.sources.length > 1 && (
-                          <button
-                            type="button"
-                            className="btn btn-icon btn-danger"
-                            aria-label="Remove this address"
-                            onClick={() => removeSource(enc.id, sourceIndex)}
-                          >
-                            &#10005;
-                          </button>
-                        )}
+                    <label className="form-label">File URL <span className="required">*</span></label>
+                    <input
+                      type="url"
+                      className="form-input"
+                      aria-label={`Version ${index + 1} URL`}
+                      placeholder="https://example.com/track.flac"
+                      value={enc.sources[0]?.uri || ''}
+                      onChange={e => updateFirstSourceUri(enc.id, e.target.value)}
+                      onBlur={e => handleFirstSourceBlur(enc.id, e.target.value)}
+                    />
+                    {extraSources > 0 && (
+                      <div style={{ fontSize: '0.8rem', opacity: 0.7, marginTop: '0.25rem' }}>
+                        The imported feed also lists {extraSources} more address{extraSources > 1 ? 'es' : ''} for this file. MSP keeps {extraSources > 1 ? 'them' : 'it'} unchanged.
                       </div>
-                    ))}
-                    <button type="button" className="add-item-btn" onClick={() => addSource(enc.id)} disabled={!hasAnyUri}>
-                      + Add mirror for this file
-                    </button>
+                    )}
                   </div>
                   <div className="form-group">
                     <Toggle

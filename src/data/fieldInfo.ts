@@ -73,7 +73,6 @@ export const FIELD_INFO = {
   // Music Video (Alternate Enclosure)
   alternateEnclosures: "Other versions of this track's media, written as <podcast:alternateEnclosure>. The main file stays the enclosure every app plays; apps that support this tag let listeners pick a version, e.g. a lossless FLAC or a lower-bitrate copy. Add as many as you like.",
   alternateEnclosureTitle: "A short name apps show in their version picker, e.g. \"Lossless\" or \"Low Data\". 32 characters at most.",
-  alternateEnclosureSources: "Where apps download this version. Add more than one address only for copies of the SAME file (a mirror, IPFS, a torrent); a different file is a separate version.",
   alternateEnclosureLength: "File size in bytes. MSP fills it in when your host reports it.",
   alternateEnclosureDefault: "Marks this version as the same file as the main enclosure. Only one version can be the default.",
   alternateEnclosureRel: "Versions with the same group name are alternatives of one another, e.g. the same recording in two formats. 32 characters at most.",

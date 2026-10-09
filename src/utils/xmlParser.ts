@@ -563,7 +563,7 @@ function parseAlternateEnclosureIntegrity(node: unknown): AlternateEnclosureInte
   if (!value) return null;
 
   return {
-    type: 'sri',
+    type: getAttr(node, 'type') === 'pgp-signature' ? 'pgp-signature' : 'sri',
     value
   };
 }

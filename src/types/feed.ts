@@ -81,7 +81,7 @@ export interface AlternateEnclosureSource {
 }
 
 export interface AlternateEnclosureIntegrity {
-  type: 'sri';
+  type: 'sri' | 'pgp-signature';
   value: string;
 }
 
@@ -569,14 +569,27 @@ export const createEmptyAlternateEnclosure = (mimeType = 'video/mp4'): Alternate
   sources: [createEmptyAlternateEnclosureSource()]
 });
 
-// Common MIME types for alternate enclosures
-export const ALTERNATE_ENCLOSURE_MIME_TYPES = [
-  { value: 'video/mp4', label: 'Video (MP4)' },
-  { value: 'video/webm', label: 'Video (WebM)' },
-  { value: 'audio/mpeg', label: 'Audio (MP3)' },
-  { value: 'audio/ogg', label: 'Audio (OGG)' },
-  { value: 'audio/flac', label: 'Audio (FLAC)' }
+// Common MIME types for alternate enclosures. Single source of truth for the
+// UI dropdown; `ext` lets the editor guess the type from a pasted URL.
+export const ALTERNATE_ENCLOSURE_MIME_TYPES: { value: string; label: string; ext: string[] }[] = [
+  { value: 'video/mp4', label: 'Video (MP4)', ext: ['mp4', 'm4v'] },
+  { value: 'video/webm', label: 'Video (WebM)', ext: ['webm'] },
+  { value: 'video/quicktime', label: 'Video (MOV)', ext: ['mov'] },
+  { value: 'application/x-mpegURL', label: 'Video stream (HLS)', ext: ['m3u8'] },
+  { value: 'audio/mpeg', label: 'Audio (MP3)', ext: ['mp3'] },
+  { value: 'audio/mp4', label: 'Audio (M4A/AAC)', ext: ['m4a', 'aac'] },
+  { value: 'audio/ogg', label: 'Audio (OGG/Opus)', ext: ['ogg', 'oga', 'opus'] },
+  { value: 'audio/flac', label: 'Audio (FLAC)', ext: ['flac'] },
+  { value: 'audio/wav', label: 'Audio (WAV)', ext: ['wav'] }
 ];
+
+/** The dropdown's type for a URL's file extension, or undefined when unknown. */
+export const guessAlternateEnclosureType = (url: string): string | undefined => {
+  const path = url.split(/[?#]/)[0];
+  const ext = path.includes('.') ? path.split('.').pop()?.toLowerCase() : undefined;
+  if (!ext) return undefined;
+  return ALTERNATE_ENCLOSURE_MIME_TYPES.find(t => t.ext.includes(ext))?.value;
+};
 
 // Default empty publisher reference
 export const createEmptyPublisherReference = (): PublisherReference => ({

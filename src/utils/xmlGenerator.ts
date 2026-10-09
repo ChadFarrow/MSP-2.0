@@ -295,8 +295,10 @@ const generatePublisherXml = (publisher: PublisherReference, level: number): str
 
 // Generate alternate enclosure XML (podcast:alternateEnclosure)
 const generateAlternateEnclosureXml = (enclosure: AlternateEnclosure, level: number): string => {
-  // Must have at least one source with a URI
-  if (!enclosure.sources || enclosure.sources.length === 0 || !enclosure.sources[0]?.uri) {
+  // Must have at least one source with a URI. Any row may be the filled one:
+  // the editor lets a user blank the first mirror and keep the second.
+  const sources = (enclosure.sources || []).filter(source => source.uri?.trim());
+  if (sources.length === 0) {
     return '';
   }
 
@@ -316,17 +318,15 @@ const generateAlternateEnclosureXml = (enclosure: AlternateEnclosure, level: num
   lines.push(`${indent(level)}<podcast:alternateEnclosure ${attrs.join(' ')}>`);
 
   // Add sources
-  for (const source of enclosure.sources) {
-    if (source.uri) {
-      const sourceAttrs: string[] = [`uri="${escapeXml(source.uri)}"`];
-      if (source.contentType) sourceAttrs.push(`contentType="${escapeXml(source.contentType)}"`);
-      lines.push(`${indent(level + 1)}<podcast:source ${sourceAttrs.join(' ')} />`);
-    }
+  for (const source of sources) {
+    const sourceAttrs: string[] = [`uri="${escapeXml(source.uri.trim())}"`];
+    if (source.contentType) sourceAttrs.push(`contentType="${escapeXml(source.contentType)}"`);
+    lines.push(`${indent(level + 1)}<podcast:source ${sourceAttrs.join(' ')} />`);
   }
 
   // Add integrity if present
   if (enclosure.integrity?.value) {
-    lines.push(`${indent(level + 1)}<podcast:integrity type="${enclosure.integrity.type}" value="${escapeXml(enclosure.integrity.value)}" />`);
+    lines.push(`${indent(level + 1)}<podcast:integrity type="${escapeXml(enclosure.integrity.type)}" value="${escapeXml(enclosure.integrity.value)}" />`);
   }
 
   lines.push(`${indent(level)}</podcast:alternateEnclosure>`);

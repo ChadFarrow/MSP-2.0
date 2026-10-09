@@ -40,6 +40,7 @@ export type IssueCode =
   | 'url-http'
   | 'video-audio-type'
   | 'transcript-type'
+  | 'alt-enclosure-no-url'
   | 'channel-link-missing'
   | 'track-order'
   // Should fix — link check
@@ -260,6 +261,15 @@ export function getShouldFixIssues(feed: FeedSnapshot): FeedIssue[] {
     if (isVideo && track.enclosureType?.startsWith('audio/')) {
       should('video-audio-type', 'tracks', `Its file type is ${track.enclosureType}, an audio type. Paste the video URL again so MSP sets the video type.`, track.id);
     }
+
+    (track.alternateEnclosures || []).forEach((enc, n) => {
+      const name = `Alternate version ${n + 1}${enc.title?.trim() ? ` ("${enc.title.trim()}")` : ''}`;
+      const uris = enc.sources.map(source => source.uri?.trim()).filter(Boolean);
+      if (uris.length === 0) {
+        should('alt-enclosure-no-url', 'tracks', `${name} has no file URL, so MSP leaves it out of the feed. Add the URL or remove the version.`, track.id);
+      }
+      uris.forEach(uri => issues.push(...urlIssues(uri, `${name} URL`, 'tracks', track.id)));
+    });
 
     if (track.transcriptUrl?.trim() && track.transcriptType === 'application/srt') {
       should('transcript-type', 'tracks', 'Lyrics type is application/srt, which is not in the Podcasting 2.0 spec. Choose "SubRip (.srt)" in the lyrics type list.', track.id);

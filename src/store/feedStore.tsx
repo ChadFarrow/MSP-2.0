@@ -2,8 +2,13 @@
 import { createContext, useContext, useReducer, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import type { Album, Track, Person, PersonRole, ValueRecipient, Funding, PublisherFeed, RemoteItem, FeedType } from '../types/feed';
-import { createEmptyAlbum, createEmptyTrack, createEmptyPerson, createEmptyPersonRole, createEmptyRecipient, createEmptyFunding, createEmptyPublisherFeed, createEmptyRemoteItem, createEmptyVideoAlbum, createSupportRecipients, isCommunitySupport, hasUserRecipients } from '../types/feed';
+import { createEmptyAlbum, createEmptyTrack, createEmptyPerson, createEmptyPersonRole, createEmptyRecipient, createEmptyFunding, createEmptyPublisherFeed, createEmptyRemoteItem, createEmptyVideoAlbum, createSupportRecipients, isCommunitySupport, hasUserRecipients, fillPersonalSplitDefault, rebalancePersonalForSupport } from '../types/feed';
 import { albumStorage, videoStorage, publisherStorage, feedTypeStorage } from '../utils/storage';
+import { nextTrackPubDate, resequenceTrackDates, trackOrderIssue } from '../utils/trackOrder';
+import { catalogRole, withRole } from '../utils/publisherRole';
+import { bindSourceFindings, type FeedIssue, type FeedSnapshot } from '../utils/feedChecks';
+import { collectLinkTargets, runLinkCheck, LINK_CHECK_LIMIT, type LinkResult, type LinkTarget } from '../utils/linkCheck';
+import { probeLink } from '../utils/mediaProbe';
 
 export type { FeedType };
 
@@ -27,6 +32,7 @@ export type FeedAction =
   | { type: 'UPDATE_TRACK'; payload: { index: number; track: Partial<Track> } }
   | { type: 'REMOVE_TRACK'; payload: number }
   | { type: 'REORDER_TRACKS'; payload: { fromIndex: number; toIndex: number } }
+  | { type: 'FIX_TRACK_ORDER' }
   | { type: 'ADD_TRACK_PERSON'; payload: { trackIndex: number; person?: Person } }
   | { type: 'UPDATE_TRACK_PERSON'; payload: { trackIndex: number; personIndex: number; person: Person } }
   | { type: 'REMOVE_TRACK_PERSON'; payload: { trackIndex: number; personIndex: number } }
@@ -45,6 +51,7 @@ export type FeedAction =
   | { type: 'UPDATE_REMOTE_ITEM'; payload: { index: number; item: RemoteItem } }
   | { type: 'REMOVE_REMOTE_ITEM'; payload: number }
   | { type: 'REORDER_REMOTE_ITEMS'; payload: { fromIndex: number; toIndex: number } }
+  | { type: 'SET_PUBLISHER_ROLE'; payload: string }
   | { type: 'CREATE_NEW_PUBLISHER_FEED' }
   | { type: 'ADD_PUBLISHER_RECIPIENT'; payload?: ValueRecipient }
   | { type: 'UPDATE_PUBLISHER_RECIPIENT'; payload: { index: number; recipient: ValueRecipient } }
@@ -52,17 +59,57 @@ export type FeedAction =
   // Video feed actions
   | { type: 'SET_VIDEO_FEED'; payload: Album }
   | { type: 'UPDATE_VIDEO_FEED'; payload: Partial<Album> }
-  | { type: 'CREATE_NEW_VIDEO_FEED' };
+  | { type: 'CREATE_NEW_VIDEO_FEED' }
+  // Feed check panel
+  | { type: 'OPEN_FEED_CHECK'; payload?: { sourceFindings?: FeedIssue[] } }
+  | { type: 'CLOSE_FEED_CHECK' }
+  | { type: 'RUN_LINK_CHECK' }
+  | { type: 'LINK_CHECK_RESULT'; payload: { runId: number; url: string; result: LinkResult } };
+
+/**
+ * The Feed check panel's state. It lives here rather than in the Editor because
+ * the Editor is keyed on podcastGuid and remounts on every keystroke in the GUID
+ * field — local state would vanish exactly while the user fixes a "GUID isn't a
+ * UUID" item. Not persisted: findings describe one import, and after a reload
+ * "Check feed" still gives the live checks and a fresh link run.
+ */
+export interface FeedCheckState {
+  open: boolean;
+  /** The feed type the findings and links belong to. Switching type hides them. */
+  feedType: FeedType | null;
+  /** feedInspect.ts findings from the last import, bound to track ids. */
+  sourceFindings: FeedIssue[];
+  /** The link check in progress. Its id gates LINK_CHECK_RESULT. */
+  linkRun: { id: number; targets: LinkTarget[] } | null;
+  /** Results of the current run, by URL. */
+  links: Record<string, LinkResult>;
+  /** Monotonic; survives resets so a late result from an old run can never match a new one. */
+  runSeq: number;
+}
 
 // State interface
-interface FeedState {
+export interface FeedState {
   feedType: FeedType;
   album: Album;
   videoFeed: Album | null;
   publisherFeed: PublisherFeed | null;
   isDirty: boolean;
+  // Bumped every time a whole publisher feed is swapped in (import, new, publish
+  // rewrite). Editor sections that keep feed-scoped local state watch this to
+  // know they're looking at a different feed — the podcastGuid can't serve as
+  // that signal because the user can type into the GUID field.
+  publisherFeedInstance: number;
+  feedCheck: FeedCheckState;
 }
 
+export const emptyFeedCheck = (runSeq = 0): FeedCheckState => ({
+  open: false,
+  feedType: null,
+  sourceFindings: [],
+  linkRun: null,
+  links: {},
+  runSeq
+});
 
 // Initial state - try to load from localStorage first
 const initialState: FeedState = {
@@ -70,7 +117,9 @@ const initialState: FeedState = {
   album: albumStorage.load() || createEmptyAlbum(),
   videoFeed: videoStorage.load() || null,
   publisherFeed: publisherStorage.load() || null,
-  isDirty: false
+  isDirty: false,
+  publisherFeedInstance: 0,
+  feedCheck: emptyFeedCheck()
 };
 
 // Helper to get the current active album (album or videoFeed based on feedType)
@@ -89,15 +138,56 @@ function updateActiveFeed(state: FeedState, albumUpdate: Album): FeedState {
   return { ...state, album: albumUpdate, isDirty: true };
 }
 
-// Reducer
-function feedReducer(state: FeedState, action: FeedAction): FeedState {
+// What the Feed check reads: the feed the user is looking at.
+function feedSnapshot(state: FeedState): FeedSnapshot {
+  return { feedType: state.feedType, album: getActiveAlbum(state), publisherFeed: state.publisherFeed };
+}
+
+// A whole feed was swapped in, so the last feed's findings and links no longer apply.
+function withFeedCheckReset(state: FeedState): FeedState {
+  return { ...state, feedCheck: emptyFeedCheck(state.feedCheck.runSeq) };
+}
+
+// Start a link run over the feed's current links, dropping the previous run's results.
+function startLinkRun(state: FeedState, check: FeedCheckState): FeedCheckState {
+  const id = check.runSeq + 1;
+  const targets = collectLinkTargets(feedSnapshot(state)).slice(0, LINK_CHECK_LIMIT);
+  return { ...check, runSeq: id, linkRun: { id, targets }, links: {} };
+}
+
+// Keep a value block's splits summing to 100 after a recipient edit. Editing a
+// community-support row rebalances the (single) personal recipient; editing a
+// personal row only fills a blank Lightning-address split. Shared by the album,
+// track, and publisher recipient reducers.
+function applyUpdateSplitRules(
+  recipients: ValueRecipient[],
+  editedIndex: number,
+  editedRecipient: ValueRecipient
+): ValueRecipient[] {
+  return isCommunitySupport(editedRecipient)
+    ? rebalancePersonalForSupport(recipients)
+    : fillPersonalSplitDefault(recipients, editedIndex);
+}
+
+// Rebalance the personal recipient only when the removed row was a support split.
+function applyRemoveSplitRules(
+  recipients: ValueRecipient[],
+  removed: ValueRecipient | undefined
+): ValueRecipient[] {
+  return removed && isCommunitySupport(removed)
+    ? rebalancePersonalForSupport(recipients)
+    : recipients;
+}
+
+// Reducer (exported for tests; the app always reaches it through FeedProvider)
+export function feedReducer(state: FeedState, action: FeedAction): FeedState {
   // Get the active album for actions that work on the current feed
   const activeAlbum = getActiveAlbum(state);
 
   switch (action.type) {
     case 'SET_ALBUM':
       feedTypeStorage.save('album');
-      return { ...state, album: action.payload, feedType: 'album', isDirty: false };
+      return withFeedCheckReset({ ...state, album: action.payload, feedType: 'album', isDirty: false });
 
     case 'UPDATE_ALBUM':
       return updateActiveFeed(state, { ...activeAlbum, ...action.payload });
@@ -193,9 +283,10 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
       const hadUserRecipients = hasUserRecipients(currentRecipients);
       const nowHasUserRecipients = hasUserRecipients(updatedRecipients);
       const shouldAddSupport = !hadUserRecipients && nowHasUserRecipients;
-      const finalRecipients = shouldAddSupport
+      const withSupport = shouldAddSupport
         ? [...updatedRecipients, ...createSupportRecipients()]
         : updatedRecipients;
+      const finalRecipients = applyUpdateSplitRules(withSupport, action.payload.index, updatedRecipient);
       return updateActiveFeed(state, {
         ...activeAlbum,
         value: {
@@ -205,14 +296,18 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
       });
     }
 
-    case 'REMOVE_RECIPIENT':
+    case 'REMOVE_RECIPIENT': {
+      const currentRecipients = activeAlbum.value.recipients;
+      const removed = currentRecipients[action.payload];
+      const remaining = currentRecipients.filter((_, i) => i !== action.payload);
       return updateActiveFeed(state, {
         ...activeAlbum,
         value: {
           ...activeAlbum.value,
-          recipients: activeAlbum.value.recipients.filter((_, i) => i !== action.payload)
+          recipients: applyRemoveSplitRules(remaining, removed)
         }
       });
+    }
 
     case 'ADD_FUNDING':
       return updateActiveFeed(state, {
@@ -236,9 +331,15 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
 
     case 'ADD_TRACK': {
       const newTrack = action.payload || createEmptyTrack(activeAlbum.tracks.length + 1);
+      // Stamp the date here rather than in createEmptyTrack: a track created "now" is *newer*
+      // than the ones above it, and newest-first consumers then play the album backwards.
+      // Overriding the payload keeps every dispatch site correct, not just the reducer default.
       return updateActiveFeed(state, {
         ...activeAlbum,
-        tracks: [...activeAlbum.tracks, newTrack]
+        tracks: [
+          ...activeAlbum.tracks,
+          { ...newTrack, pubDate: nextTrackPubDate(activeAlbum.tracks, activeAlbum.pubDate) }
+        ]
       });
     }
 
@@ -262,9 +363,24 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
       const tracks = [...activeAlbum.tracks];
       const [removed] = tracks.splice(action.payload.fromIndex, 1);
       tracks.splice(action.payload.toIndex, 0, removed);
+      const renumbered = tracks.map((t, i) => ({ ...t, trackNumber: i + 1, episode: i + 1 }));
+      // Dates have to follow the new order or the reorder is invisible to podcast apps.
       return updateActiveFeed(state, {
         ...activeAlbum,
-        tracks: tracks.map((t, i) => ({ ...t, trackNumber: i + 1, episode: i + 1 }))
+        tracks: resequenceTrackDates(renumbered, activeAlbum.pubDate)
+      });
+    }
+
+    case 'FIX_TRACK_ORDER': {
+      // An imported newest-first feed needs flipping; everything else just needs its dates
+      // lined up with the order already on screen.
+      const tracks = trackOrderIssue(activeAlbum.tracks) === 'reversed'
+        ? [...activeAlbum.tracks].reverse()
+        : activeAlbum.tracks;
+      const renumbered = tracks.map((t, i) => ({ ...t, trackNumber: i + 1, episode: i + 1 }));
+      return updateActiveFeed(state, {
+        ...activeAlbum,
+        tracks: resequenceTrackDates(renumbered, activeAlbum.pubDate)
       });
     }
 
@@ -401,9 +517,10 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
         const hadUserRecipients = hasUserRecipients(currentRecipients);
         const nowHasUserRecipients = hasUserRecipients(updatedRecipients);
         const shouldAddSupport = !hadUserRecipients && nowHasUserRecipients;
-        const finalRecipients = shouldAddSupport
+        const withSupport = shouldAddSupport
           ? [...updatedRecipients, ...createSupportRecipients()]
           : updatedRecipients;
+        const finalRecipients = applyUpdateSplitRules(withSupport, action.payload.recipientIndex, updatedRecipient);
         tracks[action.payload.trackIndex] = {
           ...track,
           value: {
@@ -419,11 +536,13 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
       const tracks = [...activeAlbum.tracks];
       const track = tracks[action.payload.trackIndex];
       if (track && track.value) {
+        const removed = track.value.recipients[action.payload.recipientIndex];
+        const remaining = track.value.recipients.filter((_, i) => i !== action.payload.recipientIndex);
         tracks[action.payload.trackIndex] = {
           ...track,
           value: {
             ...track.value,
-            recipients: track.value.recipients.filter((_, i) => i !== action.payload.recipientIndex)
+            recipients: applyRemoveSplitRules(remaining, removed)
           }
         };
       }
@@ -431,16 +550,31 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
     }
 
     case 'RESET':
-      return initialState;
+      return { ...initialState, feedCheck: emptyFeedCheck(state.feedCheck.runSeq) };
 
     // Publisher feed actions
     case 'SET_FEED_TYPE':
       feedTypeStorage.save(action.payload);
       return { ...state, feedType: action.payload };
 
-    case 'SET_PUBLISHER_FEED':
+    case 'SET_PUBLISHER_FEED': {
       feedTypeStorage.save('publisher');
-      return { ...state, publisherFeed: action.payload, feedType: 'publisher', isDirty: false };
+      const next: FeedState = {
+        ...state,
+        publisherFeed: action.payload,
+        feedType: 'publisher',
+        isDirty: false,
+        publisherFeedInstance: state.publisherFeedInstance + 1
+      };
+      // PublishSection re-dispatches the SAME feed after a publish rewrites its
+      // catalog URLs. That is not a new feed, so the Feed check keeps its findings
+      // and links. An import of a feed with the same GUID still gets fresh ones:
+      // handleImport follows SET_* with OPEN_FEED_CHECK, which replaces them.
+      const sameFeed = state.feedType === 'publisher'
+        && !!state.publisherFeed
+        && state.publisherFeed.podcastGuid === action.payload.podcastGuid;
+      return sameFeed ? next : withFeedCheckReset(next);
+    }
 
     case 'UPDATE_PUBLISHER_FEED':
       if (!state.publisherFeed) return state;
@@ -450,13 +584,32 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
         isDirty: true
       };
 
-    case 'ADD_REMOTE_ITEM':
+    case 'ADD_REMOTE_ITEM': {
+      if (!state.publisherFeed) return state;
+      // A new catalog item takes the role the rest of the catalog states, so
+      // the publisher chooses it once rather than per feed.
+      const newItem = action.payload || createEmptyRemoteItem();
+      const role = catalogRole(state.publisherFeed.remoteItems);
+      return {
+        ...state,
+        publisherFeed: {
+          ...state.publisherFeed,
+          remoteItems: [
+            ...state.publisherFeed.remoteItems,
+            role && newItem.rel === undefined ? withRole(newItem, role) : newItem
+          ]
+        },
+        isDirty: true
+      };
+    }
+
+    case 'SET_PUBLISHER_ROLE':
       if (!state.publisherFeed) return state;
       return {
         ...state,
         publisherFeed: {
           ...state.publisherFeed,
-          remoteItems: [...state.publisherFeed.remoteItems, action.payload || createEmptyRemoteItem()]
+          remoteItems: state.publisherFeed.remoteItems.map(item => withRole(item, action.payload))
         },
         isDirty: true
       };
@@ -503,12 +656,13 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
 
     case 'CREATE_NEW_PUBLISHER_FEED':
       feedTypeStorage.save('publisher');
-      return {
+      return withFeedCheckReset({
         ...state,
         publisherFeed: createEmptyPublisherFeed(),
         feedType: 'publisher',
-        isDirty: true
-      };
+        isDirty: true,
+        publisherFeedInstance: state.publisherFeedInstance + 1
+      });
 
     case 'ADD_PUBLISHER_RECIPIENT': {
       if (!state.publisherFeed) return state;
@@ -549,9 +703,10 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
       const hadUserRecipients = hasUserRecipients(currentRecipients);
       const nowHasUserRecipients = hasUserRecipients(updatedRecipients);
       const shouldAddSupport = !hadUserRecipients && nowHasUserRecipients;
-      const finalRecipients = shouldAddSupport
+      const withSupport = shouldAddSupport
         ? [...updatedRecipients, ...createSupportRecipients()]
         : updatedRecipients;
+      const finalRecipients = applyUpdateSplitRules(withSupport, action.payload.index, updatedRecipient);
       return {
         ...state,
         publisherFeed: {
@@ -565,24 +720,28 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
       };
     }
 
-    case 'REMOVE_PUBLISHER_RECIPIENT':
+    case 'REMOVE_PUBLISHER_RECIPIENT': {
       if (!state.publisherFeed) return state;
+      const currentRecipients = state.publisherFeed.value.recipients;
+      const removed = currentRecipients[action.payload];
+      const remaining = currentRecipients.filter((_, i) => i !== action.payload);
       return {
         ...state,
         publisherFeed: {
           ...state.publisherFeed,
           value: {
             ...state.publisherFeed.value,
-            recipients: state.publisherFeed.value.recipients.filter((_, i) => i !== action.payload)
+            recipients: applyRemoveSplitRules(remaining, removed)
           }
         },
         isDirty: true
       };
+    }
 
     // Video feed actions
     case 'SET_VIDEO_FEED':
       feedTypeStorage.save('video');
-      return { ...state, videoFeed: action.payload, feedType: 'video', isDirty: false };
+      return withFeedCheckReset({ ...state, videoFeed: action.payload, feedType: 'video', isDirty: false });
 
     case 'UPDATE_VIDEO_FEED':
       if (!state.videoFeed) return state;
@@ -594,12 +753,40 @@ function feedReducer(state: FeedState, action: FeedAction): FeedState {
 
     case 'CREATE_NEW_VIDEO_FEED':
       feedTypeStorage.save('video');
-      return {
+      return withFeedCheckReset({
         ...state,
         videoFeed: createEmptyVideoAlbum(),
         feedType: 'video',
         isDirty: true
-      };
+      });
+
+    // Feed check panel
+    case 'OPEN_FEED_CHECK': {
+      const check = state.feedCheck;
+      const sameFeed = check.feedType === state.feedType;
+      const findings = action.payload?.sourceFindings;
+      // Fresh findings come straight after an import, while the tracks are still in
+      // document order, so item N binds to track N.
+      const sourceFindings = findings
+        ? bindSourceFindings(findings, activeAlbum.tracks)
+        : sameFeed ? check.sourceFindings : [];
+      const opened: FeedCheckState = { ...check, open: true, feedType: state.feedType, sourceFindings };
+      // Reopening the same feed keeps its results; a new import or feed type checks again.
+      const needsRun = !!findings || !sameFeed || !check.linkRun;
+      return { ...state, feedCheck: needsRun ? startLinkRun(state, opened) : opened };
+    }
+
+    case 'CLOSE_FEED_CHECK':
+      return { ...state, feedCheck: { ...state.feedCheck, open: false } };
+
+    case 'RUN_LINK_CHECK':
+      return { ...state, feedCheck: startLinkRun(state, state.feedCheck) };
+
+    case 'LINK_CHECK_RESULT': {
+      const check = state.feedCheck;
+      if (action.payload.runId !== check.linkRun?.id) return state;
+      return { ...state, feedCheck: { ...check, links: { ...check.links, [action.payload.url]: action.payload.result } } };
+    }
 
     default:
       return state;
@@ -618,24 +805,41 @@ const FeedContext = createContext<FeedContextType | undefined>(undefined);
 export function FeedProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(feedReducer, initialState);
 
-  // Auto-save to localStorage whenever album changes
+  // Auto-save to localStorage, debounced so rapid edits (every keystroke produces
+  // a new state object) collapse into one write ~0.5s after the user pauses.
   useEffect(() => {
-    albumStorage.save(state.album);
+    const timer = setTimeout(() => albumStorage.save(state.album), 500);
+    return () => clearTimeout(timer);
   }, [state.album]);
 
-  // Auto-save video feed to localStorage
+  // Auto-save video feed to localStorage (debounced)
   useEffect(() => {
-    if (state.videoFeed) {
-      videoStorage.save(state.videoFeed);
-    }
+    if (!state.videoFeed) return;
+    const timer = setTimeout(() => videoStorage.save(state.videoFeed!), 500);
+    return () => clearTimeout(timer);
   }, [state.videoFeed]);
 
-  // Auto-save publisher feed to localStorage
+  // Auto-save publisher feed to localStorage (debounced)
   useEffect(() => {
-    if (state.publisherFeed) {
-      publisherStorage.save(state.publisherFeed);
-    }
+    if (!state.publisherFeed) return;
+    const timer = setTimeout(() => publisherStorage.save(state.publisherFeed!), 500);
+    return () => clearTimeout(timer);
   }, [state.publisherFeed]);
+
+  // Feed check link run. Lives in the provider, which never remounts. A new run,
+  // or a feed swap (which clears linkRun), aborts the old one, so its results can
+  // never land on the next feed; LINK_CHECK_RESULT also checks the run id.
+  const linkRun = state.feedCheck.linkRun;
+  useEffect(() => {
+    if (!linkRun) return;
+    const controller = new AbortController();
+    void runLinkCheck(linkRun.targets, {
+      probe: probeLink,
+      signal: controller.signal,
+      onResult: (url, result) => dispatch({ type: 'LINK_CHECK_RESULT', payload: { runId: linkRun.id, url, result } })
+    });
+    return () => controller.abort();
+  }, [linkRun]);
 
   return (
     <FeedContext.Provider value={{ state, dispatch }}>

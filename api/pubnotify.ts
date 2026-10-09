@@ -1,25 +1,54 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getAuthHeaders } from './_utils/podcastIndex.js';
+import { notifyPodping, isPodpingConfigured } from './_utils/feedUtils.js';
+import { getFeedUrlError, normalizeFeedUrl } from './_utils/urlValidation.js';
+import { guardFeedSubmission, wantsForce } from './_utils/feedReachability.js';
+import { getClientIp } from './_utils/urlSafety.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { url, guid } = req.query;
+  const { url: rawUrl, guid, medium, force } = req.query;
 
-  if (!url || typeof url !== 'string') {
+  if (!rawUrl || typeof rawUrl !== 'string') {
+    return res.status(400).json({ error: 'Missing url parameter' });
+  }
+
+  // Strip whitespace a copy/paste dragged along before anything looks at the URL.
+  // new URL() tolerates edge spaces, so without this the format check below passes
+  // and getFeedUrlError then rejects a URL the user sees as perfectly clean.
+  const url = normalizeFeedUrl(rawUrl);
+  if (!url) {
     return res.status(400).json({ error: 'Missing url parameter' });
   }
 
   // GUID is optional but preferred for lookup
   const podcastGuid = typeof guid === 'string' ? guid : undefined;
+  // Medium is optional; passed through to podping so indexers classify the feed correctly
+  const podpingMedium = typeof medium === 'string' ? medium : undefined;
 
   try {
     // Validate URL format
     new URL(url);
   } catch {
     return res.status(400).json({ error: 'Invalid URL format' });
+  }
+
+  // Reject URLs with characters that cause Podcast Index indexing issues or duplicates
+  const urlError = getFeedUrlError(url);
+  if (urlError) {
+    return res.status(400).json({ error: urlError });
+  }
+
+  // Don't register a feed crawlers can't fetch. Podcast Index keeps the entry
+  // forever as a permanently blank record while we tell the user it worked.
+  // Refuses only on a confirmed block and fails open otherwise; `force=1` is the
+  // user's explicit "Submit anyway".
+  const refusal = await guardFeedSubmission(url, { force: wantsForce(force), clientIp: getClientIp(req) });
+  if (refusal) {
+    return res.status(400).json(refusal);
   }
 
   try {
@@ -33,7 +62,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Handle potentially empty response body
     const notifyText = await notifyResponse.text();
-    let notifyData: any = {};
+    let notifyData: Record<string, unknown> = {};
     if (notifyText) {
       try {
         notifyData = JSON.parse(notifyText);
@@ -44,8 +73,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (!notifyResponse.ok) {
       return res.status(notifyResponse.status).json({
-        error: notifyData.description || 'Failed to notify Podcast Index',
+        error: typeof notifyData.description === 'string' && notifyData.description
+          ? notifyData.description
+          : 'Failed to notify Podcast Index',
         details: notifyData
+      });
+    }
+
+    // Broadcast a podping in parallel so indexers that watch Hive re-crawl too.
+    // Fire-and-forget; Railway/hivepinger handles its own retries.
+    if (isPodpingConfigured()) {
+      notifyPodping(url, { reason: 'update', medium: podpingMedium }).then((result) => {
+        if (!result.ok) {
+          console.warn(`Podping broadcast failed for ${url}: ${result.error ?? 'unknown'}`);
+        }
       });
     }
 
@@ -53,6 +94,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Try GUID lookup first (more reliable), fall back to URL lookup
     let podcastIndexId: number | null = null;
     let podcastIndexPageUrl: string | null = null;
+    // Diagnostic detail for when add/byfeedurl fails to register the feed.
+    let addResult: Record<string, unknown> | null = null;
 
     const authHeaders = getAuthHeaders();
     if (authHeaders) {
@@ -103,12 +146,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             if (addData.feed?.id) {
               podcastIndexId = addData.feed.id;
               podcastIndexPageUrl = `https://podcastindex.org/podcast/${podcastIndexId}`;
+            } else {
+              // PI accepted the request but didn't register the feed — capture why.
+              addResult = { httpStatus: addResponse.status, status: addData.status, description: addData.description ?? null };
+              console.warn(`PI add/byfeedurl did not register ${url} — HTTP ${addResponse.status}, status=${addData.status}, description=${addData.description ?? '(none)'}`);
             }
           } catch {
-            // JSON parse failed
+            addResult = { httpStatus: addResponse.status, description: `non-JSON: ${addText.slice(0, 200)}` };
+            console.warn(`PI add/byfeedurl returned non-JSON for ${url} — HTTP ${addResponse.status}`);
           }
+        } else {
+          addResult = { httpStatus: addResponse.status, description: 'empty response body' };
+          console.warn(`PI add/byfeedurl returned empty body for ${url} — HTTP ${addResponse.status}`);
         }
       } catch (addErr) {
+        addResult = { error: addErr instanceof Error ? addErr.message : String(addErr) };
         console.warn('Failed to add feed to Podcast Index:', addErr);
       }
     }
@@ -118,6 +170,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       message: 'Feed submitted to Podcast Index',
       podcastIndexId,
       podcastIndexUrl: podcastIndexPageUrl,
+      // Present only when the add did NOT return a feed id — explains the failure.
+      ...(podcastIndexId ? {} : { addResult }),
       details: notifyData
     });
   } catch (error) {

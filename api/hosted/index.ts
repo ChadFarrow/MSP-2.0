@@ -4,11 +4,15 @@ import { randomBytes } from 'crypto';
 import { parseAuthHeader, parseFeedAuthHeader } from '../_utils/adminAuth.js';
 import {
   notifyPodcastIndex,
-  lookupPodcastIndexId,
   getBaseUrl,
   hashToken,
-  isValidFeedId
+  isValidFeedId,
+  timingSafeEqualString
 } from '../_utils/feedUtils.js';
+import { extractPodcastMedium } from '../_utils/xmlUtils.js';
+import { hydrateFeed } from '../_utils/feedHydrate.js';
+import { parseEmailAuthHeader } from '../_utils/emailAuth.js';
+import { addFeedToAccount } from '../_utils/accountStore.js';
 
 // Generate a secure edit token
 function generateEditToken(): string {
@@ -20,7 +24,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'GET') {
     // Check legacy admin key
     const adminKey = req.headers['x-admin-key'];
-    const hasLegacyAdmin = process.env.MSP_ADMIN_KEY && adminKey === process.env.MSP_ADMIN_KEY;
+    // Constant-time: this is a static, long-lived, full-privilege bearer secret,
+    // and === short-circuits on the first differing byte. Same treatment the edit
+    // tokens already get a few lines away.
+    const hasLegacyAdmin = !!process.env.MSP_ADMIN_KEY && typeof adminKey === 'string' &&
+      timingSafeEqualString(adminKey, process.env.MSP_ADMIN_KEY);
 
     // Check Nostr auth header - first try admin, then regular user
     const authHeader = req.headers['authorization'] as string | undefined;
@@ -40,60 +48,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const xmlBlobs = blobs.filter(b => b.pathname.endsWith('.xml') && !b.pathname.includes('.backup.'));
 
       let feeds = await Promise.all(
-        metaBlobs.map(async (blob) => {
-          const response = await fetch(blob.url);
-          const text = await response.text();
-          const meta = text ? JSON.parse(text) : {};
+        metaBlobs.map((blob) => {
           const feedId = blob.pathname.replace('feeds/', '').replace('.meta.json', '');
-
-          // Try to extract author and medium from the XML feed
-          let author: string | undefined;
-          let medium: string | undefined;
           const xmlBlob = xmlBlobs.find(b => b.pathname === `feeds/${feedId}.xml`);
-          if (xmlBlob) {
-            try {
-              const xmlResponse = await fetch(xmlBlob.url);
-              const xml = await xmlResponse.text();
-              // Extract itunes:author using regex
-              const authorMatch = xml.match(/<itunes:author>([^<]+)<\/itunes:author>/);
-              if (authorMatch) {
-                author = authorMatch[1];
-              }
-              // Extract podcast:medium using regex
-              const mediumMatch = xml.match(/<podcast:medium>([^<]+)<\/podcast:medium>/);
-              if (mediumMatch) {
-                medium = mediumMatch[1];
-              }
-            } catch {
-              // Ignore errors extracting metadata
-            }
-          }
-
-          // Look up PI ID if missing and update metadata in background
-          let podcastIndexId = meta.podcastIndexId;
-          if (!podcastIndexId) {
-            // feedId is the podcast GUID, use it to lookup on PI
-            podcastIndexId = await lookupPodcastIndexId(feedId);
-            if (podcastIndexId) {
-              // Update metadata with PI ID (don't await - fire and forget)
-              put(`feeds/${feedId}.meta.json`, JSON.stringify({
-                ...meta,
-                podcastIndexId
-              }), {
-                access: 'public',
-                contentType: 'application/json',
-                addRandomSuffix: false
-              }).catch(err => console.warn('Failed to update metadata with PI ID:', err));
-            }
-          }
-
-          return { feedId, author, medium, ...meta, podcastIndexId };
+          return hydrateFeed(feedId, blob.url, xmlBlob?.url);
         })
       );
 
       // If not admin, filter to only show user's own feeds
       if (!isAdmin && userPubkey) {
-        feeds = feeds.filter((feed: { ownerPubkey?: string }) => feed.ownerPubkey === userPubkey);
+        feeds = feeds.filter((feed) => feed.ownerPubkey === userPubkey);
       }
 
       return res.status(200).json({ feeds, count: feeds.length });
@@ -109,7 +73,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { xml, title, podcastGuid, editToken: clientToken } = req.body;
+    const { xml, title, podcastGuid, editToken: clientToken, isDraft } = req.body;
 
     // Validate input
     if (!xml || typeof xml !== 'string') {
@@ -138,11 +102,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Use podcast GUID as feed ID (one feed per podcast)
     const feedId = podcastGuid;
 
-    // Check if feed already exists by looking for metadata file
-    // (metadata is what defines a "managed" feed with credentials)
-    const { blobs } = await list({ prefix: `feeds/${feedId}.meta.json` });
-    const existingMeta = blobs.find(b => b.pathname === `feeds/${feedId}.meta.json`);
-    if (existingMeta) {
+    // Refuse if EITHER blob already exists.
+    //
+    // This used to check only the metadata file, then write the XML below with
+    // allowOverwrite: true. So a feed whose .xml existed without a .meta.json could
+    // be claimed by an anonymous POST — the live feed content was overwritten and a
+    // fresh meta blob was written carrying the caller's editTokenHash. feedId is the
+    // podcastGuid, which is published in every feed's <podcast:guid>, so the attacker
+    // did not need to guess anything.
+    //
+    // Checking the .xml too also closes the smaller version of the same hole: an
+    // orphaned .xml from a half-finished create or delete is no longer silently
+    // adopted by whoever POSTs next.
+    const { blobs } = await list({ prefix: `feeds/${feedId}.` });
+    const metaPath = `feeds/${feedId}.meta.json`;
+    const xmlPath = `feeds/${feedId}.xml`;
+    const existing = blobs.find(b => b.pathname === metaPath || b.pathname === xmlPath);
+    if (existing) {
       return res.status(409).json({
         error: 'Feed already exists for this podcast. Use your edit token to update it, or use the Restore flow.',
         feedId
@@ -168,20 +144,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    // Store feed XML in Vercel Blob
-    // allowOverwrite handles orphaned blobs from incomplete deletions
-    const blob = await put(`feeds/${feedId}.xml`, xml, {
+    // Check for an email session - if provided, set the email owner immediately
+    const emailSessionHeader = req.headers['x-email-session'] as string | undefined;
+    let ownerEmailHash: string | undefined;
+    let emailLinkedAt: string | undefined;
+
+    if (emailSessionHeader) {
+      const emailAuth = parseEmailAuthHeader(emailSessionHeader);
+      if (emailAuth.valid && emailAuth.emailHash) {
+        ownerEmailHash = emailAuth.emailHash;
+        emailLinkedAt = Date.now().toString();
+      }
+    }
+
+    // Store feed XML in Vercel Blob.
+    //
+    // allowOverwrite is false on purpose. It used to be true, to "handle orphaned
+    // blobs from incomplete deletions" — but silently adopting an orphaned .xml is
+    // exactly the takeover above, and the existence check now refuses that case
+    // explicitly. Keeping it false also turns the remaining race (a blob appearing
+    // between the check and this write) into a hard error rather than a silent
+    // overwrite of somebody else's feed.
+    const blob = await put(xmlPath, xml, {
       access: 'public',
       contentType: 'application/rss+xml',
       addRandomSuffix: false,
-      allowOverwrite: true
+      allowOverwrite: false
     });
 
     // Build stable URL
-    const stableUrl = `${getBaseUrl(req)}/api/hosted/${feedId}.xml`;
+    const stableUrl = `${getBaseUrl()}/api/hosted/${feedId}.xml`;
 
-    // Notify Podcast Index and get PI ID
-    const podcastIndexId = await notifyPodcastIndex(stableUrl);
+    // Extract podcast:medium from XML for podping broadcast (music/video/publisher)
+    const medium = extractPodcastMedium(xml);
+
+    // Only notify Podcast Index if not a draft
+    const piResult = (isDraft === true) ? null : await notifyPodcastIndex(stableUrl, { medium });
+    const podcastIndexId = piResult ? piResult.podcastIndexId : undefined;
 
     // Store metadata separately (Vercel Blob doesn't support custom metadata)
     await put(`feeds/${feedId}.meta.json`, JSON.stringify({
@@ -190,7 +189,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       title: (typeof title === 'string' ? title : 'Untitled Feed').slice(0, 200),
       ownerPubkey,
       linkedAt,
-      podcastIndexId
+      ownerEmailHash,
+      emailLinkedAt,
+      podcastIndexId,
+      ...(isDraft === true && { isDraft: true })
     }), {
       access: 'public',
       contentType: 'application/json',
@@ -198,16 +200,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       allowOverwrite: true
     });
 
+    // Index the new feed to the email account so it appears in "My Feeds"
+    if (ownerEmailHash) {
+      await addFeedToAccount(ownerEmailHash, feedId).catch(() => { /* best-effort */ });
+    }
+
     return res.status(201).json({
       feedId,
       editToken, // Only returned once at creation!
       url: stableUrl,
       blobUrl: blob.url,
-      podcastIndexId
+      podcastIndexId,
+      // Present only when PI declined to register the feed — lets the UI say why.
+      ...(piResult?.addResult ? { addResult: piResult.addResult } : {}),
+      isDraft: isDraft === true
     });
   } catch (error) {
     console.error('Error creating hosted feed:', error);
-    const message = error instanceof Error ? error.message : 'Failed to create feed';
-    return res.status(500).json({ error: message });
+    return res.status(500).json({ error: 'Failed to create feed' });
   }
 }

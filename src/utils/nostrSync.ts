@@ -5,15 +5,16 @@ import { parseRssFeed } from './xmlParser';
 import { formatReleasedDate } from './dateUtils';
 import {
   DEFAULT_RELAYS,
+  MUSIC_RELAYS,
   connectRelay,
   collectEvents,
   publishEventToRelays
 } from './nostrRelay';
-import { getSigner, hasSigner } from './nostrSigner';
+import { hasSigner, signEventWithTimeout, getPublicKeyWithTimeout } from './nostrSigner';
 import { parseNostrMusicEvent } from './nostrMusicConverter';
 
 // Re-export for backward compatibility
-export { DEFAULT_RELAYS };
+export { DEFAULT_RELAYS, MUSIC_RELAYS };
 
 // Re-export Blossom functions from dedicated module
 export { uploadToBlossom } from './blossom';
@@ -38,6 +39,8 @@ export interface NostrProfile {
   picture?: string;
   nip05?: string;
   about?: string;
+  lud16?: string; // Lightning address (user@domain)
+  lud06?: string; // LNURL
 }
 
 // Fetch user profile (kind 0) from relays
@@ -50,7 +53,10 @@ export async function fetchNostrProfile(
 
     const results = await Promise.allSettled(
       relays.map(async (relayUrl) => {
-        const ws = await connectRelay(relayUrl, 3000);
+        // Single attempt, no retries: this is a read gated by Promise.allSettled,
+        // so a dead relay's default 5× exponential-backoff retry (~30s) would
+        // stall the whole fetch — and the identity card — until it gives up.
+        const ws = await connectRelay(relayUrl, 3000, 1);
         try {
           const subId = Math.random().toString(36).substring(7);
           const filter = {
@@ -115,9 +121,8 @@ export async function saveAlbumToNostr(
   }
 
   try {
-    const signer = getSigner();
     // Get public key
-    const pubkey = await signer.getPublicKey();
+    const pubkey = await getPublicKeyWithTimeout();
 
     // Only update lastBuildDate if there are actual changes
     const updatedAlbum = hasChanges
@@ -129,7 +134,7 @@ export async function saveAlbumToNostr(
 
     // Create and sign the event
     const unsignedEvent = createFeedEvent(rssXml, album.podcastGuid, album.title, pubkey);
-    const signedEvent = await signer.signEvent(unsignedEvent);
+    const signedEvent = await signEventWithTimeout(unsignedEvent);
 
     // Publish to relays
     const { successCount } = await publishEventToRelays(signedEvent as NostrEvent, relays);
@@ -160,8 +165,7 @@ export async function saveFeedToNostr(
   }
 
   try {
-    const signer = getSigner();
-    const pubkey = await signer.getPublicKey();
+    const pubkey = await getPublicKeyWithTimeout();
 
     // Generate RSS XML based on feed type
     let rssXml: string;
@@ -188,7 +192,7 @@ export async function saveFeedToNostr(
 
     // Create and sign the event
     const unsignedEvent = createFeedEvent(rssXml, feedGuid, feedTitle, pubkey);
-    const signedEvent = await signer.signEvent(unsignedEvent);
+    const signedEvent = await signEventWithTimeout(unsignedEvent);
 
     // Publish to relays
     const { successCount } = await publishEventToRelays(signedEvent as NostrEvent, relays);
@@ -209,21 +213,23 @@ export async function saveFeedToNostr(
 
 // Load saved albums from Nostr relays
 export async function loadAlbumsFromNostr(
+  pubkey: string,
   relays = DEFAULT_RELAYS
 ): Promise<{ success: boolean; albums: SavedAlbumInfo[]; message: string }> {
-  if (!hasSigner()) {
+  if (!pubkey) {
     return { success: false, albums: [], message: 'Not logged in' };
   }
 
   try {
-    const signer = getSigner();
-    const pubkey = await signer.getPublicKey();
     const allEvents: NostrEvent[] = [];
 
     // Query each relay
     const results = await Promise.allSettled(
       relays.map(async (relayUrl) => {
-        const ws = await connectRelay(relayUrl);
+        // Single attempt, no retries: gated by Promise.allSettled, so a dead
+        // relay's default 5× exponential-backoff retry (~55s at 8s timeout)
+        // would stall the whole fan-out read until it gives up.
+        const ws = await connectRelay(relayUrl, 3000, 1);
         try {
           const subId = Math.random().toString(36).substring(7);
           const filter = {
@@ -288,21 +294,23 @@ export async function loadAlbumsFromNostr(
 // Load a specific album by d tag
 export async function loadAlbumByDTag(
   dTag: string,
+  pubkey: string,
   relays = DEFAULT_RELAYS
 ): Promise<{ success: boolean; album: Album | null; message: string }> {
-  if (!hasSigner()) {
+  if (!pubkey) {
     return { success: false, album: null, message: 'Not logged in' };
   }
 
   try {
-    const signer = getSigner();
-    const pubkey = await signer.getPublicKey();
     let latestEvent: NostrEvent | null = null;
 
     // Query each relay
     const results = await Promise.allSettled(
       relays.map(async (relayUrl) => {
-        const ws = await connectRelay(relayUrl);
+        // Single attempt, no retries: gated by Promise.allSettled, so a dead
+        // relay's default 5× exponential-backoff retry (~55s at 8s timeout)
+        // would stall the whole fan-out read until it gives up.
+        const ws = await connectRelay(relayUrl, 3000, 1);
         try {
           const subId = Math.random().toString(36).substring(7);
           const filter = {
@@ -381,21 +389,23 @@ export function groupTracksByAlbum(tracks: NostrMusicTrackInfo[]): NostrMusicAlb
 
 // Fetch music track events (kind 36787) for logged-in user
 export async function fetchNostrMusicTracks(
-  relays = DEFAULT_RELAYS
+  pubkey: string,
+  relays = MUSIC_RELAYS
 ): Promise<{ success: boolean; tracks: NostrMusicTrackInfo[]; message: string }> {
-  if (!hasSigner()) {
+  if (!pubkey) {
     return { success: false, tracks: [], message: 'Not logged in' };
   }
 
   try {
-    const signer = getSigner();
-    const pubkey = await signer.getPublicKey();
     const allEvents: NostrEvent[] = [];
 
     // Query each relay
     const results = await Promise.allSettled(
       relays.map(async (relayUrl) => {
-        const ws = await connectRelay(relayUrl);
+        // Single attempt, no retries: gated by Promise.allSettled, so a dead
+        // relay's default 5× exponential-backoff retry (~55s at 8s timeout)
+        // would stall the whole fan-out read until it gives up.
+        const ws = await connectRelay(relayUrl, 3000, 1);
         try {
           const subId = Math.random().toString(36).substring(7);
           const filter = {
@@ -526,6 +536,16 @@ function createMusicTrackEvent(
     ['alt', `Music track: ${track.title} by ${album.author || 'Unknown Artist'}`]
   ];
 
+  // Add duration
+  if (track.duration) {
+    tags.push(['duration', String(track.duration)]);
+  }
+
+  // Add explicit flag
+  if (track.explicit) {
+    tags.push(['explicit', 'true']);
+  }
+
   // Add image (track art or album art)
   const imageUrl = track.trackArtUrl || album.imageUrl;
   if (imageUrl) {
@@ -543,7 +563,8 @@ function createMusicTrackEvent(
     tags.push(['language', album.language]);
   }
 
-  // Add genre tags from categories
+  // Add genre tags from categories (music discriminator first, then user genres)
+  tags.push(['t', 'music']);
   for (const category of album.categories) {
     tags.push(['t', category.toLowerCase()]);
   }
@@ -635,7 +656,7 @@ export interface PublishProgress {
 // Publish album tracks as Nostr Music events (kind 36787) + playlist (kind 34139)
 export async function publishNostrMusicTracks(
   album: Album,
-  relays = DEFAULT_RELAYS,
+  relays = MUSIC_RELAYS,
   onProgress?: (progress: PublishProgress) => void
 ): Promise<{ success: boolean; message: string; publishedCount: number; playlistPublished: boolean }> {
   if (!hasSigner()) {
@@ -647,8 +668,7 @@ export async function publishNostrMusicTracks(
   }
 
   try {
-    const signer = getSigner();
-    const pubkey = await signer.getPublicKey();
+    const pubkey = await getPublicKeyWithTimeout();
     let publishedCount = 0;
     const total = album.tracks.length;
     const publishedTracks: PublishedTrackRef[] = [];
@@ -669,7 +689,7 @@ export async function publishNostrMusicTracks(
 
       // Create and sign the event
       const unsignedEvent = createMusicTrackEvent(track, album, pubkey);
-      const signedEvent = await signer.signEvent(unsignedEvent);
+      const signedEvent = await signEventWithTimeout(unsignedEvent);
 
       // Publish to all relays
       const { successCount } = await publishEventToRelays(signedEvent as NostrEvent, relays);
@@ -695,7 +715,7 @@ export async function publishNostrMusicTracks(
       }
 
       const playlistEvent = createMusicPlaylistEvent(album, publishedTracks, pubkey);
-      const signedPlaylist = await signer.signEvent(playlistEvent);
+      const signedPlaylist = await signEventWithTimeout(playlistEvent);
       const { successCount: playlistSuccessCount } = await publishEventToRelays(signedPlaylist as NostrEvent, relays);
 
       if (playlistSuccessCount > 0) {
@@ -728,7 +748,7 @@ export async function publishNostrMusicTracks(
 // Delete (unpublish) Nostr Music events for an album via NIP-09
 export async function deleteNostrMusicTracks(
   album: Album,
-  relays = DEFAULT_RELAYS
+  relays = MUSIC_RELAYS
 ): Promise<{ success: boolean; message: string }> {
   if (!hasSigner()) {
     return { success: false, message: 'Not logged in' };
@@ -739,8 +759,7 @@ export async function deleteNostrMusicTracks(
   }
 
   try {
-    const signer = getSigner();
-    const pubkey = await signer.getPublicKey();
+    const pubkey = await getPublicKeyWithTimeout();
 
     // Build 'a' tags for all tracks + playlist
     const tags: string[][] = [];
@@ -768,7 +787,7 @@ export async function deleteNostrMusicTracks(
       content: 'Unpublished from MSP 2.0'
     };
 
-    const signedEvent = await signer.signEvent(deletionEvent);
+    const signedEvent = await signEventWithTimeout(deletionEvent);
     const { successCount } = await publishEventToRelays(signedEvent as NostrEvent, relays);
 
     if (successCount === 0) {

@@ -154,7 +154,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  let { npub, guid } = req.query;
+  // `guid` is reassigned below to strip a trailing .xml; `npub` never is.
+  const { npub } = req.query;
+  let { guid } = req.query;
 
   // Validate parameters
   if (typeof npub !== 'string' || typeof guid !== 'string') {
@@ -195,13 +197,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const feedUrl = urlTag[1];
 
+    // feedUrl comes out of a kind-1063 event authored by whatever npub is in the
+    // path, and anyone can publish one of those under their own key — so this value
+    // is fully attacker-controlled and must not be redirected to blindly. Restrict
+    // to http(s): a `javascript:` or `data:` Location would otherwise be a redirect
+    // into script execution rather than a navigation.
+    //
+    // Residual, deliberately not fixed here: an attacker can still point their OWN
+    // pointer event at their own https site, so a musicsideproject.com link can land
+    // on a page they control. Closing that would mean proxying the bytes instead of
+    // redirecting, which trades a phishing vector for an SSRF one. Podcast apps
+    // follow these redirects; humans rarely see them.
+    let target: URL;
+    try {
+      target = new URL(feedUrl);
+    } catch {
+      return res.status(502).json({ error: 'Feed pointer is not a valid URL' });
+    }
+    if (target.protocol !== 'https:' && target.protocol !== 'http:') {
+      return res.status(502).json({ error: 'Feed pointer must be an http(s) URL' });
+    }
+
     // No caching - always fetch latest from Nostr
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
 
     // Redirect to the Blossom URL
-    return res.redirect(302, feedUrl);
+    return res.redirect(302, target.toString());
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    return res.status(500).json({ error: message });
+    console.error('Error resolving feed pointer:', error);
+    return res.status(500).json({ error: 'Failed to resolve feed' });
   }
 }

@@ -1,14 +1,16 @@
 // MSP 2.0 - XML Parser for importing Demu RSS Feeds
 import { XMLParser } from 'fast-xml-parser';
-import type { Album, Track, Person, PersonGroup, ValueRecipient, ValueBlock, Funding, PublisherFeed, RemoteItem, PublisherReference, BaseChannelData, AlternateEnclosure, AlternateEnclosureSource, AlternateEnclosureIntegrity } from '../types/feed';
-import { createEmptyTrack } from '../types/feed';
+import type { Album, Track, Person, PersonGroup, ValueRecipient, ValueBlock, Funding, PublisherFeed, RemoteItem, PublisherReference, BaseChannelData, PodcastImage, AlternateEnclosure, AlternateEnclosureSource, AlternateEnclosureIntegrity } from '../types/feed';
+import { createEmptyTrack, LEGACY_MSP_NODE_PUBKEY, MSP_SUPPORT_RECIPIENT, DEFAULT_TRANSCRIPT_TYPE } from '../types/feed';
 import { areValueBlocksStrictEqual, arePersonsEqual } from './comparison';
+import { detectAddressType } from './addressUtils';
+import { MIN_PLAUSIBLE_MEDIA_BYTES } from './audioUtils';
 
 // OP3 prefix pattern: https://op3.dev/e/ or https://op3.dev/e,pg=GUID/
-const OP3_PREFIX_RE = /^https:\/\/op3\.dev\/e(?:,[^/]*)?\//;
+export const OP3_PREFIX_RE = /^https:\/\/op3\.dev\/e(?:,[^/]*)?\//;
 
 // Strip OP3 prefix from a URL, restoring the original URL
-function stripOp3Prefix(url: string): string {
+export function stripOp3Prefix(url: string): string {
   const stripped = url.replace(OP3_PREFIX_RE, '');
   // If the remaining URL doesn't start with a protocol, it was HTTPS
   if (!stripped.startsWith('http://') && !stripped.startsWith('https://')) {
@@ -44,8 +46,23 @@ const KNOWN_CHANNEL_KEYS = new Set([
   'podcast:funding',
   'podcast:publisher',
   'podcast:remoteItem',  // For publisher feeds
-  'podcast:txt'  // For npub and other txt tags
+  // 'podcast:txt' is deliberately absent. Listing it made every txt tag vanish on
+  // import (verification tokens included) when only the npub one is modelled;
+  // parseRssFeed consumes that one entry and the rest round-trip as unknown.
+  'podcast:image'
 ]);
+
+// Album and video feeds don't model channel-level remoteItems (a podroll), so
+// letting the key stay "known" for them meant it was neither parsed nor
+// preserved — parseRssFeed never reads it, and being in the set above excludes
+// it from unknownChannelElements. Since Download Feed is a parse→regenerate,
+// that deleted a publisher's podroll from their album feeds. Dropping the key
+// here lets it round-trip as an unknown element instead. The publisher path
+// keeps the full set: it parses these into feed.remoteItems and would otherwise
+// emit them twice.
+const ALBUM_CHANNEL_KEYS = new Set(
+  [...KNOWN_CHANNEL_KEYS].filter(key => key !== 'podcast:remoteItem')
+);
 
 // Known item keys that we explicitly parse (don't capture as unknown)
 const KNOWN_ITEM_KEYS = new Set([
@@ -60,21 +77,37 @@ const KNOWN_ITEM_KEYS = new Set([
   'podcast:season',
   'podcast:episode',
   'podcast:images',
+  'podcast:image',
   'podcast:transcript',
   'podcast:person',
   'podcast:value',
   'podcast:alternateEnclosure'
 ]);
 
+/**
+ * The one parser configuration every feed read uses. Exported so the import-time
+ * inspector (feedInspect.ts) sees exactly the tree the importer does.
+ *
+ * Values stay strings: number coercion is off for both text and attributes.
+ * With it on, fast-xml-parser rewrote anything number-shaped, and everything
+ * that round-trips through a passthrough came back changed on save — a
+ * `podcast:txt` token `0012345` as `12345`, a valueTimeSplit `itemGuid="0012345"`
+ * as `12345` (a different payment target), `5e10` as `50000000000`, a 23-digit
+ * id rounded to `1.2345678901234568e+22`. Modelled fields all go through
+ * getText/getAttr and parseInt, which read strings the same way.
+ */
+export const createFeedXmlParser = (): XMLParser => new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: '@_',
+  textNodeName: '#text',
+  parseAttributeValue: false,
+  parseTagValue: false,
+  trimValues: true
+});
+
 // Parse XML string to Album object
 export const parseRssFeed = (xmlString: string): Album => {
-  const parser = new XMLParser({
-    ignoreAttributes: false,
-    attributeNamePrefix: '@_',
-    textNodeName: '#text',
-    parseAttributeValue: true,
-    trimValues: true
-  });
+  const parser = createFeedXmlParser();
 
   const result = parser.parse(xmlString);
   const channel = result?.rss?.channel;
@@ -92,7 +125,7 @@ export const parseRssFeed = (xmlString: string): Album => {
     medium: (getText(channel['podcast:medium']) as 'music' | 'video') || 'music',
     bannerArtUrl: '',
     op3: false,
-    unknownChannelElements: captureUnknownElements(channel, KNOWN_CHANNEL_KEYS),
+    unknownChannelElements: captureUnknownElements(channel, ALBUM_CHANNEL_KEYS),
     tracks: []
   };
 
@@ -107,19 +140,13 @@ export const parseRssFeed = (xmlString: string): Album => {
     album.lockedOwner = getAttr(locked, 'owner') || '';
   }
 
-  // Categories - handle both content format and text attribute format
-  const categories = channel['itunes:category'];
-  if (categories) {
-    const catArray = Array.isArray(categories) ? categories : [categories];
-    album.categories = catArray.map(c => getText(c) || getAttr(c, 'text')).filter(Boolean) as string[];
-  }
+  // Categories (and subcategories) come from parseCommonChannelElements.
 
   // Keywords
   album.keywords = getText(channel['itunes:keywords']) || '';
 
   // Explicit
-  const explicitVal = channel['itunes:explicit'];
-  album.explicit = explicitVal === true || explicitVal === 'true' || getText(explicitVal) === 'true';
+  album.explicit = parseExplicit(channel['itunes:explicit']);
 
   // Owner
   const owner = channel['itunes:owner'];
@@ -169,20 +196,61 @@ export const parseRssFeed = (xmlString: string): Album => {
     album.publisher = parsePublisherReference(publisher);
   }
 
-  // Artist Npub (from podcast:txt with purpose="npub")
-  const txtTags = channel['podcast:txt'];
-  if (txtTags) {
-    const txtArray = Array.isArray(txtTags) ? txtTags : [txtTags];
-    for (const txt of txtArray) {
-      if (getAttr(txt, 'purpose') === 'npub') {
-        album.artistNpub = getText(txt) || '';
-        break;
-      }
+  // Some feeds point at their publisher with a bare channel-level
+  // <podcast:remoteItem medium="publisher"> and no <podcast:publisher> wrapper.
+  // That has to be *modelled*, not passed through as an unknown element: the
+  // Download Catalog flows overwrite album.publisher unconditionally after
+  // parsing, so a passed-through copy would be re-emitted alongside the
+  // <podcast:publisher> block the generator writes — two publisher references
+  // in a file we rewrote on the user's behalf. Podroll remoteItems (any other
+  // medium) still round-trip untouched via unknownChannelElements.
+  const channelRemoteItems = channel['podcast:remoteItem'];
+  const remoteItemArray = channelRemoteItems
+    ? (Array.isArray(channelRemoteItems) ? channelRemoteItems : [channelRemoteItems])
+    : [];
+  const podrollItems = remoteItemArray.filter(
+    item => getAttr(item, 'medium') !== 'publisher'
+  );
+  if (podrollItems.length !== remoteItemArray.length && !album.publisher) {
+    const publisherItem = remoteItemArray.find(
+      item => getAttr(item, 'medium') === 'publisher'
+    );
+    const feedGuid = getAttr(publisherItem, 'feedGuid');
+    const feedUrl = getAttr(publisherItem, 'feedUrl');
+    if (feedGuid || feedUrl) {
+      album.publisher = {
+        feedGuid: feedGuid || '',
+        feedUrl: feedUrl || undefined,
+        rel: getAttr(publisherItem, 'rel') || undefined
+      };
     }
   }
 
+  // Artist Npub (from podcast:txt with purpose="npub"). Only the first non-empty
+  // npub is modelled — the generator writes artistNpub back out — so only that
+  // entry leaves the passthrough below. Every other txt (verification tokens, a
+  // second npub, free text) round-trips untouched.
+  const txtTags = channel['podcast:txt'];
+  const txtArray: unknown[] = txtTags ? (Array.isArray(txtTags) ? txtTags : [txtTags]) : [];
+  const npubIndex = txtArray.findIndex(txt => getAttr(txt, 'purpose') === 'npub' && getText(txt));
+  if (npubIndex >= 0) {
+    album.artistNpub = getText(txtArray[npubIndex]);
+  }
+
   // Capture unknown channel elements
-  album.unknownChannelElements = captureUnknownElements(channel, KNOWN_CHANNEL_KEYS);
+  album.unknownChannelElements = captureUnknownElements(channel, ALBUM_CHANNEL_KEYS);
+
+  // Keep only the podroll entries in the passthrough. Any publisher-medium one
+  // was consumed into album.publisher just above, and the generator writes that
+  // back out as a <podcast:publisher> block — leaving it here too would emit it
+  // twice.
+  album.unknownChannelElements = keepPassthrough(album.unknownChannelElements, 'podcast:remoteItem', podrollItems);
+  // Same rule for the npub txt consumed into artistNpub.
+  album.unknownChannelElements = keepPassthrough(
+    album.unknownChannelElements,
+    'podcast:txt',
+    txtArray.filter((_, i) => i !== npubIndex)
+  );
 
   // Tracks
   const items = channel.item;
@@ -226,6 +294,48 @@ function getAttr(node: unknown, attr: string): string {
   return '';
 }
 
+// Read <atom:link rel="self" href="..."> — the URL a feed claims to live at.
+// Not added to KNOWN_CHANNEL_KEYS on purpose: the element still round-trips
+// through unknownChannelElements, this only reads it.
+function parseSelfLink(channel: unknown): string {
+  if (!channel || typeof channel !== 'object') return '';
+  const raw = (channel as Record<string, unknown>)['atom:link'];
+  if (!raw) return '';
+  const links = Array.isArray(raw) ? raw : [raw];
+  for (const link of links) {
+    if (getAttr(link, 'rel') !== 'self') continue;
+    const href = getAttr(link, 'href');
+    if (href.startsWith('http')) return href;
+  }
+  return '';
+}
+
+// Parse all <podcast:image> elements under a channel or item node into PodcastImage[].
+function parsePodcastImages(parent: unknown): PodcastImage[] {
+  if (!parent || typeof parent !== 'object') return [];
+  const raw = (parent as Record<string, unknown>)['podcast:image'];
+  if (!raw) return [];
+  const arr = Array.isArray(raw) ? raw : [raw];
+  return arr
+    .map((node): PodcastImage => {
+      const image: PodcastImage = { href: getAttr(node, 'href') };
+      const purpose = getAttr(node, 'purpose');
+      const alt = getAttr(node, 'alt');
+      const aspectRatio = getAttr(node, 'aspect-ratio');
+      const width = getAttr(node, 'width');
+      const height = getAttr(node, 'height');
+      const type = getAttr(node, 'type');
+      if (purpose) image.purpose = purpose;
+      if (alt) image.alt = alt;
+      if (aspectRatio) image.aspectRatio = aspectRatio;
+      if (width) image.width = parseInt(width) || undefined;
+      if (height) image.height = parseInt(height) || undefined;
+      if (type) image.type = type;
+      return image;
+    })
+    .filter(img => img.href);
+}
+
 // Capture unknown elements from a parsed XML object
 function captureUnknownElements(obj: Record<string, unknown>, knownKeys: Set<string>): Record<string, unknown> | undefined {
   const unknown: Record<string, unknown> = {};
@@ -242,11 +352,67 @@ function captureUnknownElements(obj: Record<string, unknown>, knownKeys: Set<str
   return Object.keys(unknown).length > 0 ? unknown : undefined;
 }
 
+/**
+ * Leave only `remaining` under `key` in a passthrough map — the entries the caller
+ * did NOT consume into a modelled field. An element is either modelled or passed
+ * through, never both: the generator writes the modelled one back out, so leaving
+ * it here as well would emit it twice. Returns undefined once the map is empty,
+ * matching captureUnknownElements.
+ */
+function keepPassthrough(
+  elements: Record<string, unknown> | undefined,
+  key: string,
+  remaining: unknown[]
+): Record<string, unknown> | undefined {
+  if (!elements || !(key in elements)) return elements;
+  if (remaining.length > 0) {
+    elements[key] = remaining.length === 1 ? remaining[0] : remaining;
+  } else {
+    delete elements[key];
+  }
+  return Object.keys(elements).length > 0 ? elements : undefined;
+}
+
+// itunes:explicit is "true"/"false" today. Apple's older vocabulary was "yes" /
+// "explicit" against "no" / "clean", and reading only "true" turned every legacy
+// explicit feed clean on import.
+function parseExplicit(node: unknown): boolean {
+  if (node === true) return true;
+  if (typeof node === 'boolean') return false;
+  const value = getText(node).trim().toLowerCase();
+  return value === 'true' || value === 'yes' || value === 'explicit';
+}
+
+// <itunes:category> in both shapes — the text attribute (spec form) or element
+// text — with nested subcategories kept, keyed by their parent's name.
+function parseCategories(node: unknown): { categories: string[]; subcategories?: Record<string, string[]> } {
+  if (!node) return { categories: [] };
+  const nodes = Array.isArray(node) ? node : [node];
+  const categories: string[] = [];
+  const subcategories: Record<string, string[]> = {};
+  for (const category of nodes) {
+    const name = getAttr(category, 'text') || getText(category);
+    if (!name) continue;
+    categories.push(name);
+    const nested = typeof category === 'object' && category !== null
+      ? (category as Record<string, unknown>)['itunes:category']
+      : undefined;
+    if (!nested) continue;
+    const subs = (Array.isArray(nested) ? nested : [nested])
+      .map(sub => getAttr(sub, 'text') || getText(sub))
+      .filter(Boolean);
+    // hasOwn, not `??`: a category named "constructor" would otherwise read Object's.
+    if (subs.length > 0) subcategories[name] = [...(Object.hasOwn(subcategories, name) ? subcategories[name] : []), ...subs];
+  }
+  return Object.keys(subcategories).length > 0 ? { categories, subcategories } : { categories };
+}
+
 // Intermediate type for parsing a single person tag (has one role)
 interface ParsedPersonTag {
   name: string;
   href?: string;
   img?: string;
+  npub?: string;
   group: PersonGroup;
   role: string;
 }
@@ -259,6 +425,7 @@ function parsePersonTag(node: unknown): ParsedPersonTag | null {
     name: getText(node),
     href: getAttr(node, 'href') || undefined,
     img: getAttr(node, 'img') || undefined,
+    npub: getAttr(node, 'npub') || undefined,
     group: (getAttr(node, 'group') || 'music') as PersonGroup,
     role: getAttr(node, 'role') || 'band'
   };
@@ -269,8 +436,8 @@ function mergePersonTags(tags: ParsedPersonTag[]): Person[] {
   const personMap = new Map<string, Person>();
 
   for (const tag of tags) {
-    // Create a key based on name + href + img to group same person
-    const key = `${tag.name}|${tag.href || ''}|${tag.img || ''}`;
+    // Create a key based on name + href + img + npub to group same person
+    const key = `${tag.name}|${tag.href || ''}|${tag.img || ''}|${tag.npub || ''}`;
 
     if (personMap.has(key)) {
       // Add role to existing person
@@ -287,6 +454,7 @@ function mergePersonTags(tags: ParsedPersonTag[]): Person[] {
         name: tag.name,
         href: tag.href,
         img: tag.img,
+        npub: tag.npub,
         roles: [{ group: tag.group, role: tag.role }]
       });
     }
@@ -319,26 +487,60 @@ function parseFunding(node: unknown): Funding | null {
 function parseRecipient(node: unknown): ValueRecipient | null {
   if (!node) return null;
 
+  // Derive the type from the address rather than trusting the XML's `type`
+  // attribute: older tools (e.g. the original musicsideproject.com) only knew
+  // about Lightning nodes and wrote type="node" even for Lightning addresses.
+  // An address containing "@" is always a Lightning address. This mirrors the
+  // auto-detection the editor UI applies on manual edit (RecipientsList.tsx).
+  const address = getAttr(node, 'address') || '';
+  const split = parseInt(getAttr(node, 'split')) || 0;
+
+  // Migrate the legacy MSP 1.0 support node to the MSP 2.0 lnaddress identity,
+  // preserving the split so support payments keep flowing after import. Match
+  // on the pubkey (unique, unforgeable) — not the name, which a user may rename.
+  if (address.toLowerCase() === LEGACY_MSP_NODE_PUBKEY) {
+    return {
+      name: MSP_SUPPORT_RECIPIENT.name,
+      address: MSP_SUPPORT_RECIPIENT.address,
+      split,
+      type: 'lnaddress'
+    };
+  }
+
+  const isFee = getAttr(node, 'fee').toLowerCase() === 'true';
+
   return {
     name: getAttr(node, 'name') || '',
-    address: getAttr(node, 'address') || '',
-    split: parseInt(getAttr(node, 'split')) || 0,
-    type: (getAttr(node, 'type') || 'node') as 'node' | 'lnaddress',
+    address,
+    split,
+    type: address ? detectAddressType(address) : 'node',
     customKey: getAttr(node, 'customKey') || undefined,
-    customValue: getAttr(node, 'customValue') || undefined
+    customValue: getAttr(node, 'customValue') || undefined,
+    ...(isFee ? { fee: true } : {})
   };
 }
+
+// '#text' too, or a block with stray text would hand the generator a '#text' key
+// to emit as an element.
+const VALUE_BLOCK_KNOWN_KEYS = new Set(['podcast:valueRecipient', '#text']);
 
 // Parse value block
 function parseValueBlock(node: unknown): ValueBlock {
   const recipients = (node as Record<string, unknown>)?.['podcast:valueRecipient'];
   const recipientArray = recipients ? (Array.isArray(recipients) ? recipients : [recipients]) : [];
+  // Everything else inside the block (<podcast:valueTimeSplit>) is carried through.
+  // An array means the feed has several value blocks; there is no single block to
+  // carry, and capturing its indexes would emit <0> and <1> elements.
+  const unknownElements = node && typeof node === 'object' && !Array.isArray(node)
+    ? captureUnknownElements(node as Record<string, unknown>, VALUE_BLOCK_KNOWN_KEYS)
+    : undefined;
 
   return {
     type: 'lightning',
     method: 'keysend',
     suggested: getAttr(node, 'suggested') || undefined,
-    recipients: recipientArray.map(parseRecipient).filter(Boolean) as ValueRecipient[]
+    recipients: recipientArray.map(parseRecipient).filter(Boolean) as ValueRecipient[],
+    ...(unknownElements ? { unknownElements } : {})
   };
 }
 
@@ -434,19 +636,13 @@ function parseCommonChannelElements(channel: Record<string, unknown>): Omit<Base
   const lockedOwner = lockedNode ? getAttr(lockedNode, 'owner') || '' : '';
 
   // Categories
-  const categoriesNode = channel['itunes:category'];
-  let categories: string[] = [];
-  if (categoriesNode) {
-    const catArray = Array.isArray(categoriesNode) ? categoriesNode : [categoriesNode];
-    categories = catArray.map(c => getAttr(c, 'text')).filter(Boolean) as string[];
-  }
+  const { categories, subcategories } = parseCategories(channel['itunes:category']);
 
   // Keywords
   const keywords = getText(channel['itunes:keywords']) || '';
 
   // Explicit
-  const explicitVal = channel['itunes:explicit'];
-  const explicit = explicitVal === true || explicitVal === 'true' || getText(explicitVal) === 'true';
+  const explicit = parseExplicit(channel['itunes:explicit']);
 
   // Owner
   const owner = channel['itunes:owner'];
@@ -500,6 +696,7 @@ function parseCommonChannelElements(channel: Record<string, unknown>): Omit<Base
     locked,
     lockedOwner,
     categories,
+    ...(subcategories ? { subcategories } : {}),
     keywords,
     explicit,
     ownerName,
@@ -508,6 +705,7 @@ function parseCommonChannelElements(channel: Record<string, unknown>): Omit<Base
     imageTitle,
     imageLink,
     imageDescription,
+    podcastImages: parsePodcastImages(channel),
     managingEditor,
     webMaster,
     persons,
@@ -531,26 +729,51 @@ function parseRemoteItem(node: unknown): RemoteItem | null {
     feedUrl: feedUrl || undefined,
     itemGuid: getAttr(node, 'itemGuid') || undefined,
     medium: getAttr(node, 'medium') || undefined,
-    title: getText(node) || undefined,
-    image: getAttr(node, 'feedImg') || getAttr(node, 'image') || undefined
+    // The spec defines title as an ATTRIBUTE and the element as self-closing.
+    // Reading only the element text meant every conforming publisher feed —
+    // Fountain's among them — imported with no titles at all. The text fallback
+    // stays for feeds MSP itself wrote before the generator was corrected.
+    title: getAttr(node, 'title') || getText(node) || undefined,
+    image: getAttr(node, 'feedImg') || getAttr(node, 'image') || undefined,
+    // Read so that a parse→regenerate (Download Feed, processCatalogFeed) keeps
+    // the role a feed states instead of silently dropping it.
+    rel: getAttr(node, 'rel') || undefined
   };
 }
 
-// Parse publisher reference (for albums that belong to a publisher)
+/**
+ * Parse a publisher reference (for albums that belong to a publisher).
+ *
+ * The spec form is a <podcast:publisher> wrapping exactly one
+ * <podcast:remoteItem medium="publisher">, and that is what the generator emits.
+ * Two malformed shapes also occur in the wild and both used to return undefined
+ * — which silently *deleted* them, because 'podcast:publisher' is in
+ * KNOWN_CHANNEL_KEYS and so is excluded from unknownChannelElements too. Since
+ * the Download Feed flow is a parse→regenerate, that lost the tag outright.
+ * Reading them here normalizes all three to the canonical form on output.
+ */
 function parsePublisherReference(node: unknown): PublisherReference | undefined {
   if (!node) return undefined;
 
   const publisherNode = node as Record<string, unknown>;
-  const remoteItem = publisherNode['podcast:remoteItem'];
+  const raw = publisherNode['podcast:remoteItem'];
 
-  if (remoteItem) {
-    const feedGuid = getAttr(remoteItem, 'feedGuid');
-    const feedUrl = getAttr(remoteItem, 'feedUrl');
+  // fast-xml-parser returns an array when the child repeats, and getAttr returns
+  // '' for an array — so more than one remoteItem used to drop the publisher
+  // entirely. The spec allows exactly one; take the first usable entry.
+  const candidates: unknown[] = raw ? (Array.isArray(raw) ? raw : [raw]) : [];
+  // Attributes written directly on <podcast:publisher> with no child element.
+  // Out of spec, but reading it beats discarding the user's data.
+  candidates.push(publisherNode);
 
+  for (const candidate of candidates) {
+    const feedGuid = getAttr(candidate, 'feedGuid');
+    const feedUrl = getAttr(candidate, 'feedUrl');
     if (feedGuid || feedUrl) {
       return {
         feedGuid: feedGuid || '',
-        feedUrl: feedUrl || undefined
+        feedUrl: feedUrl || undefined,
+        rel: getAttr(candidate, 'rel') || undefined
       };
     }
   }
@@ -577,8 +800,11 @@ function parseTrack(node: unknown, trackNumber: number, albumValue: ValueBlock, 
   const enclosure = item.enclosure;
   if (enclosure) {
     track.enclosureUrl = getAttr(enclosure, 'url') || '';
-    const length = getAttr(enclosure, 'length');
-    track.enclosureLength = (length && length !== '0') ? length : '';
+    // Only keep a length that could plausibly be a real file. `0` and generator
+    // placeholders (MSP itself long wrote a literal `33` for every track) are dropped
+    // so the size gets re-measured from the host instead of propagating a wrong number.
+    const length = parseInt(getAttr(enclosure, 'length') || '', 10);
+    track.enclosureLength = Number.isFinite(length) && length >= MIN_PLAUSIBLE_MEDIA_BYTES ? String(length) : '';
     track.enclosureType = getAttr(enclosure, 'type') || 'audio/mpeg';
   }
 
@@ -600,8 +826,7 @@ function parseTrack(node: unknown, trackNumber: number, albumValue: ValueBlock, 
   }
 
   // Explicit
-  const trackExplicit = item['itunes:explicit'];
-  track.explicit = trackExplicit === true || trackExplicit === 'true' || getText(trackExplicit) === 'true';
+  track.explicit = parseExplicit(item['itunes:explicit']);
 
   // Track image (check itunes:image first, then podcast:images as fallback)
   const itunesImage = item['itunes:image'];
@@ -624,11 +849,15 @@ function parseTrack(node: unknown, trackNumber: number, albumValue: ValueBlock, 
     if (height) track.trackArtHeight = parseInt(height) || undefined;
   }
 
+  // Podcasting 2.0 additional images
+  track.podcastImages = parsePodcastImages(item);
+
   // Transcript
   const transcript = item['podcast:transcript'];
   if (transcript) {
     track.transcriptUrl = getAttr(transcript, 'url') || '';
-    track.transcriptType = getAttr(transcript, 'type') || 'application/srt';
+    // Fallback only — a feed that states its own type keeps it verbatim.
+    track.transcriptType = getAttr(transcript, 'type') || DEFAULT_TRANSCRIPT_TYPE;
   }
 
   // Persons - only set override if different from album
@@ -660,87 +889,118 @@ function parseTrack(node: unknown, trackNumber: number, albumValue: ValueBlock, 
 // Check if URL is an MSP-hosted feed
 const isMspUrl = (url: string): boolean => {
   return url.includes('/api/hosted/') ||
+    url.includes('musicsideproject.com') ||
     url.includes('msp.podtards.com') ||
     url.includes('msp-2-0');
 };
 
-// Fetch XML from URL (with CORS proxy fallback)
+/** Carries the real reason a fetch failed, so callers can say something true. */
+export class FeedFetchError extends Error {
+  // Declared as fields rather than constructor parameter properties:
+  // erasableSyntaxOnly is enabled in tsconfig.
+  readonly code: string;
+  readonly status?: number;
+
+  constructor(message: string, code: string, status?: number) {
+    super(message);
+    this.name = 'FeedFetchError';
+    this.code = code;
+    this.status = status;
+  }
+}
+
+const FETCH_ACCEPT = 'application/rss+xml, application/xml, text/xml, */*';
+const PASTE_HINT = ' You can also paste the XML content directly.';
+
+/**
+ * Mirrors the ErrorCode union in api/proxy-feed.ts. An unknown code falls back
+ * to the server's own `error` string, so adding a code server-side degrades to a
+ * usable message rather than a wrong one.
+ */
+const CODE_MESSAGES: Record<string, string> = {
+  'not-found': "That URL didn't load — the host returned 404 Not Found.",
+  blocked:
+    'The host refused our request. Bot protection (on Cloudflare: Security → Bots) may be blocking it — Podcast Index would be blocked the same way.',
+  'not-a-feed':
+    "That URL loaded, but it isn't an RSS feed. Check you copied the feed URL rather than a web page.",
+  'too-large':
+    'That feed is too large to fetch through MSP. Download the XML and import it as a file instead.',
+  'unsafe-address': 'That address is not one MSP can fetch. Use a public URL.',
+  'invalid-url': "That doesn't look like a valid feed URL.",
+  'rate-limited': "You've imported a lot of feeds recently. Wait a few minutes and try again.",
+  timeout: "That URL didn't respond in time.",
+  network: "Couldn't connect to that address.",
+  'too-many-redirects': 'That URL redirects too many times.',
+  'upstream-error': "That URL didn't load — the host returned an error."
+};
+
+const looksLikeFeed = (xml: string): boolean =>
+  xml.includes('<rss') || xml.includes('<feed') || xml.includes('<channel');
+
+/**
+ * Optimisation only. Works when the host sends CORS headers; most self-hosted
+ * feeds don't. Its failure is not evidence about the feed — a CORS rejection is
+ * a bare TypeError — so it never produces the user-facing error.
+ */
+async function fetchDirect(url: string): Promise<string | null> {
+  try {
+    const response = await fetch(url, { headers: { Accept: FETCH_ACCEPT } });
+    if (!response.ok) return null;
+    const content = await response.text();
+    return looksLikeFeed(content) ? content : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The authoritative attempt: throws a FeedFetchError carrying the real reason. */
+async function fetchViaProxy(url: string): Promise<string> {
+  let response: Response;
+  try {
+    response = await fetch(`/api/proxy-feed?url=${encodeURIComponent(url)}`, {
+      headers: { Accept: FETCH_ACCEPT }
+    });
+  } catch {
+    throw new FeedFetchError('Could not reach MSP to fetch that feed.' + PASTE_HINT, 'network');
+  }
+
+  if (response.ok) {
+    const content = await response.text();
+    if (looksLikeFeed(content)) return content;
+    throw new FeedFetchError(CODE_MESSAGES['not-a-feed'] + PASTE_HINT, 'not-a-feed');
+  }
+
+  const body = (await response.json().catch(() => null)) as
+    | { error?: string; code?: string; status?: number }
+    | null;
+  const code = body?.code ?? 'upstream-error';
+  const message = CODE_MESSAGES[code] ?? body?.error ?? CODE_MESSAGES['upstream-error'];
+  throw new FeedFetchError(message + PASTE_HINT, code, body?.status ?? response.status);
+}
+
+/**
+ * Fetch a feed's XML, going through /api/proxy-feed to sidestep CORS.
+ *
+ * Exactly one attempt is authoritative for the error. This used to loop over
+ * four transports — direct, our proxy, allorigins.win and corsproxy.io —
+ * `continue`-ing past every failure, so the only thing it could ever report was
+ * a generic "paste the XML directly". The two public proxies are gone for three
+ * independent reasons: they leak every user's feed URL to a third party,
+ * corsproxy.io requires an API key so that entry always failed, and allorigins
+ * wraps the body in JSON that was unwrapped heuristically, which could mangle a
+ * feed. Our own proxy no longer has a domain allowlist, so they cover nothing.
+ */
 export const fetchFeedFromUrl = async (url: string): Promise<string> => {
-  // For MSP feeds, try our own proxy first to avoid CORS issues
-  if (isMspUrl(url)) {
-    try {
-      const proxyUrl = `/api/proxy-feed?url=${encodeURIComponent(url)}`;
-      const response = await fetch(proxyUrl, {
-        headers: {
-          'Accept': 'application/rss+xml, application/xml, text/xml, */*'
-        }
-      });
+  // MSP-hosted feeds go through the proxy first: on a preview deploy the app and
+  // the canonical hosted URL are different origins, so direct always CORS-fails.
+  if (isMspUrl(url)) return fetchViaProxy(url);
 
-      if (response.ok) {
-        const content = await response.text();
-        if (content.includes('<rss') || content.includes('<channel')) {
-          return content;
-        }
-      }
-    } catch {
-      // Fall through to other methods
-    }
-  }
-
-  const corsProxies = [
-    '', // Try direct first
-    '/api/proxy-feed?url=', // Our own proxy
-    'https://api.allorigins.win/get?url=',
-    'https://corsproxy.io/?'
-  ];
-
-  for (const proxy of corsProxies) {
-    try {
-      const fetchUrl = proxy
-        ? `${proxy}${encodeURIComponent(url)}`
-        : url;
-
-      const response = await fetch(fetchUrl, {
-        headers: {
-          'Accept': 'application/rss+xml, application/xml, text/xml, */*'
-        }
-      });
-
-      if (!response.ok) continue;
-
-      let content = await response.text();
-
-      // Handle allorigins wrapper
-      if (proxy.includes('allorigins.win')) {
-        try {
-          const data = JSON.parse(content);
-          content = data.contents || content;
-        } catch {
-          // Not JSON, use as-is
-        }
-      }
-
-      // Validate it's XML
-      if (content.includes('<rss') || content.includes('<channel')) {
-        return content;
-      }
-    } catch {
-      continue;
-    }
-  }
-
-  throw new Error('Failed to fetch feed from URL. Please paste the XML content directly.');
+  return (await fetchDirect(url)) ?? (await fetchViaProxy(url));
 };
 
 // Detect if XML is a video feed based on medium tag
 export const isVideoFeed = (xmlString: string): boolean => {
-  const parser = new XMLParser({
-    ignoreAttributes: false,
-    attributeNamePrefix: '@_',
-    textNodeName: '#text',
-    parseAttributeValue: true,
-    trimValues: true
-  });
+  const parser = createFeedXmlParser();
 
   try {
     const result = parser.parse(xmlString);
@@ -756,13 +1016,7 @@ export const isVideoFeed = (xmlString: string): boolean => {
 
 // Detect if XML is a publisher feed based on medium tag
 export const isPublisherFeed = (xmlString: string): boolean => {
-  const parser = new XMLParser({
-    ignoreAttributes: false,
-    attributeNamePrefix: '@_',
-    textNodeName: '#text',
-    parseAttributeValue: true,
-    trimValues: true
-  });
+  const parser = createFeedXmlParser();
 
   try {
     const result = parser.parse(xmlString);
@@ -778,13 +1032,7 @@ export const isPublisherFeed = (xmlString: string): boolean => {
 
 // Parse XML string to PublisherFeed object
 export const parsePublisherRssFeed = (xmlString: string): PublisherFeed => {
-  const parser = new XMLParser({
-    ignoreAttributes: false,
-    attributeNamePrefix: '@_',
-    textNodeName: '#text',
-    parseAttributeValue: true,
-    trimValues: true
-  });
+  const parser = createFeedXmlParser();
 
   const result = parser.parse(xmlString);
   const channel = result?.rss?.channel;
@@ -796,13 +1044,21 @@ export const parsePublisherRssFeed = (xmlString: string): PublisherFeed => {
   // Parse common channel elements
   const common = parseCommonChannelElements(channel);
 
-  // Create publisher feed with common elements
+  // Create publisher feed with common elements (podcastImages comes via ...common)
   const feed: PublisherFeed = {
     ...common,
     medium: 'publisher',
     unknownChannelElements: captureUnknownElements(channel, KNOWN_CHANNEL_KEYS),
     remoteItems: []
   };
+
+  // A feed imported from a file/paste has no import URL, so fall back to the URL
+  // the feed claims for itself. Overridden by the real import URL in handleImport
+  // when there is one.
+  const selfLink = parseSelfLink(channel);
+  if (selfLink) {
+    feed.sourceUrl = selfLink;
+  }
 
   // Remote items (the feeds this publisher owns)
   const remoteItems = channel['podcast:remoteItem'];

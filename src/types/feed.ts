@@ -29,6 +29,7 @@ export interface Person {
   name: string;
   href?: string;
   img?: string;
+  npub?: string;
   roles: PersonRole[];
 }
 
@@ -39,6 +40,10 @@ export interface ValueRecipient {
   type: 'node' | 'lnaddress';
   customKey?: string;
   customValue?: string;
+  // Spec attribute: this split is a fee and is not subject to the proportional
+  // sharing of the others. MSP has no editor for it — it is kept so an imported
+  // feed's fee recipient survives a re-save.
+  fee?: boolean;
 }
 
 export interface ValueBlock {
@@ -46,6 +51,9 @@ export interface ValueBlock {
   method: 'keysend';
   suggested?: string;
   recipients: ValueRecipient[];
+  // Children of <podcast:value> other than recipients — <podcast:valueTimeSplit>
+  // in practice. Not edited, only carried through so a re-save keeps them.
+  unknownElements?: Record<string, unknown>;
 }
 
 export interface Funding {
@@ -61,6 +69,9 @@ export interface RemoteItem {
   medium?: string;
   title?: string;
   image?: string;
+  // The publisher's role, e.g. "artist" or "label". Not in the spec yet — see
+  // utils/publisherRole.ts. Absent means not stated.
+  rel?: string;
 }
 
 // Alternate enclosure types (podcast:alternateEnclosure)
@@ -89,6 +100,50 @@ export interface AlternateEnclosure {
   integrity?: AlternateEnclosureIntegrity;
 }
 
+// Podcasting 2.0 additional images (<podcast:image>). These are EXTRA images
+// (banner/canvas/social/etc.) — the primary cover stays in imageUrl/trackArtUrl.
+export interface PodcastImage {
+  href: string;          // required
+  purpose?: string;      // space-separated tokens, e.g. "canvas" or "artwork social"
+  alt?: string;
+  aspectRatio?: string;  // CSS ratio syntax, e.g. "16/9", "1/1"
+  width?: number;
+  height?: number;
+  type?: string;         // MIME, e.g. "image/jpeg"
+}
+
+// Suggested purpose tokens (open list per the spec). Single source of truth for the UI dropdown.
+export const PODCAST_IMAGE_PURPOSES: { value: string; label: string; description: string }[] = [
+  { value: 'artwork', label: 'Artwork', description: 'Alternate square (1:1) cover' },
+  { value: 'banner', label: 'Banner', description: 'Wide hero image (~4:1 or 3:1)' },
+  { value: 'canvas', label: 'Canvas', description: 'Full-screen Now Playing background (9:16 phone, 16:9 desktop)' },
+  { value: 'social', label: 'Social', description: 'Social preview / share card (~1.91:1, e.g. 1200×630)' },
+  { value: 'publisher', label: 'Publisher', description: 'Publisher / label logo (square 1:1)' },
+  { value: 'circular', label: 'Circular', description: 'Cropped to a circle — use square (1:1)' },
+  { value: 'poster', label: 'Poster', description: 'Static video thumbnail (16:9)' },
+];
+
+/**
+ * MIME types the Podcasting 2.0 spec lists for <podcast:transcript>, which is
+ * what MSP writes for a track's lyrics file. Single source of truth for the UI
+ * dropdown.
+ *
+ * Note SubRip is `application/x-subrip` in the spec. MSP defaulted to
+ * `application/srt` for a long time, which is not a spec value; the default
+ * below is the correct one, but nothing rewrites the type on feeds that already
+ * carry the old string — an existing file still plays, and silently changing a
+ * user's feed under them would be worse than an unusual MIME type.
+ */
+export const TRANSCRIPT_TYPES: { value: string; label: string }[] = [
+  { value: 'application/x-subrip', label: 'SubRip (.srt)' },
+  { value: 'text/vtt', label: 'WebVTT (.vtt)' },
+  { value: 'application/json', label: 'Podcasting 2.0 JSON (.json)' },
+  { value: 'text/plain', label: 'Plain text (.txt)' },
+  { value: 'text/html', label: 'HTML (.html)' },
+];
+
+export const DEFAULT_TRANSCRIPT_TYPE = 'application/x-subrip';
+
 // Base channel data shared between Album and PublisherFeed
 export interface BaseChannelData {
   title: string;
@@ -103,6 +158,9 @@ export interface BaseChannelData {
   locked: boolean;
   lockedOwner: string;
   categories: string[];
+  // Nested <itunes:category> children, keyed by their parent category name.
+  // No editor UI — carried through from import so a re-save keeps them.
+  subcategories?: Record<string, string[]>;
   keywords: string;
   explicit: boolean;
   ownerName: string;
@@ -116,6 +174,7 @@ export interface BaseChannelData {
   persons: Person[];
   value: ValueBlock;
   funding: Funding[];
+  podcastImages?: PodcastImage[];
   unknownChannelElements?: Record<string, unknown>;
 }
 
@@ -123,6 +182,9 @@ export interface BaseChannelData {
 export interface PublisherReference {
   feedGuid: string;
   feedUrl?: string;
+  // Same value as the rel on this album's entry in the publisher feed — see
+  // utils/publisherRole.ts. Absent means not stated.
+  rel?: string;
 }
 
 export interface Track {
@@ -143,7 +205,9 @@ export interface Track {
   trackArtWidth?: number;
   trackArtHeight?: number;
   bannerArtUrl?: string;
+  podcastImages?: PodcastImage[];
   transcriptUrl?: string;
+  /** MIME type for <podcast:transcript>. See TRANSCRIPT_TYPES. */
   transcriptType?: string;
   overridePersons: boolean;
   persons: Person[];
@@ -173,6 +237,7 @@ export interface Album {
 
   // iTunes
   categories: string[];
+  subcategories?: Record<string, string[]>;
   keywords: string;
   explicit: boolean;
   ownerName: string;
@@ -184,6 +249,7 @@ export interface Album {
   imageLink: string;
   imageDescription: string;
   bannerArtUrl: string;
+  podcastImages?: PodcastImage[];
 
   // Contact
   managingEditor: string;
@@ -231,6 +297,7 @@ export interface PublisherFeed {
 
   // iTunes
   categories: string[];
+  subcategories?: Record<string, string[]>;
   keywords: string;
   explicit: boolean;
   ownerName: string;
@@ -241,6 +308,7 @@ export interface PublisherFeed {
   imageTitle: string;
   imageLink: string;
   imageDescription: string;
+  podcastImages?: PodcastImage[];
 
   // Contact
   managingEditor: string;
@@ -280,8 +348,9 @@ export const createEmptyTrack = (trackNumber: number, enclosureType: string = 'a
   explicit: false,
   trackArtUrl: '',
   bannerArtUrl: '',
+  podcastImages: [],
   transcriptUrl: '',
-  transcriptType: 'application/srt',
+  transcriptType: DEFAULT_TRANSCRIPT_TYPE,
   overridePersons: false,
   persons: [],
   overrideValue: false,
@@ -299,22 +368,85 @@ export const createEmptyRecipient = (): ValueRecipient => ({
   type: 'lnaddress'
 });
 
+// The MSP 2.0 support split that new feeds get: the musicsideproject sub-wallet
+// on Chad's node.
+export const MSP_SUPPORT_RECIPIENT = { name: 'MSP 2.0', address: 'musicsideproject@getalby.com' } as const;
+
 // Support recipients (MSP 2.0 and Podcast Index)
 export const COMMUNITY_SUPPORT_RECIPIENTS = [
-  { name: 'MSP 2.0', address: 'chadf@getalby.com' },
+  { name: MSP_SUPPORT_RECIPIENT.name, address: MSP_SUPPORT_RECIPIENT.address },
   { name: 'Podcastindex.org', address: 'podcastindex@getalby.com' },
 ];
 
 export const createSupportRecipients = (): ValueRecipient[] => [
-  { name: 'MSP 2.0', address: 'chadf@getalby.com', split: 1, type: 'lnaddress' },
+  { name: MSP_SUPPORT_RECIPIENT.name, address: MSP_SUPPORT_RECIPIENT.address, split: 1, type: 'lnaddress' },
   { name: 'Podcastindex.org', address: 'podcastindex@getalby.com', split: 1, type: 'lnaddress' },
 ];
 
+// Legacy MSP 1.0 support node. Feeds created by the original musicsideproject.com
+// paid this Lightning *node* pubkey; on import we migrate it to the MSP 2.0
+// lnaddress identity (preserving the split) so support payments keep flowing.
+export const LEGACY_MSP_NODE_PUBKEY =
+  '035ad2c954e264004986da2d9499e1732e5175e1dcef2453c921c6cdcc3536e9d8';
+
+// Feeds made before the switch to the sub-wallet pay MSP 2.0 at chadf@getalby.com.
+// Both addresses reach MSP, so that split stays as it is — but it must still count
+// as support, or the editor lists it as the artist's own split and offers to add a
+// second MSP split beside it.
+const PREVIOUS_MSP_SUPPORT_RECIPIENT = { name: 'MSP 2.0', address: 'chadf@getalby.com' };
+
 export const isCommunitySupport = (r: ValueRecipient): boolean =>
-  COMMUNITY_SUPPORT_RECIPIENTS.some(cs => cs.name === r.name && cs.address === r.address);
+  [...COMMUNITY_SUPPORT_RECIPIENTS, PREVIOUS_MSP_SUPPORT_RECIPIENT]
+    .some(cs => cs.name === r.name && cs.address === r.address);
 
 export const hasUserRecipients = (recipients: ValueRecipient[]): boolean =>
   recipients.some(r => r.address && !isCommunitySupport(r));
+
+// Value blocks are kept at a 100% total, with the single personal recipient
+// absorbing whatever the community-support splits add up to.
+const SPLIT_TOTAL = 100;
+
+const sumSupportSplits = (recipients: ValueRecipient[]): number =>
+  recipients.filter(isCommunitySupport).reduce((sum, r) => sum + (r.split || 0), 0);
+
+const personalIndices = (recipients: ValueRecipient[]): number[] =>
+  recipients.reduce<number[]>((acc, r, i) => {
+    if (r.address && !isCommunitySupport(r)) acc.push(i);
+    return acc;
+  }, []);
+
+// Behavior 1: when a personal recipient's address is a Lightning address and its
+// split is still unset, default it to 100 minus the support splits (98 with the
+// standard MSP 1 + Podcast Index 1). Only fills a blank split, so a manually
+// entered value is never overwritten; node-pubkey recipients are left untouched.
+export const fillPersonalSplitDefault = (
+  recipients: ValueRecipient[],
+  editedIndex: number
+): ValueRecipient[] => {
+  const edited = recipients[editedIndex];
+  if (!edited || isCommunitySupport(edited)) return recipients;
+  if (edited.type !== 'lnaddress' || !edited.address) return recipients;
+  if (edited.split) return recipients; // don't clobber a value the user set
+  // Only default the split when this is the one and only personal recipient —
+  // with several, the musician is apportioning splits by hand.
+  const personal = personalIndices(recipients);
+  if (personal.length !== 1 || personal[0] !== editedIndex) return recipients;
+  const target = Math.max(0, SPLIT_TOTAL - sumSupportSplits(recipients));
+  return recipients.map((r, i) => (i === editedIndex ? { ...r, split: target } : r));
+};
+
+// Behavior 2: after a community-support split is edited or a support recipient is
+// removed, keep the total at 100 by pushing the remainder onto the personal
+// recipient — but only when there's exactly one, so manual multi-recipient
+// (e.g. band) splits are left alone.
+export const rebalancePersonalForSupport = (
+  recipients: ValueRecipient[]
+): ValueRecipient[] => {
+  const personal = personalIndices(recipients);
+  if (personal.length !== 1) return recipients;
+  const target = Math.max(0, SPLIT_TOTAL - sumSupportSplits(recipients));
+  return recipients.map((r, i) => (i === personal[0] ? { ...r, split: target } : r));
+};
 
 // Default empty album
 export const createEmptyAlbum = (): Album => ({
@@ -341,6 +473,7 @@ export const createEmptyAlbum = (): Album => ({
   imageLink: '',
   imageDescription: '',
   bannerArtUrl: '',
+  podcastImages: [],
   managingEditor: '',
   webMaster: '',
   persons: [],
@@ -380,6 +513,7 @@ export const createEmptyVideoAlbum = (): Album => ({
   imageLink: '',
   imageDescription: '',
   bannerArtUrl: '',
+  podcastImages: [],
   managingEditor: '',
   webMaster: '',
   persons: [],
@@ -405,6 +539,7 @@ export const createEmptyPerson = (): Person => ({
   name: '',
   href: '',
   img: '',
+  npub: '',
   roles: [createEmptyPersonRole()]
 });
 
@@ -472,6 +607,7 @@ export const createEmptyPublisherFeed = (): PublisherFeed => ({
   imageTitle: '',
   imageLink: '',
   imageDescription: '',
+  podcastImages: [],
   managingEditor: '',
   webMaster: '',
   persons: [],

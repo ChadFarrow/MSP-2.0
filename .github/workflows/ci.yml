@@ -1,0 +1,51 @@
+# Runs the checks that Vercel doesn't.
+#
+# Vercel's build posts a green check on every PR, which reads like "CI passed" but
+# only means `npm run build` succeeded. Nothing ran the 475 unit tests or ESLint, so
+# a PR could break every test and still merge green. That's what this fixes.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+# A new push to a PR makes the previous run irrelevant; don't pay for it.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # `cache: npm` stays explicit. setup-node v5 added automatic caching when
+      # package.json has a `packageManager` field — ours doesn't, so without this
+      # line the npm cache would silently stop being used rather than error.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # tsc -b covers src, vite.config.ts AND api (tsconfig.api.json), then vite build.
+      # Deliberately `npm run build` rather than `tsc --noEmit`: the root tsconfig is
+      # references-only, so --noEmit against it checks zero files and always passes.
+      - name: Build (typecheck + bundle)
+        run: npm run build
+
+      - name: Test
+        run: npm run test
+
+      # Blocking as of the backlog cleanup — master is at 0 problems and must stay
+      # there. This is not just tidiness: the Desktop App fork lints these same files
+      # as a *blocking* job, so a lint error landing here holds its automated sync PR
+      # red, and a fix pushed to that PR is wiped when sync-upstream force-resets.
+      - name: Lint
+        run: npm run lint

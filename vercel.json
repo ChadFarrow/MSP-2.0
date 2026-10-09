@@ -1,5 +1,54 @@
 {
+  "redirects": [
+    {
+      "source": "/((?!api/).*)",
+      "has": [
+        {
+          "type": "host",
+          "value": "msp.podtards.com"
+        }
+      ],
+      "destination": "https://musicsideproject.com/$1",
+      "permanent": true
+    }
+  ],
   "rewrites": [
-    { "source": "/admin", "destination": "/" }
-  ]
+    {
+      "source": "/admin",
+      "destination": "/"
+    },
+    {
+      "source": "/auth/verify",
+      "destination": "/"
+    },
+    {
+      "source": "/charts",
+      "destination": "/"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/boosts/rebuild",
+      "schedule": "0 5 * * *"
+    }
+  ],
+  "functions": {
+    "api/boosts/ingest.ts": {
+      "maxDuration": 60
+    },
+    "api/boosts/rebuild.ts": {
+      "maxDuration": 60
+    }
+  }
 }

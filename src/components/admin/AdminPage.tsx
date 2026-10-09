@@ -1,24 +1,33 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNostr } from '../../store/nostrStore';
 import { FeedList } from './FeedList';
-import mspLogo from '../../assets/msp-logo.png';
+import { BoostCoverage } from './BoostCoverage';
+// The 40px header logo. Points at the 192px file in public/ rather than importing
+// assets/msp-logo.png, which is a 1024x1024 PNG weighing 1,810,143 bytes — the
+// same file public/ already serves as the favicon, so importing it shipped a
+// second byte-identical copy through the bundle and a first visit pulled ~3.6 MB
+// of logo against ~180 kB of compressed JS, all to paint a 40px image.
+//
+// assets/msp-logo.png is deliberately left in the repo: the Desktop App is a fork
+// with its own App.tsx, and deleting an asset upstream breaks its build when the
+// sync PR lands (see the fork-divergence note in CLAUDE.md).
+const mspLogo = '/msp-logo-192.png';
 
 type AuthState = 'checking' | 'no-extension' | 'not-logged-in' | 'ready';
 
 export function AdminPage() {
   const { state: nostrState, login } = useNostr();
-  const [authState, setAuthState] = useState<AuthState>('checking');
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!nostrState.hasExtension) {
-      setAuthState('no-extension');
-    } else if (!nostrState.isLoggedIn) {
-      setAuthState('not-logged-in');
-    } else {
-      setAuthState('ready');
-    }
-  }, [nostrState.hasExtension, nostrState.isLoggedIn]);
+  // Derived, not state-in-an-effect: this is a pure function of the Nostr store.
+  // Gating on isLoading matters — nostrStore sleeps 500ms waiting for a NIP-07
+  // extension to inject before it dispatches SET_HAS_EXTENSION, so reading
+  // hasExtension before init settles flashes "no extension" on every load.
+  const authState: AuthState =
+    nostrState.isLoading ? 'checking'
+    : !nostrState.hasExtension ? 'no-extension'
+    : !nostrState.isLoggedIn ? 'not-logged-in'
+    : 'ready';
 
   const handleLogin = async () => {
     await login();
@@ -66,6 +75,7 @@ export function AdminPage() {
               Signed in as: <code>{nostrState.user?.pubkey.slice(0, 8)}...{nostrState.user?.pubkey.slice(-8)}</code>
             </div>
             <FeedList onError={setError} currentUserPubkey={nostrState.user?.pubkey} />
+            <BoostCoverage onError={setError} />
             {error && <div className="admin-error">{error}</div>}
           </div>
         )}
@@ -189,6 +199,26 @@ export function AdminPage() {
         }
         .btn-delete-other:hover {
           background-color: #dc3545;
+        }
+        .medium-badge {
+          display: inline-block;
+          margin-left: 0.5rem;
+          padding: 0.1rem 0.45rem;
+          border-radius: 999px;
+          border: 1px solid var(--border-color);
+          background: var(--bg-tertiary);
+          font-size: 0.75em;
+          font-weight: 600;
+          white-space: nowrap;
+          vertical-align: middle;
+        }
+        .medium-badge-publisher {
+          color: #8b5cf6;
+          border-color: #8b5cf6;
+        }
+        .medium-badge-video {
+          color: #0ea5e9;
+          border-color: #0ea5e9;
         }
         .rss-link {
           color: #ff9900;

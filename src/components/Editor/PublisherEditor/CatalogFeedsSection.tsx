@@ -4,6 +4,10 @@ import { createEmptyRemoteItem } from '../../../types/feed';
 import type { FeedAction } from '../../../store/feedStore';
 import { useNostr } from '../../../store/nostrStore';
 import { createAdminAuthHeader } from '../../../utils/adminAuth';
+import { checkSignerConnection } from '../../../utils/nostrSigner';
+import { getFeedUrlError, normalizeFeedUrl } from '../../../utils/urlValidation';
+import { verifyFeedUrl, isGuardRefusal, FORCED_SUBMIT_NOTE } from '../../../utils/verifyFeedUrl';
+import { PUBLISHER_ROLES, catalogRole } from '../../../utils/publisherRole';
 import { InfoIcon } from '../../InfoIcon';
 import { Section } from '../../Section';
 
@@ -28,6 +32,7 @@ const PUBLISHER_FIELD_INFO = {
   remoteItemFeedGuid: 'The podcast:guid of the feed you want to include in your publisher catalog. This is the unique identifier that links to the feed.',
   remoteItemFeedUrl: 'The URL of the RSS feed (optional but recommended). This helps apps find the feed if they cannot resolve the GUID.',
   remoteItemTitle: 'A display title for this feed (optional). If not provided, apps will fetch the title from the feed itself.',
+  publisherRole: 'Tells apps whether this publisher is the artist of these feeds or a label. MSP writes it as rel on each catalog feed, and on the publisher reference of each album when you publish. "Not stated" writes nothing. rel is proposed in podcast-namespace discussion #579.',
 };
 
 interface CatalogFeedsSectionProps {
@@ -56,6 +61,9 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
   const [submitUrl, setSubmitUrl] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<{ success: boolean; message: string } | null>(null);
+  // Latch: set when the reachability check warns, so a second click submits anyway.
+  const [bypassVerify, setBypassVerify] = useState(false);
+  const submitUrlError = getFeedUrlError(submitUrl);
 
   // Refresh feed info from Podcast Index by GUID
   const handleRefreshArtwork = async (index: number) => {
@@ -77,7 +85,9 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
               ...item,
               image: feed.image || item.image,
               title: feed.title || item.title,
-              feedUrl: feed.url || item.feedUrl
+              // PI's stored URLs can carry stray whitespace; this value ends up in
+              // <podcast:remoteItem feedUrl>, so clean it on the way in.
+              feedUrl: feed.url ? normalizeFeedUrl(feed.url) : item.feedUrl
             }
           }
         });
@@ -97,6 +107,13 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
     setMyFeedsError('');
     setMyFeeds([]);
     setShowMyFeeds(true);
+
+    const health = await checkSignerConnection();
+    if (!health.connected) {
+      setMyFeedsError(health.error ?? 'Nostr signer is not connected.');
+      setLoadingMyFeeds(false);
+      return;
+    }
 
     try {
       const url = `${window.location.origin}/api/hosted/`;
@@ -199,7 +216,7 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
       payload: {
         ...createEmptyRemoteItem(),
         feedGuid: result.podcastGuid,
-        feedUrl: result.url,
+        feedUrl: normalizeFeedUrl(result.url),
         title: result.title,
         image: result.image,
         medium: 'music'
@@ -209,31 +226,44 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
   };
 
   const handleSubmitToPI = async () => {
-    if (!submitUrl.trim()) return;
+    const feedUrl = normalizeFeedUrl(submitUrl);
+    if (!feedUrl) return;
     setIsSubmitting(true);
     setSubmitResult(null);
     try {
-      // First validate it's an actual RSS feed
-      const proxyRes = await fetch(`/api/proxy-feed?url=${encodeURIComponent(submitUrl)}`);
-      if (!proxyRes.ok) {
-        setSubmitResult({ success: false, message: 'Could not fetch URL - check the address' });
-        return;
-      }
-      const content = await proxyRes.text();
-      if (!content.includes('<rss') && !content.includes('<feed') && !content.includes('<channel')) {
-        setSubmitResult({ success: false, message: 'URL does not appear to be an RSS feed' });
-        return;
+      // Check the feed actually resolves, via /api/verify-feed-url rather than
+      // /api/proxy-feed: this needs a verdict, not the bytes, and a verdict is
+      // cheaper and safer to ask for.
+      // The latch doubles as the override: set by this check or by a server
+      // refusal, and cleared whenever the URL changes.
+      const force = bypassVerify;
+      if (!force) {
+        const check = await verifyFeedUrl(feedUrl);
+        if (!check.ok) {
+          setSubmitResult({
+            success: false,
+            message: `${check.warning} Click again to submit anyway.`
+          });
+          setBypassVerify(true);
+          return;
+        }
       }
 
       // Submit to Podcast Index
       const response = await fetch('/api/pisubmit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: submitUrl })
+        body: JSON.stringify({ url: feedUrl, ...(force ? { force: true } : {}) })
       });
       const data = await response.json();
       if (response.ok && data.success) {
-        setSubmitResult({ success: true, message: data.message || 'Feed submitted! It may take a few minutes to be indexed.' });
+        setSubmitResult({
+          success: true,
+          message: `${data.message || 'Feed submitted! It may take a few minutes to be indexed.'}${force ? FORCED_SUBMIT_NOTE : ''}`
+        });
+      } else if (isGuardRefusal(data)) {
+        setSubmitResult({ success: false, message: `${data.error} Click again to submit anyway.` });
+        setBypassVerify(true);
       } else {
         setSubmitResult({ success: false, message: data.error || data.details?.description || 'Failed to submit feed' });
       }
@@ -252,6 +282,26 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
           Note: All catalog feeds must be in the Podcast Index for the publisher reference to work.
         </strong>
       </p>
+
+      {/* Publisher role, written as rel on both sides of each link (utils/publisherRole.ts) */}
+      <div className="form-group" style={{ marginBottom: '20px' }}>
+        <label className="form-label">This publisher is<InfoIcon text={PUBLISHER_FIELD_INFO.publisherRole} /></label>
+        <select
+          className="form-select"
+          value={catalogRole(publisherFeed.remoteItems) ?? 'mixed'}
+          // The role lives on the catalog items, so there is nothing to hold it yet.
+          disabled={publisherFeed.remoteItems.length === 0}
+          title={publisherFeed.remoteItems.length === 0 ? 'Add a catalog feed first' : undefined}
+          onChange={e => dispatch({ type: 'SET_PUBLISHER_ROLE', payload: e.target.value })}
+        >
+          {catalogRole(publisherFeed.remoteItems) === null && (
+            <option value="mixed" disabled>Mixed (the imported feeds state different roles)</option>
+          )}
+          {PUBLISHER_ROLES.map(role => (
+            <option key={role.value} value={role.value}>{role.label}</option>
+          ))}
+        </select>
+      </div>
 
       {/* Search UI */}
       <div style={{ marginBottom: '20px' }}>
@@ -356,17 +406,28 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
                 className="form-input"
                 placeholder="https://example.com/feed.xml"
                 value={submitUrl}
-                onChange={e => setSubmitUrl(e.target.value)}
-                style={{ flex: 1 }}
+                onChange={e => {
+                  setSubmitUrl(normalizeFeedUrl(e.target.value));
+                  setBypassVerify(false);
+                  setSubmitResult(null);
+                }}
+                style={{ flex: 1, borderColor: submitUrlError ? 'var(--error, #ef4444)' : undefined }}
               />
               <button
                 className="btn btn-secondary"
                 onClick={handleSubmitToPI}
-                disabled={isSubmitting || !submitUrl.trim()}
+                disabled={isSubmitting || !submitUrl || !!submitUrlError}
               >
-                {isSubmitting ? 'Submitting...' : 'Submit to Podcast Index'}
+                {isSubmitting
+                  ? 'Submitting...'
+                  : bypassVerify ? 'Submit anyway' : 'Submit to Podcast Index'}
               </button>
             </div>
+            {submitUrlError && (
+              <p style={{ color: 'var(--error, #ef4444)', fontSize: '12px', marginBottom: '8px' }}>
+                {submitUrlError}
+              </p>
+            )}
             {submitResult && (
               <p style={{
                 color: submitResult.success ? 'var(--success-color, #22c55e)' : 'var(--danger-color, #ef4444)',
@@ -482,7 +543,9 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
       </div>
 
       <div className="repeatable-list">
-        {publisherFeed.remoteItems.map((item, index) => (
+        {publisherFeed.remoteItems.map((item, index) => {
+          const feedUrlError = item.feedUrl ? getFeedUrlError(item.feedUrl) : null;
+          return (
           <div key={index} className="repeatable-item">
             <div className="repeatable-item-content" style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
               {/* Album Art Preview */}
@@ -579,8 +642,18 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
                       className="form-input"
                       value={item.feedUrl || ''}
                       disabled
-                      style={{ backgroundColor: 'var(--bg-secondary)', cursor: 'default', opacity: 1 }}
+                      style={{
+                        backgroundColor: 'var(--bg-secondary)',
+                        cursor: 'default',
+                        opacity: 1,
+                        borderColor: feedUrlError ? 'var(--error, #ef4444)' : undefined
+                      }}
                     />
+                    {feedUrlError && (
+                      <p style={{ color: 'var(--error, #ef4444)', fontSize: '12px', marginTop: '4px' }}>
+                        ⚠ This feed's URL (as registered in Podcast Index) has a problem: {feedUrlError} Some apps may fail to fetch it — consider re-hosting the feed at a clean URL and re-submitting.
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -594,7 +667,8 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
               </button>
             </div>
           </div>
-        ))}
+          );
+        })}
         <button
           className="add-item-btn"
           onClick={() => dispatch({ type: 'ADD_REMOTE_ITEM', payload: { ...createEmptyRemoteItem(), medium: 'music' } })}

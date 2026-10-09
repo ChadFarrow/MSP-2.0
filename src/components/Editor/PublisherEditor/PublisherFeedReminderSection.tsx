@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { PublisherFeed } from '../../../types/feed';
+import { getFeedUrlError, normalizeFeedUrl } from '../../../utils/urlValidation';
+import { verifyFeedUrl, isGuardRefusal, FORCED_SUBMIT_NOTE } from '../../../utils/verifyFeedUrl';
 import { Section } from '../../Section';
 import { generatePublisherRssFeed, downloadXml } from '../../../utils/xmlGenerator';
 import {
@@ -10,24 +12,42 @@ import {
   saveHostedFeedInfo,
   getHostedFeedInfo
 } from '../../../utils/hostedFeed';
-import { hasSigner } from '../../../utils/nostrSigner';
+import { hasSigner, checkSignerConnection } from '../../../utils/nostrSigner';
 import { useNostr } from '../../../store/nostrStore';
 
 interface PublisherFeedReminderSectionProps {
   publisherFeed: PublisherFeed;
+  /** Store-level counter, bumped whenever a different publisher feed is loaded. */
+  feedInstance: number;
 }
 
-export function PublisherFeedReminderSection({ publisherFeed }: PublisherFeedReminderSectionProps) {
+export function PublisherFeedReminderSection({ publisherFeed, feedInstance }: PublisherFeedReminderSectionProps) {
   const { state: nostrState } = useNostr();
   const [isHosting, setIsHosting] = useState(false);
   const [result, setResult] = useState<{ success: boolean; message: string; url?: string } | null>(null);
   const [selfHostedUrl, setSelfHostedUrl] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [piResult, setPiResult] = useState<{ success: boolean; message: string } | null>(null);
+  // Latch: set when the reachability check warns, so a second click submits anyway.
+  const [bypassVerify, setBypassVerify] = useState(false);
+  const loadedInstance = useRef(feedInstance);
+
+  // Same reason as DownloadCatalogSection: this section survives an import, so the
+  // URL and result banners from the previous feed have to be dropped or they read
+  // as belonging to the feed that was just loaded.
+  useEffect(() => {
+    if (loadedInstance.current === feedInstance) return;
+    loadedInstance.current = feedInstance;
+    setSelfHostedUrl('');
+    setResult(null);
+    setPiResult(null);
+    setBypassVerify(false);
+  }, [feedInstance]);
 
   const podcastGuid = publisherFeed.podcastGuid;
   const existingInfo = podcastGuid ? getHostedFeedInfo(podcastGuid) : null;
   const isAlreadyHosted = !!existingInfo;
+  const selfHostedUrlError = getFeedUrlError(selfHostedUrl);
 
   const handleHostOnMSP = async () => {
     if (!podcastGuid) {
@@ -43,6 +63,15 @@ export function PublisherFeedReminderSection({ publisherFeed }: PublisherFeedRem
       const title = publisherFeed.title || 'Publisher Feed';
       const editToken = generateEditToken();
       const shouldLinkNostr = nostrState.isLoggedIn && nostrState.user?.pubkey && hasSigner();
+
+      if (shouldLinkNostr) {
+        const health = await checkSignerConnection();
+        if (!health.connected) {
+          setResult({ success: false, message: health.error ?? 'Nostr signer is not connected.' });
+          setIsHosting(false);
+          return;
+        }
+      }
 
       let response;
       if (shouldLinkNostr) {
@@ -67,13 +96,13 @@ export function PublisherFeedReminderSection({ publisherFeed }: PublisherFeedRem
 
       const feedUrl = response.url;
 
-      // Auto-submit to Podcast Index
+      // Auto-submit to Podcast Index. feedUrl came back from createHostedFeed, so
+      // it's MSP-hosted and the reachability guard skips it — no refusal to handle.
       try {
-        await fetch('/api/pisubmit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: feedUrl })
-        });
+        const piParams = new URLSearchParams({ url: feedUrl });
+        if (publisherFeed.medium) piParams.set('medium', publisherFeed.medium);
+        if (publisherFeed.podcastGuid) piParams.set('guid', publisherFeed.podcastGuid);
+        await fetch(`/api/pubnotify?${piParams}`);
       } catch {
         // Silent fail for PI submission - feed is still hosted
       }
@@ -111,20 +140,45 @@ export function PublisherFeedReminderSection({ publisherFeed }: PublisherFeedRem
   };
 
   const handleSubmitToPodcastIndex = async () => {
-    if (!selfHostedUrl.trim()) return;
+    const feedUrl = normalizeFeedUrl(selfHostedUrl);
+    if (!feedUrl) return;
 
     setIsSubmitting(true);
     setPiResult(null);
 
     try {
-      const response = await fetch(`/api/pubnotify?url=${encodeURIComponent(selfHostedUrl.trim())}`);
+      // Confirm the self-hosted URL resolves before registering it in PI.
+      // The latch doubles as the override: set by this check or by a server
+      // refusal, and cleared whenever the URL changes.
+      const force = bypassVerify;
+      if (!force) {
+        const check = await verifyFeedUrl(feedUrl);
+        if (!check.ok) {
+          setPiResult({ success: false, message: `${check.warning} Click again to submit anyway.` });
+          setBypassVerify(true);
+          return;
+        }
+      }
+
+      const params = new URLSearchParams({ url: feedUrl });
+      if (publisherFeed.medium) params.set('medium', publisherFeed.medium);
+      if (force) params.set('force', '1');
+      const response = await fetch(`/api/pubnotify?${params}`);
       const data = await response.json();
 
       if (!response.ok) {
+        if (isGuardRefusal(data)) {
+          setPiResult({ success: false, message: `${data.error} Click again to submit anyway.` });
+          setBypassVerify(true);
+          return;
+        }
         throw new Error(data.error || 'Failed to submit to Podcast Index');
       }
 
-      setPiResult({ success: true, message: 'Feed submitted to Podcast Index! It may take a moment to appear.' });
+      setPiResult({
+        success: true,
+        message: `Feed submitted to Podcast Index! It may take a moment to appear.${force ? FORCED_SUBMIT_NOTE : ''}`
+      });
     } catch (err) {
       setPiResult({ success: false, message: err instanceof Error ? err.message : 'Failed to submit' });
     } finally {
@@ -181,13 +235,17 @@ export function PublisherFeedReminderSection({ publisherFeed }: PublisherFeedRem
             <input
               type="text"
               value={selfHostedUrl}
-              onChange={(e) => setSelfHostedUrl(e.target.value)}
+              onChange={(e) => {
+                setSelfHostedUrl(normalizeFeedUrl(e.target.value));
+                setBypassVerify(false);
+                setPiResult(null);
+              }}
               placeholder="https://example.com/publisher-feed.xml"
               style={{
                 flex: 1,
                 padding: '8px 12px',
                 borderRadius: '4px',
-                border: '1px solid var(--border-color)',
+                border: `1px solid ${selfHostedUrlError ? 'var(--error, #ef4444)' : 'var(--border-color)'}`,
                 backgroundColor: 'var(--bg-secondary)',
                 color: 'var(--text-primary)',
                 fontSize: '13px',
@@ -197,11 +255,16 @@ export function PublisherFeedReminderSection({ publisherFeed }: PublisherFeedRem
             <button
               className="btn btn-secondary"
               onClick={handleSubmitToPodcastIndex}
-              disabled={isSubmitting || !selfHostedUrl.trim()}
+              disabled={isSubmitting || !selfHostedUrl || !!selfHostedUrlError}
             >
-              {isSubmitting ? 'Submitting...' : 'Submit to PI'}
+              {isSubmitting ? 'Submitting...' : bypassVerify ? 'Submit anyway' : 'Submit to PI'}
             </button>
           </div>
+          {selfHostedUrlError && (
+            <p style={{ color: 'var(--error, #ef4444)', fontSize: '13px', marginTop: '6px', marginBottom: 0 }}>
+              {selfHostedUrlError}
+            </p>
+          )}
           {piResult && (
             <p style={{
               color: piResult.success ? 'var(--success-color, #22c55e)' : 'var(--danger-color, #ef4444)',

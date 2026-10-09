@@ -3,6 +3,7 @@
 
 import type { PublisherFeed, RemoteItem } from '../types/feed';
 import { generatePublisherRssFeed } from './xmlGenerator';
+import { normalizeFeedUrl } from './urlValidation';
 import {
   getHostedFeedInfo,
   saveHostedFeedInfo,
@@ -64,6 +65,7 @@ const isMspHosted = (url: string): boolean => {
   if (!url) return false;
   return (
     url.includes('/api/hosted/') ||
+    url.includes('musicsideproject.com') ||
     url.includes('msp.podtards.com') ||
     url.includes('msp-2-0')
   );
@@ -87,10 +89,23 @@ const isCorsOrNetworkError = (errMsg: string): boolean => {
   );
 };
 
-// Notify Podcast Index about a feed update
-async function notifyPodcastIndex(feedUrl: string): Promise<{ status: 'indexed' | 'pending' | 'failed'; pageUrl?: string }> {
+// Notify Podcast Index about a feed update. Medium is forwarded to podping so indexers and
+// the MSP consumer can classify the feed correctly (pp_music_update vs pp_podcast_update).
+// guid enables the faster GUID-based lookup on the PI side, returning the PI page URL immediately.
+async function notifyPodcastIndex(
+  feedUrl: string,
+  medium?: string,
+  guid?: string
+): Promise<{ status: 'indexed' | 'pending' | 'failed'; pageUrl?: string }> {
   try {
-    const res = await fetch(`/api/pubnotify?url=${encodeURIComponent(feedUrl)}`);
+    const params = new URLSearchParams({ url: normalizeFeedUrl(feedUrl) });
+    if (medium) params.set('medium', medium);
+    if (guid) params.set('guid', guid);
+    // No `force` and no refusal handling on purpose: every caller of this helper
+    // passes an MSP-hosted URL (createHostedFeed's result or buildHostedUrl), and
+    // the submit guard skips those — we serve them ourselves. If a caller ever
+    // passes an external URL, it should handle the 400 refusal, not force past it.
+    const res = await fetch(`/api/pubnotify?${params}`);
     const data = await res.json();
     if (data.success) {
       if (data.podcastIndexUrl) {
@@ -201,7 +216,7 @@ async function hostCatalogFeed(
       saveHostedFeedInfo(item.feedGuid, hostedInfo);
 
       // Notify PI in background
-      notifyPodcastIndex(result.url).catch(err => console.warn('PI notification failed:', err));
+      notifyPodcastIndex(result.url, album.medium).catch(err => console.warn('PI notification failed:', err));
 
       return {
         title: feedTitle,
@@ -283,9 +298,11 @@ async function processCatalogFeed(
     const album = parseRssFeed(xml);
 
     // Add/update publisher reference
+    // rel mirrors this album's entry in the publisher feed, so both sides agree.
     album.publisher = {
       feedGuid: publisherGuid,
-      feedUrl: publisherFeedUrl
+      feedUrl: publisherFeedUrl,
+      rel: item.rel
     };
 
     // Update build date to reflect the modification
@@ -319,7 +336,7 @@ async function processCatalogFeed(
           }
 
           // Notify PI in background (don't wait)
-          notifyPodcastIndex(feedUrl).catch(err => console.warn('PI notification failed:', err));
+          notifyPodcastIndex(feedUrl, album.medium).catch(err => console.warn('PI notification failed:', err));
           return {
             title: feedTitle,
             feedGuid: item.feedGuid,
@@ -533,7 +550,7 @@ export async function publishPublisherFeed(
               };
               saveHostedFeedInfo(podcastGuid, hostedInfo);
               feedUrl = buildHostedUrl(podcastGuid);
-            } catch (nostrErr) {
+            } catch {
               // Nostr update also failed - feed exists but user doesn't have access
               throw new Error(
                 'This feed already exists on MSP. If you are the owner, use the Restore option in the Save dialog to recover your credentials, or log in with the Nostr identity linked to this feed.'
@@ -559,7 +576,7 @@ export async function publishPublisherFeed(
 
   // Step 3: Notify Podcast Index
   onProgress({ step: 'notifying', message: 'Notifying Podcast Index...' });
-  const piResult = await notifyPodcastIndex(feedUrl);
+  const piResult = await notifyPodcastIndex(feedUrl, updatedPublisherFeed.medium, updatedPublisherFeed.podcastGuid);
 
   // Step 4: Update catalog feeds with publisher reference (if requested)
   let catalogUpdateResults: FeedUpdateResult[] | undefined;

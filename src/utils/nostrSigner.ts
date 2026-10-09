@@ -2,7 +2,7 @@
 import { BunkerSigner, parseBunkerInput, createNostrConnectURI } from 'nostr-tools/nip46';
 import { SimplePool } from 'nostr-tools/pool';
 import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
-import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
+import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
 import type { EventTemplate, VerifiedEvent } from 'nostr-tools/pure';
 import type { BunkerPointer } from 'nostr-tools/nip46';
 
@@ -12,7 +12,34 @@ export const NIP46_RELAYS = [
   'wss://relay.damus.io',
   'wss://relay.primal.net',
   'wss://nos.lol',
+  // Clave (iOS) can't hold a socket open in the background: its push proxy watches this relay
+  // and wakes the app with a notification. On the other relays a request reaches Clave only
+  // while the app is open, so without this one a QR pairing connects and then hears nothing.
+  'wss://relay.powr.build',
 ];
+
+// A signer can miss a request — Clave only wakes for one its push proxy sees, and a relay need
+// not keep an ephemeral kind-24133 event for a signer that subscribes a moment late. So ask
+// again every PUBLIC_KEY_RETRY_MS and give up after PUBLIC_KEY_ATTEMPTS, rather than leave the
+// login spinning forever. 60 s in all, the same as signEventWithTimeout's NIP-46 budget.
+const PUBLIC_KEY_RETRY_MS = 15_000;
+const PUBLIC_KEY_ATTEMPTS = 4;
+
+async function requestPublicKey(bunkerSigner: BunkerSigner): Promise<string> {
+  // Every request stays live: an answer to the first one still counts after the second is sent.
+  const requests: Promise<string>[] = [];
+  for (let attempt = 0; attempt < PUBLIC_KEY_ATTEMPTS; attempt++) {
+    requests.push(bunkerSigner.getPublicKey());
+    const pubkey = await Promise.race([
+      Promise.any(requests).catch((err: AggregateError) => { throw err.errors[0]; }),
+      new Promise<null>(resolve => setTimeout(() => resolve(null), PUBLIC_KEY_RETRY_MS)),
+    ]);
+    if (pubkey) return pubkey;
+  }
+  throw new Error(
+    'Your signer connected but did not answer. Open the signer app, make sure notifications are on, then try again.'
+  );
+}
 
 // Storage keys
 const CLIENT_SECRET_KEY = 'msp_nip46_client_secret';
@@ -68,7 +95,9 @@ class Nip46SignerWrapper implements NostrSigner {
 
   close(): void {
     this.bunkerSigner.close();
-    this.pool.close(NIP46_RELAYS);
+    // destroy(), not close(NIP46_RELAYS): a bunker:// URI can name relays outside that list,
+    // and their sockets would stay open after every logout and reconnect.
+    this.pool.destroy();
   }
 }
 
@@ -163,9 +192,14 @@ export async function initNip46SignerFromBunker(bunkerUri: string): Promise<stri
   const pool = new SimplePool();
 
   const bunkerSigner = BunkerSigner.fromBunker(clientSk, bunkerPointer, { pool });
-  await bunkerSigner.connect();
-
-  const pubkey = await bunkerSigner.getPublicKey();
+  let pubkey: string;
+  try {
+    await bunkerSigner.connect();
+    pubkey = await requestPublicKey(bunkerSigner);
+  } catch (e) {
+    pool.destroy();
+    throw e;
+  }
 
   // Store for reconnection
   storeBunkerPointer({
@@ -194,13 +228,18 @@ export async function waitForNip46Connection(
   onUriGenerated(uri, clientPubkey);
 
   const pool = new SimplePool();
+  let paired = false;
 
   try {
-    // BunkerSigner.fromURI waits for the bunker to connect and returns ready-to-use signer
-    const bunkerSigner = await BunkerSigner.fromURI(clientSk, uri, { pool }, timeoutMs);
+    // BunkerSigner.fromURI waits for the bunker to connect and returns ready-to-use signer.
+    // skipSwitchRelays: since nostr-tools 2.23.4 fromURI asks the signer which relays it
+    // prefers and moves the session there, but the pointer stored below names NIP46_RELAYS —
+    // so a signer that prefers other relays could never be reached again after a reload.
+    const bunkerSigner = await BunkerSigner.fromURI(clientSk, uri, { pool, skipSwitchRelays: true }, timeoutMs);
+    paired = true;
 
     // Get the user's public key
-    const userPubkey = await bunkerSigner.getPublicKey();
+    const userPubkey = await requestPublicKey(bunkerSigner);
 
     // Get bunker pubkey from signer for storage (the remote signer's pubkey)
     const bunkerPubkey = bunkerSigner.bp.pubkey;
@@ -218,7 +257,10 @@ export async function waitForNip46Connection(
 
     return userPubkey;
   } catch (e) {
-    pool.close(NIP46_RELAYS);
+    pool.destroy();
+    // Before pairing, the only failure is fromURI timing out. After it, the signer did answer
+    // the QR code, so "no response from signer" would send the user looking in the wrong place.
+    if (paired && e instanceof Error) throw e;
     throw new Error('Connection timeout - no response from signer');
   }
 }
@@ -230,6 +272,13 @@ export async function reconnectNip46(timeoutMs: number = 10000): Promise<string 
 
   const clientSk = getClientSecretKey();
   const pool = new SimplePool();
+
+  // Close the existing signer before creating a new one to avoid leaking pool connections
+  if (currentSigner?.close) {
+    try { currentSigner.close(); } catch { /* ignore close errors */ }
+  }
+  currentSigner = null;
+  currentMethod = null;
 
   try {
     // Create bunker pointer with proper format
@@ -249,7 +298,7 @@ export async function reconnectNip46(timeoutMs: number = 10000): Promise<string 
       )
     ]);
 
-    const pubkey = await bunkerSigner.getPublicKey();
+    const pubkey = await requestPublicKey(bunkerSigner);
 
     currentSigner = new Nip46SignerWrapper(bunkerSigner, pool);
     currentMethod = 'nip46';
@@ -257,13 +306,10 @@ export async function reconnectNip46(timeoutMs: number = 10000): Promise<string 
     return pubkey;
   } catch (e) {
     console.error('Failed to reconnect NIP-46:', e);
-    pool.close(NIP46_RELAYS);
-    // Don't clear credentials on timeout - user can try again manually
-    if (e instanceof Error && e.message === 'Connection timeout') {
-      return null;
-    }
-    clearBunkerPointer();
-    clearClientSecretKey();
+    pool.destroy();
+    // Never clear stored credentials automatically — connection failures are transient
+    // (network outage, relay down, signer app in background). The user explicitly logs
+    // out to clear credentials. Silently wiping them causes data loss.
     return null;
   }
 }
@@ -274,6 +320,103 @@ export function getSigner(): NostrSigner {
     throw new Error('No signer initialized. Please log in first.');
   }
   return currentSigner;
+}
+
+// Sign an event with a timeout so a non-responsive remote signer doesn't hang the UI indefinitely.
+// Default: 60 s for NIP-46 (user may need to unlock phone + tap), 30 s for NIP-07 (local extension popup).
+export async function signEventWithTimeout(
+  event: EventTemplate,
+  timeoutMs?: number
+): Promise<VerifiedEvent> {
+  const method = currentMethod;
+  const effectiveTimeout = timeoutMs ?? (method === 'nip46' ? 60_000 : 30_000);
+
+  return Promise.race([
+    getSigner().signEvent(event),
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error(
+          'Signer request timed out. If you use a remote signer app (Primal, Amber, nsecBunker), please open it and approve the pending request, then try again.'
+        )),
+        effectiveTimeout
+      )
+    ),
+  ]);
+}
+
+// Same shape as signEventWithTimeout for the getPublicKey round-trip — NIP-46 sends a
+// request to the remote signer app, which can hang if the phone is asleep.
+export async function getPublicKeyWithTimeout(timeoutMs?: number): Promise<string> {
+  const method = currentMethod;
+  const effectiveTimeout = timeoutMs ?? (method === 'nip46' ? 60_000 : 30_000);
+
+  return Promise.race([
+    getSigner().getPublicKey(),
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error(
+          'Signer request timed out. If you use a remote signer app (Primal, Amber, nsecBunker), please open it and approve the pending request, then try again.'
+        )),
+        effectiveTimeout
+      )
+    ),
+  ]);
+}
+
+// Check whether the signer is reachable before starting a Nostr operation.
+// Returns { connected: true } quickly or { connected: false, error } without throwing.
+//
+// NIP-46 strategy: if a signer is already initialised, trust it — SimplePool maintains
+// relay connections automatically, so we avoid a redundant reconnect that would close
+// the working connection and send a new "connect" request requiring Primal approval.
+// Only reconnect when currentSigner is null (e.g. first use after a page-load timeout).
+export async function checkSignerConnection(timeoutMs?: number): Promise<{ connected: boolean; error?: string }> {
+  const method = currentMethod ?? loadConnectionMethod();
+
+  if (method === 'nip46') {
+    if (hasSigner()) {
+      // Active signer — pool manages relay reconnects automatically.
+      return { connected: true };
+    }
+
+    // Signer is gone (page-load reconnect timed out, or first use after restore).
+    // If credentials are stored, reconnect now. Give enough time for the user to
+    // open their iOS signer app and approve.
+    if (!loadBunkerPointer()) {
+      return { connected: false, error: 'Not logged in to Nostr. Please log in and try again.' };
+    }
+
+    const pubkey = await reconnectNip46(timeoutMs ?? 30_000);
+    if (pubkey) return { connected: true };
+    return {
+      connected: false,
+      error: 'Could not reach your remote signer. Open your signer app (Primal, Amber, nsecBunker), approve the connection request, then try again.'
+    };
+  }
+
+  // NIP-07 (browser extension)
+  if (!hasSigner()) {
+    return { connected: false, error: 'Not logged in to Nostr. Please log in and try again.' };
+  }
+
+  try {
+    await Promise.race([
+      getSigner().getPublicKey(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('timeout')), timeoutMs ?? 3_000)
+      ),
+    ]);
+    return { connected: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    if (msg === 'timeout') {
+      return {
+        connected: false,
+        error: 'Could not reach your browser extension. Make sure it is unlocked and try again.'
+      };
+    }
+    return { connected: false, error: msg };
+  }
 }
 
 // Check if a signer is active

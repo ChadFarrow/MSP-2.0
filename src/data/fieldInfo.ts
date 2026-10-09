@@ -17,14 +17,21 @@ export const FIELD_INFO = {
   op3: "Enable OP3 (Open Podcast Prefix Project) analytics. Adds a transparent prefix to track URLs for open, privacy-respecting download stats. Free, no signup required. Save/update your hosted feed after toggling for changes to take effect.",
 
   // Artwork
-  imageUrl: "Direct link to your album art image. Ensure CORS policy allows all origins and headers.",
+  imageUrl: "Direct link to your album art image. Best results: square (1:1 ratio), 3000×3000 px recommended (1400×1400 minimum, 3000×3000 maximum), JPG or PNG. Ensure the image's CORS policy allows all origins and headers.",
   imageTitle: "Title/alt text for the album artwork.",
   imageDescription: "Optional description of the artwork or album.",
+  publisherLogoUrl: "Direct link to your publisher/label logo. Best results: square (1:1 ratio), 3000×3000 px recommended (1400×1400 minimum), JPG or PNG. Ensure the image's CORS policy allows all origins and headers.",
+
+  // Additional Images (podcast:image)
+  podcastImages: "Optional extra artwork beyond your main cover, published as Podcasting 2.0 <podcast:image> tags. Lets apps show different art in different places — e.g. a wide background on Now Playing screens, a banner, or a social share card. Your cover art above is still the default; these are alternatives apps can choose from.",
+  podcastImagePurpose: "Tells apps how to use this image (see each option's description in the dropdown). Auto-suggested from the image's shape — change it, or pick Custom to enter your own token(s).",
+  podcastImageAlt: "Short description of the image for screen readers and for when the image can't load (accessibility). Recommended.",
 
   // Persons/Credits
   personName: "The person's name as it should appear in credits.",
   personHref: "Link to the person's website or social profile.",
   personImg: "Link to the person's profile picture.",
+  personNpub: "Nostr public key (npub) for this person. Apps can use it to link to their Nostr profile.",
   personGroup: "Category: music (performers), writing (songwriters), production (producers/engineers).",
   personRole: "Roles from the Podcasting 2.0 taxonomy. The first role is Primary and shown by apps that only display one role. Add multiple roles per person as needed.",
 
@@ -51,13 +58,13 @@ export const FIELD_INFO = {
   trackTitle: "The song title.",
   trackDescription: "Optional description or notes about the track.",
   trackDuration: "Total duration in HH:MM:SS format. Required for podcast apps.",
-  trackPubDate: "Publication date/time for this track. Used for sorting and display in podcast apps.",
+  trackPubDate: "Publication date/time for this track. Filled in automatically and kept in order for you — podcast apps sort newest-first, so track 1 gets the newest date and the album plays top to bottom. Only change this if a track has a real release date of its own; setting them out of order will play the album out of order.",
   trackSeason: "Season number for grouping tracks (e.g., 1 for first album). Optional.",
   trackEpisode: "Episode number for this track. Defaults to track order if not set.",
-  enclosureUrl: "Direct link to the MP3 file. Ensure CORS policy allows access.",
-  enclosureLength: "File size in MB. Important for podcast apps to show download size.",
+  enclosureUrl: "Direct link to the audio file. MP3 is preferred — smaller file size saves bandwidth for listeners. Other formats (flac, wav, m4a, aac, ogg, opus, aiff) are also supported. Ensure CORS policy allows access.",
+  enclosureLength: "File size in bytes. Filled in automatically from the audio file when its host allows it; podcast apps use it to show download size.",
   trackArtUrl: "Optional track-specific artwork. If empty, album art is used.",
-  transcriptUrl: "Link to an SRT file with time-coded lyrics for display during playback.",
+  transcriptUrl: "Link to a file with time-coded lyrics for display during playback, plus its format. SubRip (.srt) and WebVTT (.vtt) are the widely supported ones. Apps that don't support lyrics simply ignore it.",
   trackGuid: "Unique identifier for this track. Auto-generated, or use guidgenerator.com to create one.",
   trackExplicit: "Mark if this specific track contains explicit content.",
   overridePersons: "Enable to set different credits for this track than the album level. Track-level persons replace album-level.",

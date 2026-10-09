@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { generateRssFeed, generatePublisherRssFeed, downloadXml, copyToClipboard } from '../../utils/xmlGenerator';
 import { saveFeedToNostr, publishNostrMusicTracks, deleteNostrMusicTracks } from '../../utils/nostrSync';
 import { uploadFeedToBlossom } from '../../utils/blossom';
@@ -13,18 +14,62 @@ import {
   createHostedFeed,
   updateHostedFeed,
   buildHostedUrl,
-  downloadHostedFeedBackup,
   generateEditToken,
   createHostedFeedWithNostr,
   updateHostedFeedWithNostr,
   linkNostrToFeed,
-  type HostedFeedInfo
+  createHostedFeedWithEmail,
+  updateHostedFeedWithEmail,
+  linkEmailToFeed,
+  describeAddResult,
+  type HostedFeedInfo,
+  type PodcastIndexAddResult
 } from '../../utils/hostedFeed';
 import { albumStorage, videoStorage, publisherStorage, pendingHostedStorage } from '../../utils/storage';
+import { getEmailSession, isEmailLoggedIn } from '../../utils/emailSession';
+import { EmailLoginModal } from '../auth/EmailLoginModal';
+import { SignInPrompt } from '../auth/SignInPrompt';
+import { NostrConnectModal } from './NostrConnectModal';
 import { useNostr } from '../../store/nostrStore';
+import { useExperimental } from '../../store/experimentalStore';
+import { checkSignerConnection } from '../../utils/nostrSigner';
+import { getFeedUrlError, normalizeFeedUrl } from '../../utils/urlValidation';
+import { verifyFeedUrl, isGuardRefusal, FORCED_SUBMIT_NOTE } from '../../utils/verifyFeedUrl';
+import { getSaveBlockers, formatSaveBlockers, type SaveTarget } from '../../utils/feedChecks';
 import { ModalWrapper } from './ModalWrapper';
 
 const DEFAULT_BLOSSOM_SERVER = 'https://blossom.primal.net/';
+
+type SaveMode = 'local' | 'download' | 'clipboard' | 'nostr' | 'nostrMusic' | 'blossom' | 'nsite' | 'hosted' | 'podcastIndex';
+
+interface SaveDestination {
+  value: SaveMode;
+  label: string;
+  blurb: string;
+  experimental?: boolean;
+}
+
+// Single source of truth for the destination dropdown. `blurb` is the short
+// inline description; the richer wording lives in the ℹ️ help popup below.
+const SAVE_DESTINATIONS: SaveDestination[] = [
+  { value: 'local', label: 'Local Storage', blurb: 'Save in this browser only' },
+  { value: 'download', label: 'Download XML', blurb: 'Download the RSS feed as an XML file' },
+  { value: 'clipboard', label: 'Copy to Clipboard', blurb: 'Copy the RSS XML to your clipboard' },
+  { value: 'hosted', label: 'Host on MSP', blurb: 'Permanent URL hosted on MSP — use in any podcast app' },
+  { value: 'podcastIndex', label: 'Submit to PodcastIndex', blurb: 'Submit a feed URL so apps can discover it' },
+  { value: 'nostrMusic', label: 'Publish to Nostr Music', blurb: 'Per-track Nostr events for Nostr-native music apps like Sunami' },
+  { value: 'nostr', label: 'Save RSS feed to Nostr', blurb: 'Back up the full RSS inside a Nostr event', experimental: true },
+  { value: 'blossom', label: 'Publish RSS feed to a Blossom server', blurb: 'Host the RSS on a Blossom server', experimental: true },
+  { value: 'nsite', label: 'Publish RSS feed to nsite', blurb: 'Publish the RSS as an nsite web URL', experimental: true },
+];
+
+/** Outcome of a completed "Host on MSP" upload, driving the post-upload confirmation. */
+interface PublishedResult {
+  isDraft: boolean;
+  podcastIndexId?: number;
+  /** Why PI declined, when it did. Absent on success and in draft mode. */
+  addResult?: PodcastIndexAddResult;
+}
 
 interface SaveModalProps {
   onClose: () => void;
@@ -34,11 +79,20 @@ interface SaveModalProps {
   isDirty: boolean;
   isLoggedIn: boolean;
   onImport?: (xml: string) => void;
+  /** Reports the feed's Podcast Index id so the toolbar button can light up without a reload. */
+  onPodcastIndexId?: (id: number) => void;
+  /** Signals a save left the feed not yet indexed, so the watch can outlive this modal. */
+  onPodcastIndexPending?: () => void;
 }
 
-export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', isDirty, isLoggedIn, onImport }: SaveModalProps) {
+export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', isDirty, isLoggedIn, onImport, onPodcastIndexId, onPodcastIndexPending }: SaveModalProps) {
   const { state: nostrState } = useNostr();
-  const [mode, setMode] = useState<'local' | 'download' | 'clipboard' | 'nostr' | 'nostrMusic' | 'blossom' | 'nsite' | 'hosted'>('local');
+  const { showExperimental } = useExperimental();
+  const [mode, setMode] = useState<SaveMode>('local');
+  const [destOpen, setDestOpen] = useState(false);
+  const [destMenuPos, setDestMenuPos] = useState<{ left: number; width: number; top?: number; bottom?: number; maxHeight: number } | null>(null);
+  const destRef = useRef<HTMLDivElement>(null);
+  const destMenuRef = useRef<HTMLUListElement>(null);
   const isPublisherMode = feedType === 'publisher';
   const isVideoMode = feedType === 'video';
 
@@ -71,17 +125,40 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
   const [restoreLoading, setRestoreLoading] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [pendingToken, setPendingToken] = useState<string | null>(null);
-  const [tokenAcknowledged, setTokenAcknowledged] = useState(false);
   const [linkingNostr, setLinkingNostr] = useState(false);
-  const [podcastIndexPending, setPodcastIndexPending] = useState(false); // True when PI notified but not yet indexed
+  const [linkingEmail, setLinkingEmail] = useState(false);
+  const [emailModal, setEmailModal] = useState<null | { mode: 'login' } | { mode: 'claim' }>(null);
+  const [showNostrConnect, setShowNostrConnect] = useState(false);
+  // Set once a "Host on MSP" upload succeeds. Presence of this swaps the Upload
+  // button for a confirmation and carries the real Podcast Index outcome, so the
+  // modal can say whether the feed actually got registered instead of going quiet.
+  const [published, setPublished] = useState<PublishedResult | null>(null);
+  const [isDraft, setIsDraft] = useState(false);
   const nsiteSiteId = defaultSiteId(currentFeedGuid);
   const [nsiteUrl, setNsiteUrl] = useState<string | null>(null);
   const [nsiteBlossomUrl, setNsiteBlossomUrl] = useState<string | null>(null);
   const [nsitePiUrl, setNsitePiUrl] = useState<string | null>(null);
   const [nsiteProgress, setNsiteProgress] = useState<string | null>(null);
+  const [podcastIndexSubmitUrl, setPodcastIndexSubmitUrl] = useState('');
+  const [podcastIndexResultUrl, setPodcastIndexResultUrl] = useState<string | null>(null);
+  // Reachability warning + the "Submit anyway" latch that lets the user override it.
+  const [podcastIndexVerifyWarning, setPodcastIndexVerifyWarning] = useState<string | null>(null);
+  const [podcastIndexBypassVerify, setPodcastIndexBypassVerify] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+
+  const handlePodcastIndexUrlChange = (value: string) => {
+    setPodcastIndexSubmitUrl(normalizeFeedUrl(value));
+    // A warning (and the permission to ignore it) belongs to the old URL.
+    setPodcastIndexVerifyWarning(null);
+    setPodcastIndexBypassVerify(false);
+  };
 
   // Check if feed is linked to current user's Nostr identity
   const isNostrLinked = hostedInfo?.ownerPubkey && nostrState.user?.pubkey === hostedInfo.ownerPubkey;
+
+  // Check if feed is claimed by the current email account
+  const emailSession = getEmailSession();
+  const isEmailLinked = !!(hostedInfo?.ownerEmailHash && emailSession?.emailHash === hostedInfo.ownerEmailHash);
 
   // Helper to get button text based on mode and loading state
   const getButtonText = () => {
@@ -89,19 +166,31 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
       if (mode === 'nostrMusic' || mode === 'blossom' || mode === 'hosted' || mode === 'nsite') return 'Uploading...';
       if (mode === 'download') return 'Downloading...';
       if (mode === 'clipboard') return 'Copying...';
+      if (mode === 'podcastIndex') return verifying ? 'Checking URL…' : 'Submitting...';
       return 'Saving...';
     }
     if (mode === 'nostrMusic') return 'Publish';
     if (mode === 'blossom' || mode === 'hosted' || mode === 'nsite') return 'Upload';
     if (mode === 'download') return 'Download';
     if (mode === 'clipboard') return 'Copy to Clipboard';
+    if (mode === 'podcastIndex') {
+      return podcastIndexBypassVerify ? 'Submit anyway' : 'Submit to PodcastIndex';
+    }
     return 'Save';
   };
+
+  const podcastIndexUrlError = mode === 'podcastIndex' ? getFeedUrlError(podcastIndexSubmitUrl) : null;
 
   // Helper to determine if button should be disabled
   const isButtonDisabled = () => {
     if (loading) return true;
-    if (mode === 'hosted' && !hostedInfo && !legacyHostedInfo && !tokenAcknowledged) return true;
+    // Every MSP-hosting write (create a new feed OR update an existing one) now
+    // requires being signed in with email or Nostr. The edit token alone no longer
+    // authorizes a save from the main button — it's only used to auto-claim a
+    // token-owned feed onto the account on the first signed-in save. (Token holders
+    // can still recover a feed via the "Restore" panel below.)
+    if (mode === 'hosted' && !isEmailLoggedIn() && !isLoggedIn) return true;
+    if (mode === 'podcastIndex' && (!podcastIndexSubmitUrl.trim() || !!podcastIndexUrlError)) return true;
     return false;
   };
 
@@ -111,6 +200,135 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
       setPendingToken(generateEditToken());
     }
   }, [mode, hostedInfo, legacyHostedInfo, pendingToken, showRestore]);
+
+  // Reset mode if the current selection is an experimental option that just got hidden
+  useEffect(() => {
+    if (!showExperimental && (mode === 'nostr' || mode === 'blossom' || mode === 'nsite')) {
+      setMode('local');
+    }
+  }, [showExperimental, mode]);
+
+  // Switching destinations drops any upload confirmation, so the newly selected
+  // destination shows its own action button rather than a stale "done" state.
+  const selectMode = (next: SaveMode) => {
+    setMode(next);
+    setPublished(null);
+  };
+
+  // Podcast Index registers a feed asynchronously. add/byfeedurl queues the URL and
+  // typically returns no feed id, because PI hasn't crawled the feed yet — observed
+  // crawl latency is ~1 minute. So "no id at save time" means queued, NOT rejected;
+  // we look the feed up again until it appears rather than declaring failure.
+  const [piLookupId, setPiLookupId] = useState<number | null>(null);
+  const [piCheckExhausted, setPiCheckExhausted] = useState(false);
+
+  // One lookup attempt. Resolves to true once the feed is in the index. Uses the
+  // same guid-based search the toolbar button relies on — the guid is only known to
+  // PI after a successful crawl, so a hit here means the feed really is indexed.
+  const lookUpPodcastIndex = useCallback(async (): Promise<boolean> => {
+    if (!currentFeedGuid) return false;
+    try {
+      const response = await fetch(`/api/pisearch?q=${encodeURIComponent(currentFeedGuid)}`);
+      const data = response.ok ? await response.json() : null;
+      const id = data?.feeds?.[0]?.id;
+      if (typeof id !== 'number') return false;
+      setPiLookupId(id);
+      onPodcastIndexId?.(id);
+      // Cache it so the toolbar button survives a reload without re-querying PI.
+      const info = getHostedFeedInfo(currentFeedGuid);
+      if (info) saveHostedFeedInfo(currentFeedGuid, { ...info, podcastIndexId: id });
+      return true;
+    } catch {
+      return false; // offline / lookup failed — caller decides whether to retry
+    }
+  }, [currentFeedGuid, onPodcastIndexId]);
+
+  // After an upload that came back without an id, re-check for ~90s.
+  useEffect(() => {
+    if (!published || published.isDraft || published.podcastIndexId) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    let attempts = 0;
+    const poll = async () => {
+      attempts += 1;
+      const found = await lookUpPodcastIndex();
+      if (cancelled || found) return;
+      if (attempts >= 9) {
+        setPiCheckExhausted(true);
+        return;
+      }
+      timer = setTimeout(poll, 10000);
+    };
+    timer = setTimeout(poll, 5000);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [published, lookUpPodcastIndex]);
+
+  // The poll above only runs right after an upload, so a user who closed the modal
+  // before the feed landed would reopen it to no Podcast Index section at all. Check
+  // once when the hosted panel opens on a feed whose id we don't already know, so
+  // "your feed is in the index" is answerable at any time, not just post-save.
+  useEffect(() => {
+    if (mode !== 'hosted' || published || piLookupId) return;
+    if (!hostedInfo || hostedInfo.podcastIndexId) return;
+    void lookUpPodcastIndex();
+  }, [mode, published, piLookupId, hostedInfo, lookUpPodcastIndex]);
+
+  // Close the destination dropdown when clicking outside it. The menu is
+  // portaled to <body> (to escape the modal's overflow clipping), so the
+  // outside check has to ignore the portaled menu too.
+  useEffect(() => {
+    if (!destOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (destRef.current?.contains(target) || destMenuRef.current?.contains(target)) return;
+      setDestOpen(false);
+    };
+    // The fixed-positioned menu detaches from the trigger when the page/modal
+    // scrolls, so close it — but ignore the menu's OWN internal scroll (capture
+    // phase sees it), otherwise scrolling the option list would close the menu.
+    const handleScroll = (e: Event) => {
+      if (destMenuRef.current && e.target instanceof Node && destMenuRef.current.contains(e.target)) return;
+      setDestOpen(false);
+    };
+    const handleResize = () => setDestOpen(false);
+    document.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('scroll', handleScroll, true);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('scroll', handleScroll, true);
+    };
+  }, [destOpen]);
+
+  // Measure the trigger so the portaled menu sits beside it, sized to the
+  // available viewport space (flipping above when there's more room there).
+  const openDestMenu = () => {
+    if (destRef.current) {
+      const r = destRef.current.getBoundingClientRect();
+      const margin = 8;
+      const spaceBelow = window.innerHeight - r.bottom - margin;
+      const spaceAbove = r.top - margin;
+      const placeAbove = spaceBelow < 240 && spaceAbove > spaceBelow;
+      // Keep the menu compact (it scrolls internally) but never taller than the
+      // space available on the chosen side.
+      const CAP = 340;
+      setDestMenuPos(
+        placeAbove
+          ? { left: r.left, width: r.width, bottom: window.innerHeight - r.top + 4, maxHeight: Math.min(spaceAbove, CAP) }
+          : { left: r.left, width: r.width, top: r.bottom + 4, maxHeight: Math.min(spaceBelow, CAP) }
+      );
+    }
+    setDestOpen(true);
+  };
+
+  // Auto-fill the Podcast Index submission URL from whichever hosted URL we have
+  useEffect(() => {
+    if (mode !== 'podcastIndex') return;
+    if (podcastIndexSubmitUrl) return; // don't overwrite user edits
+    const url = hostedUrl ?? stableUrl ?? nsiteUrl ?? '';
+    if (url) setPodcastIndexSubmitUrl(url);
+  }, [mode, hostedUrl, stableUrl, nsiteUrl, podcastIndexSubmitUrl]);
 
   // Check for existing hosted feed on mount, and apply pending credentials
   useEffect(() => {
@@ -138,6 +356,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
       // Check if feedId matches podcastGuid (legacy feeds may have different IDs)
       if (info.feedId === currentFeedGuid) {
         setHostedInfo(info);
+        setIsDraft(info.isDraft === true);
         setHostedUrl(buildHostedUrl(info.feedId));
       } else {
         // Legacy feed with mismatched ID - keep it to update both URLs on save
@@ -241,42 +460,56 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
     setMessage(null);
     setProgress(null);
 
-    // Validate required fields only for publishing modes (not local/download/clipboard)
-    const requiresValidation = !['local', 'download', 'clipboard'].includes(mode);
-    if (requiresValidation) {
-      const errors: string[] = [];
-
-      if (isPublisherMode && publisherFeed) {
-        // Publisher feed validation
-        if (!publisherFeed.author?.trim()) errors.push('Artist Name');
-        if (!publisherFeed.title?.trim()) errors.push('Catalog Title');
-        if (!publisherFeed.description?.trim()) errors.push('Description');
-        if (!publisherFeed.podcastGuid?.trim()) errors.push('Publisher GUID');
-      } else {
-        // Album validation
-        if (!album.author?.trim()) errors.push('Artist/Band');
-        if (!album.title?.trim()) errors.push('Album Title');
-        if (!album.description?.trim()) errors.push('Description');
-        if (!album.imageUrl?.trim()) errors.push('Album Art URL');
-        if (!album.language?.trim()) errors.push('Language');
-        if (!album.podcastGuid?.trim()) errors.push('Podcast GUID');
-
-        const itemLabel = isVideoMode ? 'Video' : 'Track';
-        const urlLabel = isVideoMode ? 'Video URL' : 'MP3 URL';
-        album.tracks.forEach((track, i) => {
-          if (!track.title?.trim()) errors.push(`${itemLabel} ${i + 1} Title`);
-          if (!track.duration?.trim()) errors.push(`${itemLabel} ${i + 1} Duration`);
-          if (!track.enclosureUrl?.trim()) errors.push(`${itemLabel} ${i + 1} ${urlLabel}`);
-          if (!track.enclosureLength?.trim()) errors.push(`${itemLabel} ${i + 1} File Size`);
-        });
-      }
-
-      if (errors.length > 0) {
-        setMessage({ type: 'error', text: `Missing required fields: ${errors.join(', ')}` });
+    // Validate required fields only for publishing modes (not local/download/clipboard/podcastIndex).
+    // The rules live in feedChecks.ts so the Feed check panel shows exactly what this refuses.
+    // A new hosted feed is keyed by its GUID, which the server requires to be a UUID —
+    // catching that here beats an opaque 400 after the upload starts.
+    const saveTarget: SaveTarget | null =
+      ['local', 'download', 'clipboard', 'podcastIndex'].includes(mode) ? null
+        : mode === 'nostrMusic' ? 'nostrMusic'
+          : mode === 'hosted' && !hostedInfo ? 'hostedCreate'
+            : 'publish';
+    if (saveTarget) {
+      const blockers = getSaveBlockers({ feedType, album, publisherFeed: publisherFeed ?? null }, saveTarget);
+      if (blockers.length > 0) {
+        setMessage({ type: 'error', text: formatSaveBlockers(blockers) });
         setLoading(false);
         return;
       }
     }
+
+    // Pre-flight: verify signer is reachable before any Nostr operation.
+    // For NIP-46 remote signers (Primal, Amber) this may require the user to approve
+    // in their signer app — show a hint so they know to switch apps.
+    const nostrSignModes = ['nostr', 'nostrMusic', 'blossom', 'nsite'] as const;
+    // Hosted saves also sign with Nostr when the user is logged in with Nostr
+    // (creating/claiming/updating an account-owned feed), so pre-flight those too.
+    const hostedWillSignNostr = mode === 'hosted' && isLoggedIn && !!nostrState.user?.pubkey;
+    if ((nostrSignModes as readonly string[]).includes(mode) || hostedWillSignNostr) {
+      setMessage({ type: 'success', text: 'Connecting to signer — if using a remote signer (Primal, Amber), open the app and approve now.' });
+      const health = await checkSignerConnection();
+      setMessage(null);
+      if (!health.connected) {
+        setMessage({ type: 'error', text: health.error ?? 'Nostr signer is not connected.' });
+        setLoading(false);
+        return;
+      }
+    }
+
+    // Enter the post-upload state: the Upload button gives way to a confirmation.
+    // Also hands the PI id up so the toolbar's Podcast Index button can light up
+    // immediately — PI can't be searched by podcastGuid until it crawls the feed.
+    const recordPublished = (result: PublishedResult) => {
+      setPublished(result);
+      setPiLookupId(null);
+      setPiCheckExhausted(false);
+      if (result.podcastIndexId) {
+        onPodcastIndexId?.(result.podcastIndexId);
+      } else if (!result.isDraft) {
+        // Hand the watch to App so it survives this modal being closed.
+        onPodcastIndexPending?.();
+      }
+    };
 
     // Helper to show success and auto-close
     const showSuccessAndClose = (text: string, delay = 1500) => {
@@ -296,7 +529,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
           }
           showSuccessAndClose('Saved to browser storage');
           break;
-        case 'download':
+        case 'download': {
           const xml = generateCurrentFeedXml();
           const feedTitle = isPublisherMode && publisherFeed ? publisherFeed.title : album.title;
           const publisherName = isPublisherMode && publisherFeed?.author ? `${publisherFeed.author}_` : '';
@@ -304,12 +537,14 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
           downloadXml(xml, filename);
           showSuccessAndClose('Download started');
           break;
-        case 'clipboard':
+        }
+        case 'clipboard': {
           const xmlContent = generateCurrentFeedXml();
           await copyToClipboard(xmlContent);
           showSuccessAndClose('Copied to clipboard');
           break;
-        case 'nostr':
+        }
+        case 'nostr': {
           const nostrResult = isPublisherMode && publisherFeed
             ? await saveFeedToNostr(publisherFeed, 'publisher', isDirty)
             : await saveFeedToNostr(album, 'album', isDirty);
@@ -319,7 +554,8 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
             setMessage({ type: 'error', text: nostrResult.message });
           }
           break;
-        case 'nostrMusic':
+        }
+        case 'nostrMusic': {
           const musicResult = await publishNostrMusicTracks(album, undefined, setProgress);
           setProgress(null);
           // Show error/warning if not all tracks published or playlist failed
@@ -332,7 +568,8 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
             setMessage({ type: 'error', text: musicResult.message });
           }
           break;
-        case 'blossom':
+        }
+        case 'blossom': {
           const blossomResult = isPublisherMode && publisherFeed
             ? await uploadFeedToBlossom(publisherFeed, 'publisher', blossomServer)
             : await uploadFeedToBlossom(album, 'album', blossomServer);
@@ -349,6 +586,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
             text: blossomResult.message
           });
           break;
+        }
         case 'nsite': {
           const nsiteFeed = isPublisherMode && publisherFeed ? publisherFeed : album;
           const nsiteFeedType = isPublisherMode ? 'publisher' as const : (feedType === 'video' ? 'video' as const : 'album' as const);
@@ -359,19 +597,38 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
             nsiteSiteId,
             (status) => setNsiteProgress(status)
           );
+          // Nobody types this URL, so there is no field to warn beside — but the
+          // nsite gateway is a third-party host like any other, and the submit
+          // guard can refuse it. Saying "Feed submitted to Podcast Index"
+          // regardless is the exact false success this feature exists to stop.
+          const PI_RETRY_HINT = ' Feed published, but the Podcast Index submission failed — use Save → Submit to PodcastIndex to retry.';
+          let piNote = '';
           if (nsiteResult.success) {
             if (nsiteResult.nsiteUrl) {
               setNsiteUrl(nsiteResult.nsiteUrl);
               // Submit to Podcast Index
               setNsiteProgress('Submitting to Podcast Index...');
               try {
-                const piRes = await fetch(`/api/pubnotify?url=${encodeURIComponent(nsiteResult.nsiteUrl)}&guid=${encodeURIComponent(currentFeedGuid)}`);
+                const piMedium = isPublisherMode ? publisherFeed?.medium : album.medium;
+                const piParams = new URLSearchParams({ url: nsiteResult.nsiteUrl, guid: currentFeedGuid });
+                if (piMedium) piParams.set('medium', piMedium);
+                const piRes = await fetch(`/api/pubnotify?${piParams.toString()}`);
+                const piData = await piRes.json().catch(() => ({}));
                 if (piRes.ok) {
-                  const piData = await piRes.json();
                   if (piData.podcastIndexUrl) setNsitePiUrl(piData.podcastIndexUrl);
+                  piNote = ' Feed submitted to Podcast Index.';
+                } else if (isGuardRefusal(piData)) {
+                  // Deliberately not retried with force: the recovery path is the
+                  // manual "Submit to PodcastIndex" mode in this same modal, which
+                  // has the override. Forcing here would disable the guard on the
+                  // riskiest path in the app.
+                  piNote = ` Not submitted to Podcast Index: ${piData.error}`;
+                } else {
+                  piNote = PI_RETRY_HINT;
                 }
               } catch {
                 // Non-fatal — feed is already published to nsite
+                piNote = PI_RETRY_HINT;
               }
             }
             if (nsiteResult.blossomUrl) setNsiteBlossomUrl(nsiteResult.blossomUrl);
@@ -379,13 +636,11 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
           setNsiteProgress(null);
           setMessage({
             type: nsiteResult.success ? 'success' : 'error',
-            text: nsiteResult.success
-              ? nsiteResult.message + ' Feed submitted to Podcast Index.'
-              : nsiteResult.message
+            text: nsiteResult.success ? nsiteResult.message + piNote : nsiteResult.message
           });
           break;
         }
-        case 'hosted':
+        case 'hosted': {
           const hostedXml = generateCurrentFeedXml();
 
           // If there's a legacy feed with mismatched feedId, update it first
@@ -399,24 +654,73 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
           }
 
           if (hostedInfo) {
-            // Update existing feed - use Nostr auth if linked, otherwise token
-            let updateResult;
-            if (isNostrLinked) {
-              updateResult = await updateHostedFeedWithNostr(hostedInfo.feedId, hostedXml, currentFeedTitle);
-            } else {
-              updateResult = await updateHostedFeed(hostedInfo.feedId, hostedInfo.editToken, hostedXml, currentFeedTitle);
+            // Saving changes to an existing hosted feed now requires being signed in.
+            // The edit token alone no longer authorizes an update here.
+            const nostrAvailable = isLoggedIn && !!nostrState.user?.pubkey;
+            const emailAvailable = isEmailLoggedIn();
+            if (!nostrAvailable && !emailAvailable) {
+              setMessage({ type: 'error', text: 'Sign in with email or Nostr to save changes to your hosted feed.' });
+              setLoading(false);
+              return;
             }
-            const updatedInfo = { ...hostedInfo, lastUpdated: Date.now() };
+
+            // Pick the update path by which identity actually OWNS the feed
+            // (matching the server's auth ladder) — a feed claimed by email must
+            // update via the email session even if the user is also Nostr-logged-in,
+            // and vice versa. Only unclaimed feeds fall back to the login method.
+            const useNostr = isNostrLinked ? true : isEmailLinked ? false : nostrAvailable;
+            const useEmail = !useNostr && emailAvailable;
+
+            // If the feed is still token-owned, saving auto-claims it onto the
+            // signed-in account (best-effort) so the token is retired going forward.
+            let claimed: 'nostr' | 'email' | null = null;
+            if (useNostr && !isNostrLinked && hostedInfo.editToken) {
+              try {
+                await linkNostrToFeed(hostedInfo.feedId, hostedInfo.editToken);
+                claimed = 'nostr';
+              } catch (claimErr) {
+                console.warn('Auto-claim to Nostr failed:', claimErr);
+              }
+            } else if (useEmail && !isEmailLinked && hostedInfo.editToken) {
+              try {
+                await linkEmailToFeed(hostedInfo.feedId, hostedInfo.editToken);
+                claimed = 'email';
+              } catch (claimErr) {
+                console.warn('Auto-claim to email failed:', claimErr);
+              }
+            }
+
+            let updateResult;
+            try {
+              updateResult = useNostr
+                ? await updateHostedFeedWithNostr(hostedInfo.feedId, hostedXml, currentFeedTitle, isDraft)
+                : await updateHostedFeedWithEmail(hostedInfo.feedId, hostedXml, currentFeedTitle, isDraft);
+            } catch (updateErr) {
+              // The account-owned path can fail while a valid edit token is in hand:
+              // the auto-claim above failed (signer rejected, network blip), the feed
+              // predates .meta.json (PATCH 404s, PUT demands the raw token), or the
+              // claim's metadata write hasn't propagated yet. Fall back to the token
+              // so a legitimate token holder can always save.
+              if (!hostedInfo.editToken) throw updateErr;
+              console.warn('Account-owned update failed, retrying with edit token:', updateErr);
+              updateResult = await updateHostedFeed(hostedInfo.feedId, hostedInfo.editToken, hostedXml, currentFeedTitle, isDraft);
+            }
+            const updatedInfo: HostedFeedInfo = {
+              ...hostedInfo,
+              lastUpdated: Date.now(),
+              isDraft: updateResult.isDraft || undefined,
+              ...(updateResult.podcastIndexId ? { podcastIndexId: updateResult.podcastIndexId } : {}),
+              ...(claimed === 'nostr' ? { ownerPubkey: nostrState.user!.pubkey, linkedAt: Date.now() } : {}),
+              ...(claimed === 'email' ? { ownerEmailHash: getEmailSession()?.emailHash, emailLinkedAt: Date.now() } : {}),
+            };
             saveHostedFeedInfo(currentFeedGuid, updatedInfo);
             setHostedInfo(updatedInfo);
-
-            // Show PI notification result
-            if (updateResult.podcastIndexId) {
-              setPodcastIndexPending(true);
-              setMessage({ type: 'success', text: 'Feed updated! Podcast Index notified.' });
-            } else {
-              showSuccessAndClose('Feed updated!');
-            }
+            recordPublished({
+              isDraft: !!isDraft,
+              podcastIndexId: updateResult.podcastIndexId,
+              addResult: updateResult.addResult
+            });
+            setMessage({ type: 'success', text: isDraft ? 'Feed updated as draft!' : 'Feed updated!' });
           } else if (pendingToken || legacyHostedInfo) {
             // Create new feed at correct URL - use Nostr auth if user opted in
             // Use legacy token if available, otherwise use pending token
@@ -428,49 +732,133 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
             let hostedResult;
             let newInfo: HostedFeedInfo;
             const shouldLinkNostr = isLoggedIn && nostrState.user?.pubkey;
+            const shouldLinkEmail = !shouldLinkNostr && isEmailLoggedIn();
             if (shouldLinkNostr) {
-              hostedResult = await createHostedFeedWithNostr(hostedXml, currentFeedTitle, currentFeedGuid, tokenToUse);
+              hostedResult = await createHostedFeedWithNostr(hostedXml, currentFeedTitle, currentFeedGuid, tokenToUse, isDraft);
               newInfo = {
                 feedId: hostedResult.feedId,
                 editToken: tokenToUse,
                 createdAt: Date.now(),
                 lastUpdated: Date.now(),
                 ownerPubkey: nostrState.user!.pubkey,
-                linkedAt: Date.now()
+                linkedAt: Date.now(),
+                ...(hostedResult.isDraft && { isDraft: true })
               };
-            } else {
-              hostedResult = await createHostedFeed(hostedXml, currentFeedTitle, currentFeedGuid, tokenToUse);
+            } else if (shouldLinkEmail) {
+              hostedResult = await createHostedFeedWithEmail(hostedXml, currentFeedTitle, currentFeedGuid, tokenToUse, isDraft);
               newInfo = {
                 feedId: hostedResult.feedId,
                 editToken: tokenToUse,
                 createdAt: Date.now(),
-                lastUpdated: Date.now()
+                lastUpdated: Date.now(),
+                ownerEmailHash: getEmailSession()?.emailHash,
+                emailLinkedAt: Date.now(),
+                ...(hostedResult.isDraft && { isDraft: true })
+              };
+            } else {
+              hostedResult = await createHostedFeed(hostedXml, currentFeedTitle, currentFeedGuid, tokenToUse, isDraft);
+              newInfo = {
+                feedId: hostedResult.feedId,
+                editToken: tokenToUse,
+                createdAt: Date.now(),
+                lastUpdated: Date.now(),
+                ...(hostedResult.isDraft && { isDraft: true })
               };
             }
+            if (hostedResult.podcastIndexId) newInfo.podcastIndexId = hostedResult.podcastIndexId;
             saveHostedFeedInfo(currentFeedGuid, newInfo);
             setHostedInfo(newInfo);
             setHostedUrl(buildHostedUrl(hostedResult.feedId));
             setPendingToken(null);
             setLegacyHostedInfo(null);
-            setTokenAcknowledged(false);
+            recordPublished({
+              isDraft: !!isDraft,
+              podcastIndexId: hostedResult.podcastIndexId,
+              addResult: hostedResult.addResult
+            });
 
-            // Build success message with PI result
-            let successMsg = legacyHostedInfo
-              ? 'Feed migrated to new URL and legacy URL updated!'
-              : (shouldLinkNostr ? 'Feed created and linked to your Nostr identity!' : 'Feed created!');
-
-            if (hostedResult.podcastIndexId) {
-              setPodcastIndexPending(true);
-              successMsg += ' Podcast Index notified.';
+            if (isDraft) {
+              setMessage({ type: 'success', text: 'Feed saved as draft! Podcast Index not notified.' });
+            } else {
+              // The Podcast Index outcome is reported by the confirmation block, not here.
+              setMessage({
+                type: 'success',
+                text: legacyHostedInfo
+                  ? 'Feed migrated to new URL and legacy URL updated!'
+                  : (shouldLinkNostr
+                      ? 'Feed created and linked to your Nostr identity!'
+                      : (shouldLinkEmail ? 'Feed created and linked to your email!' : 'Feed created!'))
+              });
             }
-            setMessage({ type: 'success', text: successMsg });
           }
           break;
+        }
+        case 'podcastIndex': {
+          const submitUrl = normalizeFeedUrl(podcastIndexSubmitUrl);
+          if (!submitUrl) {
+            setMessage({ type: 'error', text: 'Feed URL is required' });
+            setLoading(false);
+            return;
+          }
+          if (podcastIndexUrlError) {
+            setMessage({ type: 'error', text: podcastIndexUrlError });
+            setLoading(false);
+            return;
+          }
+          // Confirm the URL actually resolves before handing it to PI — a broken
+          // entry there sticks around. Advisory: a second click submits anyway.
+          // The latch doubles as the override: set by this check or by a server
+          // refusal, and cleared whenever the URL changes.
+          const forcePiSubmit = podcastIndexBypassVerify;
+          if (!forcePiSubmit) {
+            setVerifying(true);
+            const check = await verifyFeedUrl(submitUrl);
+            setVerifying(false);
+            if (!check.ok) {
+              setPodcastIndexVerifyWarning(check.warning);
+              setPodcastIndexBypassVerify(true);
+              setLoading(false);
+              return;
+            }
+          }
+          setPodcastIndexVerifyWarning(null);
+          setPodcastIndexResultUrl(null);
+          const params = new URLSearchParams({ url: submitUrl });
+          if (currentFeedGuid) params.set('guid', currentFeedGuid);
+          const piMedium = isPublisherMode ? publisherFeed?.medium : album.medium;
+          if (piMedium) params.set('medium', piMedium);
+          if (forcePiSubmit) params.set('force', '1');
+          const response = await fetch(`/api/pubnotify?${params}`);
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            // The server saw a block our own check missed. Arm the latch so the
+            // button becomes "Submit anyway" rather than a dead end.
+            if (isGuardRefusal(data)) {
+              setPodcastIndexVerifyWarning(data.error);
+              setPodcastIndexBypassVerify(true);
+              setLoading(false);
+              return;
+            }
+            setMessage({ type: 'error', text: (data as { error?: string }).error ?? 'Failed to submit to Podcast Index' });
+            setLoading(false);
+            return;
+          }
+          const forcedNote = forcePiSubmit ? FORCED_SUBMIT_NOTE : '';
+          if ((data as { podcastIndexUrl?: string }).podcastIndexUrl) {
+            setPodcastIndexResultUrl((data as { podcastIndexUrl: string }).podcastIndexUrl);
+            setMessage({ type: 'success', text: `Feed added to Podcast Index!${forcedNote}` });
+          } else {
+            setPodcastIndexResultUrl(`https://podcastindex.org/search?q=${encodeURIComponent(submitUrl)}`);
+            setMessage({ type: 'success', text: `Feed submitted! It may take a moment to appear in the index.${forcedNote}` });
+          }
+          break;
+        }
       }
     } catch (err) {
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Save failed' });
     } finally {
       setLoading(false);
+      setVerifying(false);
       setProgress(null);
     }
   };
@@ -485,6 +873,13 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
 
     setLinkingNostr(true);
     setMessage(null);
+
+    const health = await checkSignerConnection();
+    if (!health.connected) {
+      setMessage({ type: 'error', text: health.error ?? 'Nostr signer is not connected.' });
+      setLinkingNostr(false);
+      return;
+    }
 
     try {
       const result = await linkNostrToFeed(hostedInfo.feedId, hostedInfo.editToken);
@@ -505,6 +900,54 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
       setLinkingNostr(false);
     }
   };
+
+  // Claim an existing feed with email. If already signed in with email, link directly;
+  // otherwise open the email modal in claim mode (sends a confirmation link).
+  const handleLinkEmail = async () => {
+    if (!hostedInfo) return;
+
+    if (!isEmailLoggedIn()) {
+      setEmailModal({ mode: 'claim' });
+      return;
+    }
+
+    setLinkingEmail(true);
+    setMessage(null);
+    try {
+      await linkEmailToFeed(hostedInfo.feedId, hostedInfo.editToken);
+      const session = getEmailSession();
+      const updatedInfo = {
+        ...hostedInfo,
+        ownerEmailHash: session?.emailHash,
+        emailLinkedAt: Date.now()
+      };
+      saveHostedFeedInfo(currentFeedGuid, updatedInfo);
+      setHostedInfo(updatedInfo);
+      setMessage({ type: 'success', text: 'Email linked! You can manage this feed from any device.' });
+    } catch (err) {
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to link email' });
+    } finally {
+      setLinkingEmail(false);
+    }
+  };
+
+  // Which destinations are visible given login / publisher / experimental state.
+  const isDestinationVisible = (value: SaveMode): boolean => {
+    if (value === 'nostrMusic') return !isPublisherMode && isLoggedIn;
+    if (value === 'nostr' || value === 'blossom' || value === 'nsite') return showExperimental && isLoggedIn;
+    return true;
+  };
+  const visibleDestinations = SAVE_DESTINATIONS.filter((d) => isDestinationVisible(d.value));
+  const selectedDestination = SAVE_DESTINATIONS.find((d) => d.value === mode) ?? SAVE_DESTINATIONS[0];
+
+  // A finished "Host on MSP" upload: swap the Upload button for the confirmation.
+  const isUploadDone = mode === 'hosted' && !!published;
+  // PI page id for this feed — from the save we just made, from the follow-up lookup,
+  // else cached from an earlier save.
+  const podcastIndexPageId = published?.podcastIndexId ?? piLookupId ?? hostedInfo?.podcastIndexId;
+  const podcastIndexRejection = describeAddResult(published?.addResult);
+  // Still waiting on PI's crawler rather than having heard a "no".
+  const podcastIndexWaiting = !!published && !published.isDraft && !podcastIndexPageId && !piCheckExhausted;
 
   return (
     <>
@@ -527,13 +970,17 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
         }
         footer={
           <div style={{ display: 'flex', gap: '12px', width: '100%' }}>
-            <button
-              className="btn btn-primary"
-              onClick={handleSave}
-              disabled={isButtonDisabled()}
-            >
-              {getButtonText()}
-            </button>
+            {/* Once the upload lands, the action is done — drop the button so the
+                modal doesn't read as "nothing happened, click again". */}
+            {!isUploadDone && (
+              <button
+                className="btn btn-primary"
+                onClick={handleSave}
+                disabled={isButtonDisabled()}
+              >
+                {getButtonText()}
+              </button>
+            )}
             {mode === 'nostrMusic' && (
               <button
                 className="btn btn-secondary"
@@ -552,26 +999,65 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
               </button>
             )}
             <div style={{ flex: 1 }} />
-            <button className="btn btn-secondary" onClick={handleClose}>Cancel</button>
+            <button
+              className={isUploadDone ? 'btn btn-primary' : 'btn btn-secondary'}
+              onClick={handleClose}
+            >
+              {isUploadDone ? 'Done' : 'Cancel'}
+            </button>
           </div>
         }
       >
           <div className="form-group" style={{ marginBottom: '16px' }}>
-            <label className="form-label">Save Destination</label>
-            <select
-              className="form-select"
-              value={mode}
-              onChange={(e) => setMode(e.target.value as typeof mode)}
-            >
-              <option value="local">Local Storage</option>
-              <option value="download">Download XML</option>
-              <option value="clipboard">Copy to Clipboard</option>
-              <option value="hosted">Host on MSP</option>
-              {isLoggedIn && <option value="nostr">Save RSS feed to Nostr</option>}
-              {!isPublisherMode && isLoggedIn && <option value="nostrMusic">Publish to Nostr Music</option>}
-              {isLoggedIn && <option value="blossom">Publish RSS feed to a Blossom server</option>}
-              {isLoggedIn && <option value="nsite">Publish RSS feed to nsite (experimental)</option>}
-            </select>
+            <label className="form-label" id="save-dest-label">Save Destination</label>
+            <div className="save-dest" ref={destRef}>
+              <button
+                type="button"
+                className="save-dest-trigger"
+                aria-haspopup="listbox"
+                aria-expanded={destOpen}
+                aria-labelledby="save-dest-label"
+                onClick={() => (destOpen ? setDestOpen(false) : openDestMenu())}
+                onKeyDown={(e) => { if (e.key === 'Escape') setDestOpen(false); }}
+              >
+                <span className="save-dest-trigger-text">
+                  <span className="label">{selectedDestination.label}{selectedDestination.experimental ? ' 🧪' : ''}</span>
+                  <span className="blurb">{selectedDestination.blurb}</span>
+                </span>
+                <span className="save-dest-caret" aria-hidden="true">▾</span>
+              </button>
+              {destOpen && destMenuPos && createPortal(
+                <ul
+                  ref={destMenuRef}
+                  className="save-dest-menu"
+                  role="listbox"
+                  aria-labelledby="save-dest-label"
+                  style={{ top: destMenuPos.top, bottom: destMenuPos.bottom, left: destMenuPos.left, width: destMenuPos.width, maxHeight: destMenuPos.maxHeight }}
+                >
+                  {visibleDestinations.map((d) => (
+                    <li
+                      key={d.value}
+                      role="option"
+                      aria-selected={d.value === mode}
+                      tabIndex={0}
+                      className={`save-dest-option${d.value === mode ? ' selected' : ''}`}
+                      onClick={() => { selectMode(d.value); setDestOpen(false); }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectMode(d.value); setDestOpen(false); }
+                        else if (e.key === 'Escape') setDestOpen(false);
+                      }}
+                    >
+                      <span className="save-dest-option-text">
+                        <span className="label">{d.label}{d.experimental ? ' 🧪' : ''}</span>
+                        <span className="blurb">{d.blurb}</span>
+                      </span>
+                      {d.value === mode && <span className="save-dest-check" aria-hidden="true">✓</span>}
+                    </li>
+                  ))}
+                </ul>,
+                document.body
+              )}
+            </div>
           </div>
 
           <div className="nostr-album-preview">
@@ -687,7 +1173,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                     }}
                   />
                   <p style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginTop: '8px', marginBottom: '8px' }}>
-                    Use this URL in Apple Podcasts, Spotify, etc. It always points to the latest version.
+                    Use this URL in any podcast app. It always points to the latest version.
                   </p>
                   <button
                     className="btn btn-primary"
@@ -813,10 +1299,32 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                   ? 'Your feed is already hosted. Click Save to update it with your latest changes.'
                   : legacyHostedInfo
                     ? 'Your feed URL will be migrated to match the Podcast GUID. Both old and new URLs will be updated.'
-                    : pendingToken
-                      ? 'Save your edit token before uploading!'
-                      : 'Host your RSS feed on MSP. No account required - just save your edit token!'}
+                    : isEmailLoggedIn()
+                      ? 'Host your RSS feed on MSP — it will be owned by your email account, manageable from any device.'
+                      : isLoggedIn
+                        ? 'Host your RSS feed on MSP — it will be linked to your Nostr identity, manageable from any device.'
+                        : 'Host your RSS feed on MSP — get a permanent URL for any podcast app.'}
               </p>
+              {/* Updating an existing (e.g. imported token-owned or legacy) feed now requires signing in. */}
+              {(hostedInfo || legacyHostedInfo) && !isLoggedIn && !isEmailLoggedIn() && (
+                <SignInPrompt
+                  style={{ marginTop: '12px' }}
+                  title="Sign in to save changes"
+                  blurb="Saving updates to an MSP-hosted feed requires signing in. If this feed used an edit token, signing in claims it to your account so you won't need the token again."
+                  onEmail={() => setEmailModal({ mode: 'login' })}
+                  onNostr={() => setShowNostrConnect(true)}
+                />
+              )}
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.875rem', marginTop: '12px' }}>
+                <input
+                  type="checkbox"
+                  checked={isDraft}
+                  // Changing draft mode changes what an upload would do, so offer it again.
+                  onChange={(e) => { setIsDraft(e.target.checked); setPublished(null); }}
+                  style={{ width: '16px', height: '16px' }}
+                />
+                <span>Draft mode — host feed without notifying Podcast Index or sending podping</span>
+              </label>
               {legacyHostedInfo && !hostedInfo && (
                 <div style={{ marginTop: '12px', padding: '12px', backgroundColor: 'rgba(59, 130, 246, 0.1)', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
                   <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
@@ -830,83 +1338,35 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                   </p>
                 </div>
               )}
-              {pendingToken && !hostedInfo && !legacyHostedInfo && (
-                <div style={{ marginTop: '16px', padding: '12px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--warning, #f59e0b)' }}>
-                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.875rem', fontWeight: 600, color: 'var(--warning, #f59e0b)' }}>
-                    {isLoggedIn ? 'Backup Token (save this!)' : 'Edit Token (save this!)'}
-                  </label>
-                  <input
-                    type="text"
-                    value={pendingToken}
-                    readOnly
-                    onClick={(e) => (e.target as HTMLInputElement).select()}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: '4px',
-                      border: '1px solid var(--warning, #f59e0b)',
-                      backgroundColor: 'var(--bg-secondary)',
-                      color: 'var(--text-primary)',
-                      fontSize: '0.75rem',
-                      fontFamily: 'monospace'
-                    }}
-                  />
-                  <p style={{ color: 'var(--warning, #f59e0b)', fontSize: '0.75rem', marginTop: '8px', marginBottom: '12px' }}>
-                    You need this token to edit your feed later. Save it somewhere safe!
-                  </p>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
-                    <button
-                      className="btn btn-secondary"
-                      onClick={() => {
-                        navigator.clipboard.writeText(pendingToken);
-                        setMessage({ type: 'success', text: 'Token copied to clipboard' });
-                      }}
-                    >
-                      Copy Token
-                    </button>
-                    <button
-                      className="btn btn-secondary"
-                      onClick={() => {
-                        downloadHostedFeedBackup(currentFeedGuid, pendingToken, currentFeedTitle, currentFeedGuid);
-                        setMessage({ type: 'success', text: 'Backup file downloaded' });
-                      }}
-                    >
-                      Download Backup
-                    </button>
-                  </div>
-                  <label style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    cursor: 'pointer',
-                    fontSize: '0.75rem',
-                    color: 'var(--text-primary)',
-                    padding: '8px',
-                    backgroundColor: tokenAcknowledged ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
-                    borderRadius: '4px',
-                    border: tokenAcknowledged ? '1px solid var(--success, #10b981)' : '1px solid var(--border-color)'
-                  }}>
-                    <input
-                      type="checkbox"
-                      checked={tokenAcknowledged}
-                      onChange={(e) => setTokenAcknowledged(e.target.checked)}
-                      style={{ width: '16px', height: '16px' }}
-                    />
-                    <span>I have saved my edit token</span>
-                  </label>
+              {/* Logged-out users must sign in to host a NEW feed. Tokens are no longer offered for new feeds. */}
+              {!hostedInfo && !legacyHostedInfo && !isEmailLoggedIn() && !isLoggedIn && !showRestore && (
+                <SignInPrompt
+                  style={{ marginTop: '16px' }}
+                  title="Sign in to host your feed"
+                  blurb="Sign in with your email or Nostr so this feed is owned by your account — manage it from any device, nothing to keep safe."
+                  onEmail={() => setEmailModal({ mode: 'login' })}
+                  onNostr={() => setShowNostrConnect(true)}
+                >
                   <button
-                    className="btn btn-secondary"
-                    style={{ fontSize: '0.75rem', padding: '6px 12px', marginTop: '12px', width: '100%' }}
-                    onClick={() => {
-                      setPendingToken(null);
-                      setTokenAcknowledged(false);
-                      setShowRestore(true);
-                    }}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: '0.7rem', textDecoration: 'underline', cursor: 'pointer', marginTop: '10px', padding: 0 }}
+                    onClick={() => { setPendingToken(null); setShowRestore(true); }}
                   >
-                    Already have a token? Restore existing feed
+                    Already have a feed with an edit token? Restore it
                   </button>
+                </SignInPrompt>
+              )}
+              {/* Calm "owned by your account" note for signed-in users — no token to manage. */}
+              {pendingToken && !hostedInfo && !legacyHostedInfo && (isEmailLoggedIn() || isLoggedIn) && (
+                <div style={{ marginTop: '16px', padding: '12px', backgroundColor: 'rgba(16, 185, 129, 0.08)', borderRadius: '8px', border: '1px solid var(--success, #10b981)' }}>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--success, #10b981)', fontWeight: 600, margin: 0 }}>
+                    {isEmailLoggedIn() ? '✉️ This feed will be owned by your email account.' : '🔑 This feed will be linked to your Nostr identity.'}
+                  </p>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '6px', marginBottom: 0 }}>
+                    You can manage it from any device — nothing to keep safe.
+                  </p>
                 </div>
               )}
+              {/* New feeds no longer show an edit-token panel — a signed-in identity (email/Nostr) owns the feed. */}
               {hostedUrl && (
                 <div style={{ marginTop: '16px', padding: '12px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--success)' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', fontSize: '0.875rem', fontWeight: 600, color: 'var(--success)' }}>
@@ -914,6 +1374,11 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                     {isNostrLinked && (
                       <span style={{ fontSize: '0.7rem', padding: '2px 6px', backgroundColor: 'rgba(139, 92, 246, 0.2)', color: '#a78bfa', borderRadius: '4px' }}>
                         Linked to Nostr
+                      </span>
+                    )}
+                    {hostedInfo?.isDraft && (
+                      <span style={{ fontSize: '0.7rem', padding: '2px 6px', backgroundColor: 'rgba(245, 158, 11, 0.2)', color: '#f59e0b', borderRadius: '4px' }}>
+                        DRAFT
                       </span>
                     )}
                   </label>
@@ -934,7 +1399,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                     }}
                   />
                   <p style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginTop: '8px', marginBottom: '8px' }}>
-                    Use this URL in Apple Podcasts, Spotify, etc. It always points to the latest version.
+                    Use this URL in any podcast app. It always points to the latest version.
                   </p>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     <button
@@ -953,45 +1418,125 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                         clearHostedFeedInfo(currentFeedGuid);
                         setHostedInfo(null);
                         setHostedUrl(null);
+                        // Unlinking makes hosting possible again — bring the Upload button back.
+                        setPublished(null);
                         setMessage({ type: 'success', text: 'Feed unlinked from this browser' });
                       }}
                     >
                       Unlink
                     </button>
                   </div>
-                  {podcastIndexPending && (
+                  {/* Podcast Index outcome. Shown after an upload, and any time we already
+                      know the feed's PI id from an earlier save. A missing id is reported
+                      honestly rather than left to look like success. */}
+                  {(podcastIndexPageId || (published && !published.isDraft)) && (
                     <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>
                       <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                         Podcast Index
                       </label>
-                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0 }}>
-                        Feed submitted to Podcast Index. It may take a few minutes to appear.
-                        <br />
-                        <a
-                          href={`https://podcastindex.org/search?q=${encodeURIComponent(hostedUrl || '')}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{ color: '#3b82f6' }}
+                      {podcastIndexPageId ? (
+                        <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0 }}>
+                          <span style={{ color: 'var(--success)' }}>✅ This feed is in Podcast Index.</span>
+                          {' '}Artwork and episodes can take a few minutes to appear.
+                          <br />
+                          <a
+                            href={`https://podcastindex.org/podcast/${podcastIndexPageId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: '#3b82f6' }}
+                          >
+                            View on Podcast Index →
+                          </a>
+                        </p>
+                      ) : podcastIndexWaiting ? (
+                        <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0 }}>
+                          Submitted — waiting for Podcast Index to fetch your feed. This usually
+                          takes a minute or two; the link appears here as soon as it lands.
+                        </p>
+                      ) : (
+                        <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0 }}>
+                          Submitted, but Podcast Index hasn't picked it up yet. Your feed is hosted
+                          and the URL above works in any podcast app regardless.
+                          {podcastIndexRejection && (
+                            <>
+                              <br />
+                              Podcast Index said: <em>{podcastIndexRejection}</em>
+                            </>
+                          )}
+                          <br />
+                          <button
+                            className="btn btn-secondary"
+                            style={{ fontSize: '0.75rem', marginTop: '8px', marginRight: '8px' }}
+                            onClick={async () => {
+                              setPiCheckExhausted(false);
+                              if (!(await lookUpPodcastIndex())) setPiCheckExhausted(true);
+                            }}
+                          >
+                            Check again
+                          </button>
+                          <a
+                            href="https://podcastindex.org/add"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: '#3b82f6' }}
+                          >
+                            Add it manually →
+                          </a>
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {/* Token-owned feed (e.g. just restored): offer to switch it to an account so the token isn't needed. */}
+                  {hostedInfo && !isNostrLinked && !isEmailLinked && (
+                    <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>
+                      <p style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' }}>
+                        Switch this feed to your account
+                      </p>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                        Link your email or Nostr so you can manage this feed from any device — no token to keep safe.
+                      </p>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <button
+                          className="btn btn-secondary"
+                          style={{ fontSize: '0.75rem' }}
+                          onClick={handleLinkEmail}
+                          disabled={linkingEmail}
                         >
-                          Check status or add manually →
-                        </a>
+                          {linkingEmail ? 'Linking…' : (isEmailLoggedIn() ? 'Claim with Email' : 'Claim with Email…')}
+                        </button>
+                        {isLoggedIn ? (
+                          <button
+                            className="btn btn-secondary"
+                            style={{ fontSize: '0.75rem' }}
+                            onClick={handleLinkNostr}
+                            disabled={linkingNostr}
+                          >
+                            {linkingNostr ? 'Linking…' : 'Link Nostr Identity'}
+                          </button>
+                        ) : (
+                          <button
+                            className="btn btn-secondary"
+                            style={{ fontSize: '0.75rem' }}
+                            onClick={() => setShowNostrConnect(true)}
+                          >
+                            Sign in with Nostr
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {isNostrLinked && (
+                    <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--success, #10b981)', margin: 0 }}>
+                        🔑 Linked to your Nostr identity — manageable from any device.
                       </p>
                     </div>
                   )}
-                  {/* Link Nostr button for existing feeds without Nostr link */}
-                  {isLoggedIn && hostedInfo && !isNostrLinked && (
+                  {isEmailLinked && (
                     <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>
-                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                        Link your Nostr identity to manage this feed without needing the token.
+                      <p style={{ fontSize: '0.75rem', color: 'var(--success, #10b981)', margin: 0 }}>
+                        ✉️ Claimed with your email — manageable from any device.
                       </p>
-                      <button
-                        className="btn btn-secondary"
-                        style={{ fontSize: '0.75rem' }}
-                        onClick={handleLinkNostr}
-                        disabled={linkingNostr}
-                      >
-                        {linkingNostr ? 'Linking...' : 'Link Nostr Identity'}
-                      </button>
                     </div>
                   )}
                 </div>
@@ -1152,7 +1697,73 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
               )}
             </div>
           )}
-
+          {mode === 'podcastIndex' && (
+            <div style={{ marginTop: '16px' }}>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '12px' }}>
+                Submit a feed URL to Podcast Index so it gets indexed and becomes discoverable in apps like Fountain, Castamatic, and others.
+              </p>
+              <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                Feed URL
+              </label>
+              <input
+                type="text"
+                value={podcastIndexSubmitUrl}
+                onChange={(e) => handlePodcastIndexUrlChange(e.target.value)}
+                placeholder="https://example.com/feed.xml"
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  borderRadius: '4px',
+                  border: `1px solid ${podcastIndexUrlError ? 'var(--error, #ef4444)' : 'var(--border-color)'}`,
+                  backgroundColor: 'var(--bg-secondary)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.875rem',
+                  fontFamily: 'monospace'
+                }}
+              />
+              {podcastIndexUrlError && (
+                <div style={{ marginTop: '6px', fontSize: '0.8rem', color: 'var(--error, #ef4444)' }}>
+                  {podcastIndexUrlError}
+                </div>
+              )}
+              {!podcastIndexUrlError && podcastIndexVerifyWarning && (
+                <div style={{ marginTop: '6px', fontSize: '0.8rem', color: 'var(--warning-color, #f59e0b)' }}>
+                  ⚠ {podcastIndexVerifyWarning} Submit anyway if you're sure.
+                </div>
+              )}
+              {podcastIndexResultUrl && (
+                <div style={{
+                  marginTop: '12px',
+                  padding: '12px',
+                  backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                  borderRadius: '8px',
+                  border: '1px solid var(--success)'
+                }}>
+                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.75rem', fontWeight: 600, color: 'var(--success)' }}>
+                    View on Podcast Index
+                  </label>
+                  <a
+                    href={podcastIndexResultUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ fontSize: '0.875rem', color: '#3b82f6', wordBreak: 'break-all' }}
+                  >
+                    {podcastIndexResultUrl}
+                  </a>
+                </div>
+              )}
+              <div style={{ marginTop: '12px' }}>
+                <a
+                  href="https://podcastindex.org/add"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ fontSize: '0.75rem', color: '#3b82f6' }}
+                >
+                  Add feed manually on podcastindex.org →
+                </a>
+              </div>
+            </div>
+          )}
           {progress && (
             <div style={{ marginTop: '12px', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
               {progress.phase === 'tracks'
@@ -1188,13 +1799,25 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                 <li><strong>Local Storage</strong> - Save to your browser's local storage. Data persists until you clear browser data.</li>
                 <li><strong>Download XML</strong> - Download the RSS feed as an XML file to your computer.</li>
                 <li><strong>Copy to Clipboard</strong> - Copy the RSS XML to your clipboard for pasting elsewhere.</li>
-                <li><strong>Host on MSP</strong> - Host your feed on MSP servers. Get a permanent URL for your RSS feed to use in any app.{isLoggedIn && ' You can link your Nostr identity to edit from any device without needing the token.'}</li>
-                <li><strong>Save RSS feed to Nostr</strong> - Stores the entire RSS XML inside a Nostr event (kind 30054) on your relays. Personal cross-device backup tied to your Nostr key. Not readable by podcast apps.</li>
-                <li><strong>Publish to Nostr Music</strong> - Publishes each track (kind 36787) and the playlist (kind 34139) as Nostr events for Nostr-native music clients like Wavlake and Fountain. Audio files must already be hosted somewhere - these events just point to them. Not a podcast RSS feed.</li>
-                <li><strong>Publish RSS feed to a Blossom server</strong> - Uploads the RSS file to a Blossom server and registers a Nostr pointer (kind 1063) so MSP can serve a permanent URL. Subscribable in any podcast app.</li>
-                <li><strong>Publish RSS feed to nsite (experimental)</strong> - Uploads the RSS file to a Blossom server and publishes an nsite site manifest (NIP-5A). Reachable as a permanent web URL through any nsite gateway. Subscribable in podcast apps.</li>
+                <li><strong>Host on MSP</strong> - Host your feed on MSP servers. Get a permanent URL for your RSS feed to use in any app. Requires signing in with email or Nostr so the feed is owned by your account and editable from any device. Enable "Draft mode" to host without notifying Podcast Index or sending a podping.</li>
+                <li><strong>Submit to PodcastIndex</strong> - Submit a feed URL to Podcast Index so it gets indexed and becomes discoverable in apps like Fountain, Castamatic, and others.</li>
+                <li><strong>Publish to Nostr Music</strong> - Publishes each track (kind 36787) and the playlist (kind 34139) as Nostr events for Nostr-native music apps like Sunami. Audio files must already be hosted somewhere - these events just point to them. Not a podcast RSS feed.</li>
+                {showExperimental && <li><strong>Save RSS feed to Nostr 🧪</strong> - Stores the entire RSS XML inside a Nostr event (kind 30054) on your relays. Personal cross-device backup tied to your Nostr key. Not readable by podcast apps.</li>}
+                {showExperimental && <li><strong>Publish RSS feed to a Blossom server 🧪</strong> - Uploads the RSS file to a Blossom server and registers a Nostr pointer (kind 1063) so MSP can serve a permanent URL. Subscribable in any podcast app.</li>}
+                {showExperimental && <li><strong>Publish RSS feed to nsite 🧪</strong> - Uploads the RSS file to a Blossom server and publishes an nsite site manifest (NIP-5A). Reachable as a permanent web URL through any nsite gateway. Subscribable in podcast apps.</li>}
               </ul>
             </ModalWrapper>
+      )}
+      {emailModal && (
+        <EmailLoginModal
+          onClose={() => setEmailModal(null)}
+          claim={emailModal.mode === 'claim' && hostedInfo
+            ? { feedId: hostedInfo.feedId, editToken: hostedInfo.editToken, feedTitle: currentFeedTitle }
+            : undefined}
+        />
+      )}
+      {showNostrConnect && (
+        <NostrConnectModal onClose={() => setShowNostrConnect(false)} />
       )}
     </>
   );

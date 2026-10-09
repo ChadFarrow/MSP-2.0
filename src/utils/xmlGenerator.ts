@@ -1,5 +1,6 @@
 // MSP 2.0 - XML Generator for Demu RSS Feeds
-import type { Album, Track, Person, ValueBlock, ValueRecipient, Funding, PublisherFeed, RemoteItem, PublisherReference, BaseChannelData, AlternateEnclosure } from '../types/feed';
+import type { Album, Track, Person, ValueBlock, ValueRecipient, Funding, PublisherFeed, RemoteItem, PublisherReference, BaseChannelData, PodcastImage, AlternateEnclosure } from '../types/feed';
+import { DEFAULT_TRANSCRIPT_TYPE } from '../types/feed';
 import { formatRFC822Date } from './dateUtils';
 
 // Escape XML special characters
@@ -60,17 +61,15 @@ const collectNamespacePrefixes = (obj: unknown, prefixes: Set<string>): void => 
 };
 
 // Collect all namespaces needed for unknown elements in an album
-const collectAlbumNamespaces = (album: { unknownChannelElements?: Record<string, unknown>; tracks: { unknownItemElements?: Record<string, unknown> }[] }): Set<string> => {
+const collectAlbumNamespaces = (album: Album): Set<string> => {
   const prefixes = new Set<string>();
 
-  if (album.unknownChannelElements) {
-    collectNamespacePrefixes(album.unknownChannelElements, prefixes);
-  }
+  collectNamespacePrefixes(album.unknownChannelElements, prefixes);
+  collectNamespacePrefixes(album.value?.unknownElements, prefixes);
 
   for (const track of album.tracks) {
-    if (track.unknownItemElements) {
-      collectNamespacePrefixes(track.unknownItemElements, prefixes);
-    }
+    collectNamespacePrefixes(track.unknownItemElements, prefixes);
+    collectNamespacePrefixes(track.value?.unknownElements, prefixes);
   }
 
   return prefixes;
@@ -168,6 +167,26 @@ const generateSingleElementXml = (tagName: string, value: unknown, level: number
   return '';
 };
 
+/**
+ * True when an imported feed's own <atom:link rel="self"> is already sitting in
+ * the passthrough. parseSelfLink deliberately leaves atom:link out of
+ * KNOWN_CHANNEL_KEYS so the element round-trips through unknownChannelElements,
+ * which means generating a second one from sourceUrl would emit it twice — the
+ * same "modelled AND passed through" mistake that duplicated publisher refs.
+ * Other rels (hub, next, alternate) are ignored: only rel="self" collides.
+ */
+const hasSelfLinkPassthrough = (elements?: Record<string, unknown>): boolean => {
+  const raw = elements?.['atom:link'];
+  if (!raw) return false;
+  const links = Array.isArray(raw) ? raw : [raw];
+  return links.some(
+    link =>
+      typeof link === 'object' &&
+      link !== null &&
+      (link as Record<string, unknown>)['@_rel'] === 'self'
+  );
+};
+
 // Generate person XML - outputs one <podcast:person> tag per role
 const generatePersonXml = (person: Person, level: number): string => {
   // Generate one tag per role (per Podcasting 2.0 spec)
@@ -175,6 +194,7 @@ const generatePersonXml = (person: Person, level: number): string => {
     const attrs: string[] = [];
     if (person.href) attrs.push(`href="${escapeXml(person.href)}"`);
     if (person.img) attrs.push(`img="${escapeXml(person.img)}"`);
+    if (person.npub) attrs.push(`npub="${escapeXml(person.npub)}"`);
     attrs.push(`group="${escapeXml(role.group)}"`);
     attrs.push(`role="${escapeXml(role.role)}"`);
     return `${indent(level)}<podcast:person ${attrs.join(' ')}>${escapeXml(person.name)}</podcast:person>`;
@@ -191,6 +211,7 @@ const generateRecipientXml = (recipient: ValueRecipient, level: number): string 
   ];
   if (recipient.customKey) attrs.push(`customKey="${escapeXml(recipient.customKey)}"`);
   if (recipient.customValue) attrs.push(`customValue="${escapeXml(recipient.customValue)}"`);
+  if (recipient.fee) attrs.push('fee="true"');
 
   return `${indent(level)}<podcast:valueRecipient ${attrs.join(' ')} />`;
 };
@@ -209,10 +230,15 @@ const generateValueXml = (value: ValueBlock, level: number): string => {
     `type="${value.type}"`,
     `method="${method}"`
   ];
-  if (value.suggested) attrs.push(`suggested="${value.suggested}"`);
+  if (value.suggested) attrs.push(`suggested="${escapeXml(value.suggested)}"`);
 
   lines.push(`${indent(level)}<podcast:value ${attrs.join(' ')}>`);
   value.recipients.forEach(r => lines.push(generateRecipientXml(r, level + 1)));
+  // Carried-through children such as <podcast:valueTimeSplit>, kept from import.
+  if (value.unknownElements) {
+    const unknownXml = generateUnknownXml(value.unknownElements, level + 1);
+    if (unknownXml) lines.push(unknownXml);
+  }
   lines.push(`${indent(level)}</podcast:value>`);
 
   return lines.join('\n');
@@ -231,11 +257,20 @@ const generateRemoteItemXml = (item: RemoteItem, level: number): string => {
   if (item.feedUrl) attrs.push(`feedUrl="${escapeXml(item.feedUrl)}"`);
   if (item.itemGuid) attrs.push(`itemGuid="${escapeXml(item.itemGuid)}"`);
   attrs.push(`medium="${escapeXml(item.medium || 'music')}"`);
+  // title is an ATTRIBUTE per spec — "a hint to apps so that they can display
+  // the title without having to do a remote lookup" — and the element is
+  // self-closing. MSP used to write the title as element text, which no
+  // conforming reader looks at, so the hint never reached anyone and every app
+  // did the remote lookup anyway.
+  if (item.title) attrs.push(`title="${escapeXml(item.title)}"`);
+  // feedImg is NOT in the spec. It is kept because MSP's own publisher editor
+  // renders these thumbnails from it (CatalogFeedsSection, DownloadCatalogSection)
+  // and dropping it would blank them on the next import. Unknown attributes are
+  // ignored by conforming parsers, so it costs other readers nothing.
   if (item.image) attrs.push(`feedImg="${escapeXml(item.image)}"`);
+  // The publisher's role (utils/publisherRole.ts). Written only when stated.
+  if (item.rel?.trim()) attrs.push(`rel="${escapeXml(item.rel.trim())}"`);
 
-  if (item.title) {
-    return `${indent(level)}<podcast:remoteItem ${attrs.join(' ')}>${escapeXml(item.title)}</podcast:remoteItem>`;
-  }
   return `${indent(level)}<podcast:remoteItem ${attrs.join(' ')} />`;
 };
 
@@ -249,6 +284,8 @@ const generatePublisherXml = (publisher: PublisherReference, level: number): str
   const attrs: string[] = [`medium="publisher"`];
   if (publisher.feedGuid) attrs.push(`feedGuid="${escapeXml(publisher.feedGuid)}"`);
   if (publisher.feedUrl) attrs.push(`feedUrl="${escapeXml(publisher.feedUrl)}"`);
+  // The same role as the publisher feed states for this album (utils/publisherRole.ts).
+  if (publisher.rel?.trim()) attrs.push(`rel="${escapeXml(publisher.rel.trim())}"`);
 
   lines.push(`${indent(level + 1)}<podcast:remoteItem ${attrs.join(' ')} />`);
   lines.push(`${indent(level)}</podcast:publisher>`);
@@ -318,7 +355,7 @@ const generateCommonChannelElements = (data: BaseChannelData, medium: string, le
   }
 
   // Language
-  lines.push(`${indent(level)}<language>${data.language}</language>`);
+  lines.push(`${indent(level)}<language>${escapeXml(data.language)}</language>`);
 
   // Generator - always use MSP 2.0 since we're generating the feed
   lines.push(`${indent(level)}<generator>MSP 2.0 - Music Side Project Studio</generator>`);
@@ -327,9 +364,11 @@ const generateCommonChannelElements = (data: BaseChannelData, medium: string, le
   lines.push(`${indent(level)}<pubDate>${formatRFC822Date(data.pubDate)}</pubDate>`);
   lines.push(`${indent(level)}<lastBuildDate>${formatRFC822Date(data.lastBuildDate)}</lastBuildDate>`);
 
-  // Locked
-  if (data.locked && data.lockedOwner) {
-    lines.push(`${indent(level)}<podcast:locked owner="${escapeXml(data.lockedOwner)}">yes</podcast:locked>`);
+  // Locked. The owner attribute is optional in the spec; requiring it dropped an
+  // imported <podcast:locked>yes</podcast:locked> that named no owner.
+  if (data.locked) {
+    const ownerAttr = data.lockedOwner ? ` owner="${escapeXml(data.lockedOwner)}"` : '';
+    lines.push(`${indent(level)}<podcast:locked${ownerAttr}>yes</podcast:locked>`);
   }
 
   // GUID
@@ -343,9 +382,22 @@ const generateCommonChannelElements = (data: BaseChannelData, medium: string, le
   }
 
   // Categories (default to Music for music feeds)
+  // Subcategories nest inside their parent, written on its first occurrence only.
   const categories = data.categories.length > 0 ? data.categories : ['Music'];
+  const nestedWritten = new Set<string>();
   categories.forEach(cat => {
-    lines.push(`${indent(level)}<itunes:category text="${escapeXml(cat)}" />`);
+    // hasOwn: a category named "constructor" must not read Object's own property.
+    const subs = !nestedWritten.has(cat) && data.subcategories && Object.hasOwn(data.subcategories, cat)
+      ? data.subcategories[cat]
+      : [];
+    if (subs.length === 0) {
+      lines.push(`${indent(level)}<itunes:category text="${escapeXml(cat)}" />`);
+      return;
+    }
+    nestedWritten.add(cat);
+    lines.push(`${indent(level)}<itunes:category text="${escapeXml(cat)}">`);
+    subs.forEach(sub => lines.push(`${indent(level + 1)}<itunes:category text="${escapeXml(sub)}" />`));
+    lines.push(`${indent(level)}</itunes:category>`);
   });
 
   // Keywords
@@ -366,8 +418,14 @@ const generateCommonChannelElements = (data: BaseChannelData, medium: string, le
     lines.push(`${indent(level)}<image>`);
     lines.push(`${indent(level + 1)}<url>${escapeXml(data.imageUrl)}</url>`);
     lines.push(`${indent(level + 1)}<title>${escapeXml(data.imageTitle || data.title)}</title>`);
-    if (data.imageLink) {
-      lines.push(`${indent(level + 1)}<link>${escapeXml(data.imageLink)}</link>`);
+    // RSS 2.0 makes <link> REQUIRED inside <image> (url + title + link), and
+    // emitting it only when imageLink was filled in made every feed MSP produced
+    // fail validation with "Missing image element: link" — an error, not a
+    // warning. The channel link is the correct fallback: the spec's own note is
+    // that image url/title/link mirror the channel's.
+    const imageLink = data.imageLink || data.link;
+    if (imageLink) {
+      lines.push(`${indent(level + 1)}<link>${escapeXml(imageLink)}</link>`);
     }
     if (data.imageDescription) {
       lines.push(`${indent(level + 1)}<description>${escapeXml(data.imageDescription)}</description>`);
@@ -380,8 +438,14 @@ const generateCommonChannelElements = (data: BaseChannelData, medium: string, le
     lines.push(`${indent(level)}<itunes:image href="${escapeXml(data.imageUrl)}" />`);
   }
 
+  // Podcasting 2.0 additional images
+  (data.podcastImages || []).forEach(img => {
+    const tag = generatePodcastImageXml(img);
+    if (tag) lines.push(`${indent(level)}${tag}`);
+  });
+
   // Medium
-  lines.push(`${indent(level)}<podcast:medium>${medium}</podcast:medium>`);
+  lines.push(`${indent(level)}<podcast:medium>${escapeXml(medium)}</podcast:medium>`);
 
   // Explicit
   lines.push(`${indent(level)}<itunes:explicit>${data.explicit ? 'true' : 'false'}</itunes:explicit>`);
@@ -419,10 +483,25 @@ const generateCommonChannelElements = (data: BaseChannelData, medium: string, le
 // See https://op3.dev/setup for details
 const applyOp3Prefix = (url: string, podcastGuid?: string): string => {
   if (!url) return url;
+  // Don't double-prefix URLs that already have OP3
+  if (url.startsWith('https://op3.dev/e')) return url;
   const pgParam = podcastGuid ? `,pg=${podcastGuid}` : '';
   // For HTTPS URLs, strip the protocol; for HTTP, keep it
   const urlWithoutProtocol = url.startsWith('https://') ? url.slice(8) : url;
   return `https://op3.dev/e${pgParam}/${urlWithoutProtocol}`;
+};
+
+// Generate a single <podcast:image> element (without indentation). Returns null when href is empty.
+const generatePodcastImageXml = (image: PodcastImage): string | null => {
+  if (!image.href) return null;
+  const attrs = [`href="${escapeXml(image.href)}"`];
+  if (image.purpose) attrs.push(`purpose="${escapeXml(image.purpose)}"`);
+  if (image.alt) attrs.push(`alt="${escapeXml(image.alt)}"`);
+  if (image.aspectRatio) attrs.push(`aspect-ratio="${escapeXml(image.aspectRatio)}"`);
+  if (image.width) attrs.push(`width="${image.width}"`);
+  if (image.height) attrs.push(`height="${image.height}"`);
+  if (image.type) attrs.push(`type="${escapeXml(image.type)}"`);
+  return `<podcast:image ${attrs.join(' ')} />`;
 };
 
 // Generate track/item XML
@@ -440,24 +519,24 @@ const generateTrackXml = (track: Track, album: Album, level: number): string => 
   lines.push(`${indent(level + 1)}<guid isPermaLink="false">${escapeXml(track.guid)}</guid>`);
 
   if (track.transcriptUrl) {
-    lines.push(`${indent(level + 1)}<podcast:transcript url="${escapeXml(track.transcriptUrl)}" type="${track.transcriptType || 'application/srt'}" />`);
+    lines.push(`${indent(level + 1)}<podcast:transcript url="${escapeXml(track.transcriptUrl)}" type="${escapeXml(track.transcriptType || DEFAULT_TRANSCRIPT_TYPE)}" />`);
   }
 
   // Track artwork (falls back to album)
   const artUrl = track.trackArtUrl || album.imageUrl;
   if (artUrl) {
     lines.push(`${indent(level + 1)}<itunes:image href="${escapeXml(artUrl)}" />`);
-    // Add podcast:images for better Podcast 2.0 app compatibility
-    const imageAttrs = [`srcset="${escapeXml(artUrl)}"`];
-    if (track.trackArtWidth) imageAttrs.push(`width="${track.trackArtWidth}"`);
-    if (track.trackArtHeight) imageAttrs.push(`height="${track.trackArtHeight}"`);
-    lines.push(`${indent(level + 1)}<podcast:images ${imageAttrs.join(' ')} />`);
   }
+  // Podcasting 2.0 additional images
+  (track.podcastImages || []).forEach(img => {
+    const tag = generatePodcastImageXml(img);
+    if (tag) lines.push(`${indent(level + 1)}${tag}`);
+  });
 
   // Enclosure (audio file)
   const fileLength = track.enclosureLength || '0';
   const enclosureUrl = album.op3 ? applyOp3Prefix(track.enclosureUrl, album.podcastGuid) : track.enclosureUrl;
-  lines.push(`${indent(level + 1)}<enclosure url="${escapeXml(enclosureUrl)}" length="${fileLength}" type="${track.enclosureType}"/>`);
+  lines.push(`${indent(level + 1)}<enclosure url="${escapeXml(enclosureUrl)}" length="${escapeXml(String(fileLength))}" type="${escapeXml(track.enclosureType)}"/>`);
 
   // Alternate enclosures (e.g., music video for audio track)
   if (track.alternateEnclosures && track.alternateEnclosures.length > 0) {
@@ -468,7 +547,7 @@ const generateTrackXml = (track: Track, album: Album, level: number): string => 
   }
 
   // Duration
-  lines.push(`${indent(level + 1)}<itunes:duration>${track.duration}</itunes:duration>`);
+  lines.push(`${indent(level + 1)}<itunes:duration>${escapeXml(track.duration)}</itunes:duration>`);
 
   // Season (always 1)
   lines.push(`${indent(level + 1)}<podcast:season>1</podcast:season>`);
@@ -557,6 +636,22 @@ export const generatePublisherRssFeed = (publisher: PublisherFeed): string => {
   if (publisher.unknownChannelElements) {
     collectNamespacePrefixes(publisher.unknownChannelElements, prefixes);
   }
+
+  // <atom:link rel="self"> — the URL the feed claims to live at. Feeds MSP
+  // generated never had one, which the W3C validator flags and which costs MSP
+  // itself: parseSelfLink is one of the three sources for the Publisher Feed URL
+  // that auto-fills the Download Catalog field, so a self-hosted feed re-imported
+  // from a file had nothing to fall back on. Only emitted from a sourceUrl we
+  // actually know — never guessed — and never when the passthrough already
+  // carries one.
+  const selfLink =
+    publisher.sourceUrl && !hasSelfLinkPassthrough(publisher.unknownChannelElements)
+      ? publisher.sourceUrl
+      : undefined;
+  // Must be declared before generateNamespaceDeclarations runs, or the element
+  // is emitted against an undeclared prefix and the XML is malformed.
+  if (selfLink) prefixes.add('atom');
+
   const additionalNsDecl = generateNamespaceDeclarations(prefixes);
 
   // RSS root with namespaces
@@ -566,6 +661,12 @@ export const generatePublisherRssFeed = (publisher: PublisherFeed): string => {
 
   // Channel
   lines.push(`${indent(1)}<channel>`);
+
+  if (selfLink) {
+    lines.push(
+      `${indent(2)}<atom:link href="${escapeXml(selfLink)}" rel="self" type="application/rss+xml" />`
+    );
+  }
 
   // Common channel elements (medium is always "publisher" for publisher feeds)
   lines.push(...generateCommonChannelElements(publisher, 'publisher', 2));

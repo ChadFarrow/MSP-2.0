@@ -2,6 +2,7 @@
 import { hostedFeedStorage, type HostedFeedInfo } from './storage';
 import { createAdminAuthHeader } from './adminAuth';
 import { hasSigner } from './nostrSigner';
+import { withEmailAuth, isEmailLoggedIn } from './emailSession';
 
 // Re-export type for backward compatibility
 export type { HostedFeedInfo };
@@ -27,12 +28,34 @@ export function clearHostedFeedInfo(podcastGuid: string): void {
   hostedFeedStorage.clear(podcastGuid);
 }
 
+/**
+ * Why Podcast Index declined to register the feed. Mirror of `PodcastIndexAddResult`
+ * in `api/_utils/feedUtils.ts` — the frontend can't import from `api/`, so the shape
+ * is intentionally duplicated (same arrangement as `urlValidation.ts`). Keep in sync.
+ */
+export interface PodcastIndexAddResult {
+  httpStatus?: number;
+  status?: unknown;
+  description?: string | null;
+  error?: string;
+}
+
+/** Human-readable reason from an `addResult`, or null when it carries nothing useful. */
+export function describeAddResult(result?: PodcastIndexAddResult | null): string | null {
+  if (!result) return null;
+  const detail = result.description || result.error;
+  return detail ? String(detail) : null;
+}
+
 interface CreateFeedResponse {
   feedId: string;
   editToken: string;
   url: string;
   blobUrl: string;
   podcastIndexId?: number;
+  /** Present only when `podcastIndexId` is absent — explains why. */
+  addResult?: PodcastIndexAddResult;
+  isDraft?: boolean;
 }
 
 /**
@@ -47,31 +70,45 @@ export function generateEditToken(): string {
 }
 
 /**
+ * Fetch a hosted-feed API endpoint, throwing a friendly error on a non-2xx
+ * (reusing the server's `error` field when present). Shared by every call below.
+ */
+async function hostedRequest<T = unknown>(
+  input: string,
+  init: RequestInit,
+  failMessage: string
+): Promise<T> {
+  const response = await fetch(input, init);
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: failMessage }));
+    throw new Error(error.error || failMessage);
+  }
+  return response.json();
+}
+
+/**
  * Create a new hosted feed
  */
 export async function createHostedFeed(
   xml: string,
   title: string,
   podcastGuid: string,
-  editToken?: string
+  editToken?: string,
+  isDraft?: boolean
 ): Promise<CreateFeedResponse> {
-  const response = await fetch('/api/hosted', {
+  return hostedRequest<CreateFeedResponse>('/api/hosted', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ xml, title, podcastGuid, editToken })
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Failed to create feed' }));
-    throw new Error(error.error || 'Failed to create feed');
-  }
-
-  return response.json();
+    body: JSON.stringify({ xml, title, podcastGuid, editToken, isDraft })
+  }, 'Failed to create feed');
 }
 
 interface UpdateFeedResponse {
   success: boolean;
   podcastIndexId?: number;
+  /** Present only when `podcastIndexId` is absent — explains why. */
+  addResult?: PodcastIndexAddResult;
+  isDraft?: boolean;
 }
 
 /**
@@ -81,23 +118,17 @@ export async function updateHostedFeed(
   feedId: string,
   editToken: string,
   xml: string,
-  title: string
+  title: string,
+  isDraft?: boolean
 ): Promise<UpdateFeedResponse> {
-  const response = await fetch(`/api/hosted/${feedId}`, {
+  return hostedRequest<UpdateFeedResponse>(`/api/hosted/${feedId}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
       'X-Edit-Token': editToken
     },
-    body: JSON.stringify({ xml, title })
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Failed to update feed' }));
-    throw new Error(error.error || 'Failed to update feed');
-  }
-
-  return response.json();
+    body: JSON.stringify({ xml, title, isDraft })
+  }, 'Failed to update feed');
 }
 
 /**
@@ -107,26 +138,20 @@ export async function deleteHostedFeed(
   feedId: string,
   editToken: string
 ): Promise<void> {
-  const response = await fetch(`/api/hosted/${feedId}`, {
+  await hostedRequest(`/api/hosted/${feedId}`, {
     method: 'DELETE',
     headers: { 'X-Edit-Token': editToken }
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Failed to delete feed' }));
-    throw new Error(error.error || 'Failed to delete feed');
-  }
+  }, 'Failed to delete feed');
 }
 
 /**
- * Build the stable URL for a hosted feed
- * Uses VITE_CANONICAL_URL env var if set, otherwise falls back to current origin
+ * Build the stable URL for a hosted feed.
+ * Always uses the canonical domain (VITE_CANONICAL_URL, else musicsideproject.com)
+ * so feed URLs never bake in a preview/legacy host like msp.podtards.com.
  */
 export function buildHostedUrl(feedId: string): string {
-  const canonicalUrl = import.meta.env.VITE_CANONICAL_URL;
-  const origin = canonicalUrl
-    || (window.location.hostname === 'localhost' ? 'https://msp.podtards.com' : window.location.origin);
-  return `${origin}/api/hosted/${feedId}.xml`;
+  const base = (import.meta.env.VITE_CANONICAL_URL || 'https://musicsideproject.com').replace(/\/$/, '');
+  return `${base}/api/hosted/${feedId}.xml`;
 }
 
 /**
@@ -195,7 +220,8 @@ export async function createHostedFeedWithNostr(
   xml: string,
   title: string,
   podcastGuid: string,
-  editToken?: string
+  editToken?: string,
+  isDraft?: boolean
 ): Promise<CreateFeedResponse> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 
@@ -205,18 +231,11 @@ export async function createHostedFeedWithNostr(
     headers['Authorization'] = await createAdminAuthHeader(url, 'POST');
   }
 
-  const response = await fetch('/api/hosted', {
+  return hostedRequest<CreateFeedResponse>('/api/hosted', {
     method: 'POST',
     headers,
-    body: JSON.stringify({ xml, title, podcastGuid, editToken })
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Failed to create feed' }));
-    throw new Error(error.error || 'Failed to create feed');
-  }
-
-  return response.json();
+    body: JSON.stringify({ xml, title, podcastGuid, editToken, isDraft })
+  }, 'Failed to create feed');
 }
 
 /**
@@ -225,7 +244,8 @@ export async function createHostedFeedWithNostr(
 export async function updateHostedFeedWithNostr(
   feedId: string,
   xml: string,
-  title: string
+  title: string,
+  isDraft?: boolean
 ): Promise<UpdateFeedResponse> {
   if (!hasSigner()) {
     throw new Error('Not logged in with Nostr');
@@ -234,21 +254,95 @@ export async function updateHostedFeedWithNostr(
   const url = `${window.location.origin}/api/hosted/${feedId}`;
   const authHeader = await createAdminAuthHeader(url, 'PUT');
 
-  const response = await fetch(`/api/hosted/${feedId}`, {
+  return hostedRequest<UpdateFeedResponse>(`/api/hosted/${feedId}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': authHeader
     },
-    body: JSON.stringify({ xml, title })
-  });
+    body: JSON.stringify({ xml, title, isDraft })
+  }, 'Failed to update feed');
+}
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Failed to update feed' }));
-    throw new Error(error.error || 'Failed to update feed');
+// ============================================
+// Email-session-authenticated API functions
+// ============================================
+
+/**
+ * Create a hosted feed authenticated by the current email session (if any).
+ * Falls back to an anonymous create when not logged in with email.
+ */
+export async function createHostedFeedWithEmail(
+  xml: string,
+  title: string,
+  podcastGuid: string,
+  editToken?: string,
+  isDraft?: boolean
+): Promise<CreateFeedResponse> {
+  return hostedRequest<CreateFeedResponse>('/api/hosted', {
+    method: 'POST',
+    headers: withEmailAuth({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ xml, title, podcastGuid, editToken, isDraft })
+  }, 'Failed to create feed');
+}
+
+/**
+ * Update a hosted feed using the current email session.
+ */
+export async function updateHostedFeedWithEmail(
+  feedId: string,
+  xml: string,
+  title: string,
+  isDraft?: boolean
+): Promise<UpdateFeedResponse> {
+  if (!isEmailLoggedIn()) {
+    throw new Error('Not logged in with email');
   }
 
-  return response.json();
+  return hostedRequest<UpdateFeedResponse>(`/api/hosted/${feedId}`, {
+    method: 'PUT',
+    headers: withEmailAuth({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ xml, title, isDraft })
+  }, 'Failed to update feed');
+}
+
+/**
+ * Delete a hosted feed using the current email session.
+ */
+export async function deleteHostedFeedWithEmail(feedId: string): Promise<void> {
+  if (!isEmailLoggedIn()) {
+    throw new Error('Not logged in with email');
+  }
+
+  await hostedRequest(`/api/hosted/${feedId}`, {
+    method: 'DELETE',
+    headers: withEmailAuth()
+  }, 'Failed to delete feed');
+}
+
+interface LinkEmailResponse {
+  success: boolean;
+  message: string;
+  emailLinked: boolean;
+}
+
+/**
+ * Claim an existing feed with the current email session.
+ * Requires the edit token (proves ownership); the session supplies the identity to attach.
+ * Mirrors linkNostrToFeed.
+ */
+export async function linkEmailToFeed(
+  feedId: string,
+  editToken: string
+): Promise<LinkEmailResponse> {
+  if (!isEmailLoggedIn()) {
+    throw new Error('Not logged in with email');
+  }
+
+  return hostedRequest<LinkEmailResponse>(`/api/hosted/${feedId}`, {
+    method: 'PATCH',
+    headers: withEmailAuth({ 'X-Edit-Token': editToken })
+  }, 'Failed to link email identity');
 }
 
 interface LinkNostrResponse {
@@ -272,18 +366,11 @@ export async function linkNostrToFeed(
   const url = `${window.location.origin}/api/hosted/${feedId}`;
   const authHeader = await createAdminAuthHeader(url, 'PATCH');
 
-  const response = await fetch(`/api/hosted/${feedId}`, {
+  return hostedRequest<LinkNostrResponse>(`/api/hosted/${feedId}`, {
     method: 'PATCH',
     headers: {
       'X-Edit-Token': editToken,
       'Authorization': authHeader
     }
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Failed to link Nostr identity' }));
-    throw new Error(error.error || 'Failed to link Nostr identity');
-  }
-
-  return response.json();
+  }, 'Failed to link Nostr identity');
 }

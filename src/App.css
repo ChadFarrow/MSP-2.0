@@ -251,6 +251,110 @@ body {
   text-align: center;
 }
 
+/* Save Destination custom dropdown (SaveModal) — like .form-select but with
+   a description line per option, which a native <select> can't render. */
+.save-dest {
+  position: relative;
+}
+
+.save-dest-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.save-dest-trigger:focus-visible {
+  outline: none;
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px var(--border-focus);
+}
+
+.save-dest-trigger-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.save-dest-trigger-text .label,
+.save-dest-option .label {
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+.save-dest-trigger-text .blurb,
+.save-dest-option .blurb {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.save-dest-caret {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+/* Portaled to <body> and positioned via inline `top`/`left`/`width` so it
+   escapes the modal's overflow clipping; z-index sits above .modal-overlay. */
+.save-dest-menu {
+  position: fixed;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 1100;
+  overflow-y: auto;
+}
+
+.save-dest-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.save-dest-option:hover,
+.save-dest-option:focus-visible {
+  outline: none;
+  background: var(--bg-secondary);
+}
+
+.save-dest-option.selected {
+  background: var(--border-focus);
+}
+
+.save-dest-option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.save-dest-check {
+  flex-shrink: 0;
+  color: var(--accent-primary);
+  font-weight: 700;
+  line-height: 1.4;
+}
+
 .dropdown-avatar {
   width: 20px;
   height: 20px;
@@ -507,14 +611,6 @@ body {
   transform: translateY(-1px);
 }
 
-.btn-primary:disabled,
-.btn-primary:disabled:hover {
-  opacity: 0.4;
-  cursor: not-allowed;
-  transform: none;
-  background: var(--bg-tertiary);
-}
-
 .btn-secondary {
   background: var(--bg-tertiary);
   color: var(--text-primary);
@@ -549,6 +645,28 @@ body {
 
 .btn-danger {
   background: var(--error);
+  color: white;
+}
+
+/* Disabled state for every button variant.
+   Only .btn-primary had one, so a disabled .btn-secondary — which is what the
+   "Submit to Podcast Index" buttons use — looked identical to an enabled one and
+   still lit up on hover. A submit button that is blocked by a validation error
+   has to *look* blocked, or the user just keeps clicking it.
+   Placed after the variant rules, and :disabled:hover outranks .btn-x:hover, so
+   the hover styles can't paint over it. */
+.btn:disabled,
+.btn:disabled:hover {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+  background: var(--bg-tertiary);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+.btn-primary:disabled,
+.btn-primary:disabled:hover {
   color: white;
 }
 
@@ -739,8 +857,9 @@ body {
 }
 
 .bottom-toolbar-icon-img {
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  display: block;
 }
 
 .bottom-toolbar-label {
@@ -771,6 +890,9 @@ body {
   border-radius: var(--radius-lg);
   width: 90%;
   max-width: 600px;
+  /* The modal, not its content, owns the height cap — content below flexes to fit,
+     so a scrollbar only appears once the whole dialog would overflow the viewport. */
+  max-height: 90vh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -874,8 +996,11 @@ body {
 .modal-content {
   padding: 20px;
   overflow-y: auto;
-  min-height: auto;
-  max-height: 60vh;
+  /* Grow with the content rather than scrolling at a fixed 60vh regardless of how
+     much room the viewport actually has. min-height: 0 is load-bearing — without it
+     a flex item refuses to shrink below its content and the cap above can't apply. */
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .modal-footer {
@@ -892,9 +1017,7 @@ body {
 }
 
 .info-content {
-  max-height: 70vh;
   line-height: 1.7;
-  overflow-x: hidden;
   word-wrap: break-word;
   overflow-wrap: break-word;
 }
@@ -1298,35 +1421,6 @@ body {
     min-height: 44px;
     padding: 10px;
   }
-
-  /* Info icon - larger touch target */
-  .info-icon-wrapper {
-    padding: 12px;
-    margin: -12px;
-    margin-left: -8px;
-  }
-
-  .info-icon {
-    width: 18px;
-    height: 18px;
-    font-size: 11px;
-  }
-
-  /* Tooltip adjustments */
-  .info-tooltip {
-    position: fixed;
-    left: 16px;
-    right: 16px;
-    top: auto;
-    bottom: 16px;
-    width: auto;
-    border: 1px solid var(--accent-primary);
-  }
-
-  .info-tooltip::before,
-  .info-tooltip::after {
-    display: none;
-  }
 }
 
 /* Small phones */
@@ -1552,6 +1646,43 @@ body {
   }
 }
 
+@media (max-width: 768px) {
+  /* Info icon - larger touch target */
+  .info-icon-wrapper {
+    padding: 12px;
+    margin: -12px;
+    margin-left: -8px;
+  }
+
+  .info-icon {
+    width: 18px;
+    height: 18px;
+    font-size: 11px;
+  }
+
+  /* Anchor tooltip to the viewport so it never clips off-screen on narrow
+     devices, regardless of which side the InfoIcon chose. Pushed above the
+     .bottom-toolbar (~90px tall with the iOS home-indicator inset). */
+  .info-tooltip,
+  .info-tooltip-left {
+    position: fixed;
+    left: 16px;
+    right: 16px;
+    top: auto;
+    bottom: calc(96px + env(safe-area-inset-bottom));
+    width: auto;
+    max-width: none;
+    border: 1px solid var(--accent-primary);
+  }
+
+  .info-tooltip::before,
+  .info-tooltip::after,
+  .info-tooltip-left::before,
+  .info-tooltip-left::after {
+    display: none;
+  }
+}
+
 /* Nostr Login Styles */
 .nostr-user-info {
   display: flex;
@@ -1725,6 +1856,136 @@ body {
   border-radius: var(--radius-md);
   color: var(--warning, #f59e0b);
   font-size: 0.875rem;
+}
+
+.track-order-warning {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  padding: 12px 16px;
+  background: var(--warning-bg);
+  border: 1px solid var(--warning, #f59e0b);
+  border-radius: var(--radius-md);
+  color: var(--warning, #f59e0b);
+  font-size: 0.875rem;
+}
+
+/* Feed check panel (components/FeedCheckPanel.tsx) */
+.feed-check-launcher {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+.feed-check {
+  margin-bottom: 16px;
+  padding: 16px 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+}
+
+.feed-check-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.feed-check-header h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.feed-check-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.feed-check-links {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+.feed-check-clean {
+  margin: 12px 0 0;
+  color: var(--success);
+  font-size: 0.875rem;
+}
+
+.feed-check-group {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+}
+
+.feed-check-group h3 {
+  margin: 0 0 6px;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.feed-check-group--error {
+  background: var(--error-bg);
+  border-color: var(--error);
+}
+
+.feed-check-group--error h3 {
+  color: var(--error);
+}
+
+.feed-check-group--warning {
+  background: var(--warning-bg);
+  border-color: var(--warning, #f59e0b);
+}
+
+.feed-check-group--warning h3 {
+  color: var(--warning, #f59e0b);
+}
+
+.feed-check-group--info {
+  background: var(--bg-tertiary);
+}
+
+.feed-check-group ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-primary);
+}
+
+.feed-check-group li {
+  margin: 4px 0;
+  line-height: 1.45;
+  /* Messages quote URLs; let them wrap instead of widening the page on a phone. */
+  overflow-wrap: anywhere;
+}
+
+.feed-check-group--info ul {
+  margin-top: 6px;
+}
+
+.feed-check-where {
+  font-weight: 600;
+}
+
+.feed-check-toggle {
+  min-height: 24px;
+  padding: 2px 0;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
 }
 
 .connect-option {
@@ -1982,3 +2243,363 @@ body {
     width: 100%;
   }
 }
+
+/* ---- Public charts page (/charts) ---------------------------------------
+   Uses the app's existing tokens throughout, so the light theme comes free. */
+
+.charts-main {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+}
+
+.charts-intro {
+  color: var(--text-secondary);
+  font-size: 1.05rem;
+  line-height: 1.5;
+  margin: 0 0 1.5rem;
+  max-width: 46rem;
+}
+
+.charts-loading,
+.charts-error {
+  color: var(--text-muted);
+  padding: 2rem 0;
+}
+
+.charts-error { color: var(--error); }
+
+/* Period picker. Scrolls sideways rather than wrapping into a wall of buttons. */
+.chart-periods {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.chart-period {
+  flex: 0 0 auto;
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.chart-period:hover { border-color: var(--border-focus); color: var(--text-primary); }
+
+.chart-period.is-active {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: #fff;
+}
+
+/* Songs | Artists, and the month views' "Only new" filter. Same pills as the periods. */
+.chart-views {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.chart-view-switch { display: flex; gap: 0.25rem; }
+
+.chart-summary {
+  color: var(--text-muted);
+  margin: 0 0 1.25rem;
+  font-size: 0.9rem;
+}
+
+.chart-summary strong { color: var(--text-primary); }
+
+/* One column on every width, so the ranking reads top to bottom: boosts first as the
+   stronger signal, plays beneath. Side by side would make neither of them first. */
+.chart-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+  max-width: 42rem;
+}
+
+.chart-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 1.25rem;
+}
+
+.chart-panel-title {
+  margin: 0 0 0.25rem;
+  font-size: 1.15rem;
+  color: var(--text-primary);
+}
+
+.chart-panel-blurb {
+  margin: 0 0 1rem;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.chart-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.chart-row {
+  display: grid;
+  grid-template-columns: 1.75rem 1fr auto;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--border-color);
+}
+
+.chart-row:first-child { border-top: none; }
+
+.chart-rank {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.9rem;
+}
+
+.chart-track { min-width: 0; }
+
+.chart-title {
+  display: block;
+  color: var(--text-primary);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.chart-artist {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+
+/* A row that counts several artist spellings together — kept visible so a wrong merge
+   is noticed (see mergeAliases in api/_utils/boostChart.ts). */
+.chart-merged {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--accent-secondary);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.chart-count {
+  color: var(--accent-secondary);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* How many different people the count came from — the popularity a count alone hides. */
+.chart-listeners {
+  display: block;
+  color: var(--text-muted);
+  font-weight: 400;
+  font-size: 0.75rem;
+}
+
+/* First supported this month. Says "New" in words, so it never rests on colour alone. */
+.chart-new {
+  display: inline-block;
+  margin-left: 0.45rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-focus);
+  background: var(--accent-bg-subtle);
+  color: var(--text-primary);
+  font-size: 0.7rem;
+  font-weight: 600;
+  vertical-align: 0.1em;
+}
+
+.chart-unit {
+  color: var(--text-muted);
+  font-weight: 400;
+  font-size: 0.8rem;
+}
+
+.chart-empty { color: var(--text-muted); font-size: 0.9rem; margin: 0; }
+
+/* A list folded shut behind its heading (ChartList): the full lists run to dozens of
+   rows. The heading row is the toggle; the chevron points right when closed, down when
+   open, and the count on the right says how much is behind it. */
+.chart-fold-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 2rem;
+  cursor: pointer;
+  list-style: none;
+  border-radius: 6px;
+}
+
+.chart-fold-summary::-webkit-details-marker { display: none; }
+
+.chart-fold-summary::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-right: 2px solid var(--text-muted);
+  border-bottom: 2px solid var(--text-muted);
+  transform: rotate(-45deg);
+  transition: transform var(--transition);
+}
+
+.chart-fold[open] > .chart-fold-summary::before { transform: rotate(45deg); }
+.chart-fold[open] > .chart-fold-summary { margin-bottom: 0.35rem; }
+
+.chart-fold-summary:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 4px; }
+
+.chart-fold-summary .chart-panel-title { margin: 0; }
+
+.chart-fold-count {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.chart-fold-hide {
+  margin-top: 0.75rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.chart-fold-hide:hover { border-color: var(--border-focus); color: var(--text-primary); }
+
+@media (prefers-reduced-motion: reduce) {
+  .chart-fold-summary::before { transition: none; }
+}
+
+/* ---- Trend graphs (src/components/charts/TrendGraphs.tsx) ----------------
+   Thin columns in one colour, hairline solid grid, text in text tokens only. This
+   month is fainter everywhere, because a month in progress would read as a drop. */
+
+.chart-trends {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+}
+
+@media (min-width: 600px) {
+  .chart-trends { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+.chart-trend { margin: 0; min-width: 0; }
+
+.chart-trend-title {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+
+.chart-trend-plot {
+  position: relative;
+  border-radius: 6px;
+}
+
+.chart-trend-plot:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 4px; }
+
+.chart-trend-plot svg { display: block; overflow: visible; }
+
+.chart-trend-col { fill: var(--accent-primary); }
+.chart-trend-col.is-partial { opacity: 0.45; }
+.chart-trend-col.is-active { fill: var(--accent-secondary); opacity: 1; }
+
+.chart-trend-grid { stroke: var(--border-color); stroke-width: 1; }
+
+.chart-trend-tick,
+.chart-trend-value {
+  fill: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-trend-value { fill: var(--text-secondary); font-weight: 600; }
+
+.chart-trend-tooltip {
+  position: absolute;
+  top: -0.5rem;
+  transform: translate(-50%, -100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.chart-trend-tooltip strong { color: var(--text-primary); font-size: 0.9rem; }
+
+.chart-trend-note {
+  margin: 1rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.chart-trend-table { margin-top: 1rem; font-size: 0.85rem; color: var(--text-secondary); }
+
+.chart-trend-table summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 0.25rem 0;
+}
+
+.chart-trend-table table { border-collapse: collapse; margin-top: 0.5rem; width: 100%; }
+
+.chart-trend-table th,
+.chart-trend-table td {
+  padding: 0.3rem 0.5rem;
+  border-top: 1px solid var(--border-color);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-trend-table th[scope="row"],
+.chart-trend-table thead th:first-child { text-align: left; font-weight: 400; }
+
+.chart-trend-table thead th { color: var(--text-muted); font-weight: 600; border-top: none; }
+
+/* A row's own trend, beside its count. */
+.chart-spark { display: block; margin: 0 0 0.2rem auto; }
+
+.charts-note {
+  margin-top: 2.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  max-width: 46rem;
+}
+
+.charts-note p { margin: 0 0 0.6rem; }
+.charts-note strong { color: var(--text-secondary); }

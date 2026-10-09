@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { fetchAdminFeeds, deleteFeed } from '../../utils/adminAuth';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 
@@ -10,6 +10,21 @@ interface FeedInfo {
   lastUpdated?: string;
   ownerPubkey?: string;
   podcastIndexId?: number;
+  medium?: string;
+}
+
+// medium is read from the feed's own <podcast:medium> by hydrateFeed(), so the badge
+// always matches what the feed declares. Album (music) feeds get no badge — they are
+// the default, and labelling every row would bury the two that matter.
+const MEDIUM_LABELS: Record<string, string> = {
+  publisher: 'Publisher',
+  video: 'Video',
+};
+
+function MediumBadge({ medium }: { medium?: string }) {
+  const label = medium ? MEDIUM_LABELS[medium] : undefined;
+  if (!label) return null;
+  return <span className={`medium-badge medium-badge-${medium}`}>{label}</span>;
 }
 
 interface FeedListProps {
@@ -23,7 +38,12 @@ export function FeedList({ onError, currentUserPubkey }: FeedListProps) {
   const [deleteTarget, setDeleteTarget] = useState<FeedInfo | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const loadFeeds = async () => {
+  // useCallback so the mount effect below can depend on it honestly — it is also
+  // bound to the Refresh button, so it can't just live inside the effect.
+  // This only stays a one-shot load because AdminPage passes a useState setter for
+  // onError, which React keeps referentially stable. An inline arrow there would
+  // change loadFeeds' identity every render and turn the effect into a refetch loop.
+  const loadFeeds = useCallback(async () => {
     setLoading(true);
     try {
       const result = await fetchAdminFeeds();
@@ -33,11 +53,11 @@ export function FeedList({ onError, currentUserPubkey }: FeedListProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [onError]);
 
   useEffect(() => {
     loadFeeds();
-  }, []);
+  }, [loadFeeds]);
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -104,7 +124,7 @@ export function FeedList({ onError, currentUserPubkey }: FeedListProps) {
           <tbody>
             {myFeeds.map(feed => (
               <tr key={feed.feedId}>
-                <td>{feed.title || 'Untitled'}</td>
+                <td>{feed.title || 'Untitled'}<MediumBadge medium={feed.medium} /></td>
                 <td className="feed-author">{feed.author || '-'}</td>
                 <td className="feed-id">{feed.feedId}</td>
                 <td>
@@ -121,7 +141,7 @@ export function FeedList({ onError, currentUserPubkey }: FeedListProps) {
                   <a
                     href={feed.podcastIndexId
                       ? `https://podcastindex.org/podcast/${feed.podcastIndexId}`
-                      : `https://podcastindex.org/podcast/podcastguid:${feed.feedId}`}
+                      : `https://podcastindex.org/podcast/${feed.feedId}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="rss-link"
@@ -168,7 +188,7 @@ export function FeedList({ onError, currentUserPubkey }: FeedListProps) {
             <tbody>
               {otherFeeds.map(feed => (
                 <tr key={feed.feedId}>
-                  <td>{feed.title || 'Untitled'}</td>
+                  <td>{feed.title || 'Untitled'}<MediumBadge medium={feed.medium} /></td>
                   <td className="feed-author">{feed.author || '-'}</td>
                   <td className="feed-id">{feed.feedId}</td>
                   <td>
@@ -185,7 +205,7 @@ export function FeedList({ onError, currentUserPubkey }: FeedListProps) {
                     <a
                       href={feed.podcastIndexId
                         ? `https://podcastindex.org/podcast/${feed.podcastIndexId}`
-                        : `https://podcastindex.org/podcast/podcastguid:${feed.feedId}`}
+                        : `https://podcastindex.org/podcast/${feed.feedId}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="rss-link"

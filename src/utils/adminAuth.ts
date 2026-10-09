@@ -1,5 +1,6 @@
 // Admin authentication utilities for frontend
-import { getSigner, hasSigner } from './nostrSigner';
+import { hasSigner, signEventWithTimeout } from './nostrSigner';
+import { withEmailAuth, isEmailLoggedIn } from './emailSession';
 
 interface NostrEvent {
   id?: string;
@@ -29,7 +30,6 @@ async function signAuthEvent(url: string, method: string): Promise<NostrEvent> {
     throw new Error('Not logged in');
   }
 
-  const signer = getSigner();
   const event = {
     kind: 27235,
     created_at: Math.floor(Date.now() / 1000),
@@ -40,7 +40,7 @@ async function signAuthEvent(url: string, method: string): Promise<NostrEvent> {
     content: ''
   };
 
-  return await signer.signEvent(event) as NostrEvent;
+  return await signEventWithTimeout(event) as NostrEvent;
 }
 
 // Full authentication flow
@@ -74,7 +74,6 @@ export async function createAdminAuthHeader(url: string, method: string): Promis
     throw new Error('Not logged in');
   }
 
-  const signer = getSigner();
   const event = {
     kind: 27235,
     created_at: Math.floor(Date.now() / 1000),
@@ -85,7 +84,7 @@ export async function createAdminAuthHeader(url: string, method: string): Promis
     content: ''
   };
 
-  const signedEvent = await signer.signEvent(event);
+  const signedEvent = await signEventWithTimeout(event);
   const eventJson = JSON.stringify(signedEvent);
   const base64Event = btoa(eventJson);
 
@@ -109,6 +108,24 @@ export async function fetchAdminFeeds(): Promise<ListFeedsResponse> {
   return response.json();
 }
 
+// Fetch the feeds owned by the current email account
+export async function fetchEmailFeeds(): Promise<ListFeedsResponse> {
+  if (!isEmailLoggedIn()) {
+    throw new Error('Not logged in with email');
+  }
+
+  const response = await fetch('/api/account/feeds', {
+    headers: withEmailAuth()
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to fetch feeds' }));
+    throw new Error(error.error || 'Failed to fetch feeds');
+  }
+
+  return response.json();
+}
+
 // Delete a feed with admin auth
 export async function deleteFeed(feedId: string): Promise<void> {
   const url = `${window.location.origin}/api/hosted/${feedId}`;
@@ -123,4 +140,59 @@ export async function deleteFeed(feedId: string): Promise<void> {
     const error = await response.json();
     throw new Error(error.error || 'Failed to delete feed');
   }
+}
+
+/**
+ * Boost coverage — how well the captured boosts resolve to actual tracks.
+ *
+ * These shapes mirror api/boosts/coverage.ts. The frontend cannot import from api/,
+ * the same arrangement urlValidation.ts documents, so keep the two in sync by hand.
+ */
+export interface BoostChartRow {
+  trackKey: string;
+  trackTitle?: string;
+  trackArtist?: string;
+  count: number;
+}
+
+export interface BoostCoverageSummary {
+  boosts: number;
+  plays: number;
+  streamRecords: number;
+  /** Present only on the MSP-split view. The node-wide view carries no chart. */
+  topPlays?: BoostChartRow[];
+  topBoosts?: BoostChartRow[];
+  keyed: number;
+  named: number;
+  withMessageTitle: number;
+  distinctTracks: number;
+  satsTotal: number;
+  satsReceived: number;
+  bySource: Record<string, number>;
+  byAction: Record<string, number>;
+  byApp: { app: string; boosts: number }[];
+  byWeek: { week: string; boosts: number; tracks: number; satsTotal: number }[];
+}
+
+export interface BoostCoverageResponse {
+  generatedAt: number;
+  totals: { all: number; mspSplit: number; other: number };
+  msp: BoostCoverageSummary;
+  everything: BoostCoverageSummary;
+}
+
+export async function fetchBoostCoverage(): Promise<BoostCoverageResponse> {
+  const url = `${window.location.origin}/api/boosts/coverage`;
+  const authHeader = await createAdminAuthHeader(url, 'GET');
+
+  const response = await fetch('/api/boosts/coverage', {
+    headers: { 'Authorization': authHeader }
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to fetch boost coverage' }));
+    throw new Error(error.error || 'Failed to fetch boost coverage');
+  }
+
+  return response.json();
 }

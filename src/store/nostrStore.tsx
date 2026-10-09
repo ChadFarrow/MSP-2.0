@@ -27,7 +27,7 @@ type NostrAction =
   | { type: 'SET_HAS_EXTENSION'; payload: boolean }
   | { type: 'SET_CONNECTION_METHOD'; payload: 'nip07' | 'nip46' | null }
   | { type: 'LOGIN_SUCCESS'; payload: { user: NostrUser; method: 'nip07' | 'nip46' } }
-  | { type: 'UPDATE_PROFILE'; payload: { displayName?: string; picture?: string; nip05?: string } }
+  | { type: 'UPDATE_PROFILE'; payload: { displayName?: string; picture?: string; nip05?: string; lud16?: string } }
   | { type: 'LOGOUT' }
   | { type: 'RESTORE_SESSION'; payload: { user: NostrUser; method: 'nip07' | 'nip46' } };
 
@@ -61,16 +61,18 @@ function nostrReducer(state: NostrAuthState, action: NostrAction): NostrAuthStat
         isLoading: false,
         error: null
       };
-    case 'UPDATE_PROFILE':
+    case 'UPDATE_PROFILE': {
       if (!state.user) return state;
       const updatedUser = {
         ...state.user,
         displayName: action.payload.displayName || state.user.displayName,
         picture: action.payload.picture || state.user.picture,
-        nip05: action.payload.nip05 || state.user.nip05
+        nip05: action.payload.nip05 || state.user.nip05,
+        lud16: action.payload.lud16 || state.user.lud16
       };
       saveUser(updatedUser);
       return { ...state, user: updatedUser };
+    }
     case 'LOGOUT':
       return {
         ...state,
@@ -115,7 +117,8 @@ export function NostrProvider({ children }: { children: ReactNode }) {
           payload: {
             displayName: profile.display_name || profile.name,
             picture: profile.picture,
-            nip05: profile.nip05
+            nip05: profile.nip05,
+            lud16: profile.lud16
           }
         });
       }
@@ -128,7 +131,6 @@ export function NostrProvider({ children }: { children: ReactNode }) {
       // Check for stored session
       const storedUser = loadStoredUser();
       const storedMethod = loadConnectionMethod();
-      console.log('[Nostr] Init - storedUser:', storedUser?.npub, 'storedMethod:', storedMethod);
 
       // Check for NIP-07 extension
       // Wait a bit for extension to inject
@@ -141,24 +143,28 @@ export function NostrProvider({ children }: { children: ReactNode }) {
         if (storedMethod === 'nip46') {
           // Try to reconnect NIP-46
           const bunkerPointer = loadBunkerPointer();
-          console.log('[Nostr] Attempting NIP-46 reconnect, bunkerPointer:', !!bunkerPointer);
           if (bunkerPointer) {
             try {
-              console.log('[Nostr] Calling reconnectNip46...');
               const pubkey = await reconnectNip46();
-              console.log('[Nostr] reconnectNip46 returned:', pubkey);
               if (pubkey && pubkey === storedUser.pubkey) {
                 dispatch({ type: 'RESTORE_SESSION', payload: { user: storedUser, method: 'nip46' } });
-
                 refreshProfile(pubkey);
                 return;
               }
             } catch (e) {
               console.error('[Nostr] Failed to reconnect NIP-46:', e);
             }
+            // Reconnect failed — if credentials are still stored it was a timeout
+            // (reconnectNip46 only clears credentials for auth errors, not timeouts).
+            // Restore the UI session so the user appears logged in; read-only operations
+            // use the stored pubkey directly, and the signer will re-connect on the next
+            // signing operation via checkSignerConnection().
+            if (loadBunkerPointer()) {
+              dispatch({ type: 'RESTORE_SESSION', payload: { user: storedUser, method: 'nip46' } });
+              return;
+            }
           }
-          // Failed to reconnect, clear stored session
-          console.log('[Nostr] Reconnection failed, clearing stored session');
+          // Credentials were cleared (auth error) — fully log out
           clearStoredUser();
           clearSigner();
           dispatch({ type: 'SET_LOADING', payload: false });
@@ -169,19 +175,8 @@ export function NostrProvider({ children }: { children: ReactNode }) {
             if (pubkey === storedUser.pubkey) {
               dispatch({ type: 'RESTORE_SESSION', payload: { user: storedUser, method: 'nip07' } });
 
-              // Refresh profile in background
-              fetchNostrProfile(pubkey).then((profile) => {
-                if (profile) {
-                  dispatch({
-                    type: 'UPDATE_PROFILE',
-                    payload: {
-                      displayName: profile.display_name || profile.name,
-                      picture: profile.picture,
-                      nip05: profile.nip05
-                    }
-                  });
-                }
-              });
+              // Refresh profile in background (single source of the profile→user mapping)
+              refreshProfile(pubkey);
               return;
             } else {
               // Different account, clear stored session

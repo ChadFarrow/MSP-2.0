@@ -44,6 +44,7 @@ export interface NostrUser {
   displayName?: string; // from profile metadata (kind 0)
   picture?: string;     // profile picture URL
   nip05?: string;       // NIP-05 identifier
+  lud16?: string;       // Lightning address (user@domain) from profile metadata
 }
 
 // Auth state
@@ -97,6 +98,8 @@ export interface NostrMusicTrackInfo {
   imageUrl?: string;
   released?: string;
   language?: string;
+  duration?: string;
+  explicit?: true;
   genres: string[];
   zapSplits: NostrZapSplit[];
   content: NostrMusicContent;

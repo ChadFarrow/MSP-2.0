@@ -4,34 +4,68 @@ import { FeedProvider, useFeed } from './store/feedStore.tsx';
 import type { FeedType } from './store/feedStore.tsx';
 import { NostrProvider, useNostr } from './store/nostrStore.tsx';
 import { ThemeProvider, useTheme } from './store/themeStore.tsx';
+import { ExperimentalProvider, useExperimental } from './store/experimentalStore.tsx';
 import { parseRssFeed, isPublisherFeed, isVideoFeed, parsePublisherRssFeed } from './utils/xmlParser';
 import { createEmptyAlbum, createEmptyPublisherFeed, createEmptyVideoAlbum } from './types/feed';
-import { pendingHostedStorage } from './utils/storage';
+import { pendingHostedStorage, hostedFeedStorage } from './utils/storage';
 import { generateTestAlbum } from './utils/testData';
+import { regenerateAlbumGuids, withoutIdentityPassthrough } from './utils/regenerateGuids';
+import { resolveMediaSize, hhmmssToSeconds } from './utils/audioUtils';
+import { describeImportError, inspectFeedXml } from './utils/feedInspect';
 import { NostrLoginButton } from './components/NostrLoginButton';
 import { ImportModal } from './components/modals/ImportModal';
 import { SaveModal } from './components/modals/SaveModal';
 import { PreviewModal } from './components/modals/PreviewModal';
-import { PodcastIndexModal } from './components/modals/PodcastIndexModal';
+import { PodpingModal } from './components/modals/PodpingModal';
 import { InfoModal } from './components/modals/InfoModal';
 import { NostrConnectModal } from './components/modals/NostrConnectModal';
 import { NewFeedChoiceModal } from './components/modals/NewFeedChoiceModal';
 import { Editor } from './components/Editor/Editor';
 import { PublisherEditor } from './components/Editor/PublisherEditor';
 import { AdminPage } from './components/admin/AdminPage';
-import type { Album } from './types/feed';
-import mspLogo from './assets/msp-logo.png';
-import piLogo from './assets/podcast-index-logo.svg';
+import { VerifyMagicLink } from './pages/VerifyMagicLink';
+import { ChartsPage } from './pages/ChartsPage';
+import type { Album, Track } from './types/feed';
+// The 40px header logo. Points at the 192px file in public/ rather than importing
+// assets/msp-logo.png, which is a 1024x1024 PNG weighing 1,810,143 bytes — the
+// same file public/ already serves as the favicon, so importing it shipped a
+// second byte-identical copy through the bundle and a first visit pulled ~3.6 MB
+// of logo against ~180 kB of compressed JS, all to paint a 40px image.
+//
+// assets/msp-logo.png is deliberately left in the repo: the Desktop App is a fork
+// with its own App.tsx, and deleting an asset upstream breaks its build when the
+// sync PR lands (see the fork-divergence note in CLAUDE.md).
+const mspLogo = '/msp-logo-192.png';
+import { PodcastIndexIcon } from './components/PodcastIndexIcon';
 import './App.css';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Well-formed enough to spend a Podcast Index lookup on. */
+function isLookupGuid(guid: string | undefined): guid is string {
+  return !!guid && UUID_RE.test(guid);
+}
+
+/**
+ * The Podcast Index id cached alongside a hosted feed's credentials at save time,
+ * or null. Synchronous (localStorage), so callers can read it during render.
+ */
+function cachedPiFeedId(rawGuid: string | undefined): number | null {
+  const guid = rawGuid?.trim();
+  if (!isLookupGuid(guid)) return null;
+  const cachedId = hostedFeedStorage.load(guid)?.podcastIndexId;
+  return typeof cachedId === 'number' ? cachedId : null;
+}
 
 // Main App Content (needs access to context)
 function AppContent() {
   const { state, dispatch } = useFeed();
   const { theme, toggleTheme } = useTheme();
+  const { showExperimental, toggleExperimental } = useExperimental();
   const [showImportModal, setShowImportModal] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
-  const [showPodcastIndexModal, setShowPodcastIndexModal] = useState(false);
+  const [showPodpingModal, setShowPodpingModal] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [showNostrConnectModal, setShowNostrConnectModal] = useState(false);
   const [showNewFeedChoiceModal, setShowNewFeedChoiceModal] = useState(false);
@@ -40,6 +74,82 @@ function AppContent() {
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { state: nostrState, logout: nostrLogout } = useNostr();
+
+  // Podcast Index page id for the current feed — populated only when the feed is
+  // actually in the index, so the toolbar button can show live vs not-yet-indexed.
+  const [piFeedId, setPiFeedId] = useState<number | null>(null);
+  const currentFeedGuid =
+    state.feedType === 'publisher' ? state.publisherFeed?.podcastGuid
+    : state.feedType === 'video' ? state.videoFeed?.podcastGuid
+    : state.album?.podcastGuid;
+
+  // Re-seed the id during render rather than inside the effect below. Both halves
+  // are synchronous — clearing the previous feed's id, and reading the cached one
+  // out of localStorage — and doing them in an effect paints the *previous* feed's
+  // Podcast Index page for a frame after a switch. This is React's documented
+  // pattern for adjusting state when a prop changes.
+  const [piGuid, setPiGuid] = useState(currentFeedGuid);
+  if (piGuid !== currentFeedGuid) {
+    setPiGuid(currentFeedGuid);
+    setPiFeedId(cachedPiFeedId(currentFeedGuid));
+  }
+
+  useEffect(() => {
+    const guid = currentFeedGuid?.trim();
+    // Only look up well-formed GUIDs (avoids junk queries on empty/new feeds).
+    if (!isLookupGuid(guid)) return;
+
+    // For MSP-hosted feeds we already know the id and the render-time seed above
+    // has already applied it — PI's search only knows a feed's podcastGuid AFTER
+    // it crawls the feed, so a freshly registered feed is invisible to the lookup
+    // below for hours.
+    if (cachedPiFeedId(currentFeedGuid) !== null) return;
+
+    let cancelled = false;
+    fetch(`/api/pisearch?q=${encodeURIComponent(guid)}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => {
+        const id = data?.feeds?.[0]?.id;
+        if (!cancelled && typeof id === 'number') setPiFeedId(id);
+      })
+      .catch(() => { /* offline / lookup failed — leave button in not-indexed state */ });
+    return () => { cancelled = true; };
+  }, [currentFeedGuid]);
+
+  // Bumped by the Save modal when a save leaves the feed not yet indexed.
+  const [piWatch, setPiWatch] = useState(0);
+
+  // PI crawls asynchronously, and the Save modal's own poll dies with the modal — so a
+  // feed that lands a minute after the user clicks Done would leave this button dark
+  // until a page refresh. Pick the watch back up once the modal is out of the way
+  // (skipped while it's open, since its poll is already covering the same ground).
+  useEffect(() => {
+    if (!piWatch || piFeedId || showSaveModal) return;
+    const guid = currentFeedGuid?.trim();
+    if (!guid) return;
+    let cancelled = false;
+    let attempts = 0;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      attempts += 1;
+      try {
+        const response = await fetch(`/api/pisearch?q=${encodeURIComponent(guid)}`);
+        const data = response.ok ? await response.json() : null;
+        const id = data?.feeds?.[0]?.id;
+        if (cancelled) return;
+        if (typeof id === 'number') {
+          setPiFeedId(id);
+          const info = hostedFeedStorage.load(guid);
+          if (info) hostedFeedStorage.save(guid, { ...info, podcastIndexId: id });
+          return;
+        }
+      } catch { /* offline — fall through and retry */ }
+      if (cancelled || attempts >= 12) return;
+      timer = setTimeout(poll, 15000);
+    };
+    timer = setTimeout(poll, 5000);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [piWatch, piFeedId, showSaveModal, currentFeedGuid]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -52,23 +162,54 @@ function AppContent() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleImport = (xml: string, sourceUrl?: string) => {
+  // Imported feeds routinely arrive with no usable enclosure length — the parser drops
+  // `0` and generator placeholders like MSP's old literal `33`. Measure the real sizes
+  // in the background so the feed is publishable without hand-typing byte counts.
+  // Dispatched by index like the Editor's own async duration/size handlers.
+  const backfillEnclosureSizes = (tracks: Track[]) => {
+    tracks.forEach((track, index) => {
+      if (track.enclosureLength || !track.enclosureUrl?.startsWith('http')) return;
+      void resolveMediaSize(track.enclosureUrl, hhmmssToSeconds(track.duration)).then(bytes => {
+        dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { enclosureLength: String(bytes) } } });
+      });
+    });
+  };
+
+  // regenerateGuids: used by the template/"duplicate this feed" flow so a new feed
+  // gets fresh feed + per-track GUIDs instead of inheriting the source's identities.
+  const handleImport = (xml: string, sourceUrl?: string, regenerateGuids = false) => {
+    // Open the Feed check on the feed just swapped in, with what the source XML
+    // says. Dispatched after SET_*, so findings bind to the new feed's tracks.
+    const openFeedCheck = () => dispatch({ type: 'OPEN_FEED_CHECK', payload: { sourceFindings: inspectFeedXml(xml) } });
     try {
       // Check if this is a publisher feed
       if (isPublisherFeed(xml)) {
         const publisherFeed = parsePublisherRssFeed(xml);
-        // Attach source URL if provided (for auto-populating Publisher Feed URL field)
+        // Attach source URL if provided (for auto-populating Publisher Feed URL field).
+        // The parser may already have set it from the feed's own <atom:link rel="self">;
+        // an explicit import URL is the better answer, so it wins.
         if (sourceUrl) {
           publisherFeed.sourceUrl = sourceUrl;
         }
+        // Only the feed GUID is renewed for templates — remoteItems reference real
+        // external feeds and must keep their feedGuids. A template is a new feed, so
+        // it must not inherit the source feed's URL, self link or verification tags either.
+        if (regenerateGuids) {
+          publisherFeed.podcastGuid = crypto.randomUUID();
+          delete publisherFeed.sourceUrl;
+          publisherFeed.unknownChannelElements = withoutIdentityPassthrough(publisherFeed.unknownChannelElements);
+        }
         dispatch({ type: 'SET_PUBLISHER_FEED', payload: publisherFeed });
+        openFeedCheck();
         return;
       }
 
       // Check if this is a video feed
       if (isVideoFeed(xml)) {
         const videoFeed = parseRssFeed(xml);
-        dispatch({ type: 'SET_VIDEO_FEED', payload: videoFeed });
+        dispatch({ type: 'SET_VIDEO_FEED', payload: regenerateGuids ? regenerateAlbumGuids(videoFeed) : videoFeed });
+        openFeedCheck();
+        backfillEnclosureSizes(videoFeed.tracks);
         return;
       }
 
@@ -87,9 +228,14 @@ function AppContent() {
         album.medium = 'music';
       }
 
-      dispatch({ type: 'SET_ALBUM', payload: album });
+      dispatch({ type: 'SET_ALBUM', payload: regenerateGuids ? regenerateAlbumGuids(album) : album });
+      openFeedCheck();
+      backfillEnclosureSizes(album.tracks);
     } catch (err) {
-      alert('Failed to parse feed: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      // Thrown, not alert()ed: every caller (ImportModal's handlers, SaveModal's
+      // Import & Restore) already catches and shows the message inline, and an
+      // alert followed by the modal closing threw away the XML the user pasted.
+      throw new Error(describeImportError(xml, err));
     }
   };
 
@@ -97,6 +243,9 @@ function AppContent() {
     // Clear stale hosted credentials - Nostr/music imports don't use pending hosted storage
     pendingHostedStorage.clear();
     dispatch({ type: 'SET_ALBUM', payload: album });
+    // No source XML on the Nostr paths, so only the live checks and links.
+    dispatch({ type: 'OPEN_FEED_CHECK' });
+    backfillEnclosureSizes(album.tracks);
   };
 
   const handleNew = (feedType: FeedType = 'album') => {
@@ -125,23 +274,16 @@ function AppContent() {
   };
 
   const handleTemplateImport = (xml: string) => {
-    // Import without sourceUrl so hosted link isn't set
-    handleImport(xml);
-    // After import, regenerate the GUID and clear hosted credentials
-    const newGuid = crypto.randomUUID();
-    if (isPublisherFeed(xml)) {
-      dispatch({ type: 'UPDATE_PUBLISHER_FEED', payload: { podcastGuid: newGuid } });
-    } else if (isVideoFeed(xml)) {
-      dispatch({ type: 'UPDATE_VIDEO_FEED', payload: { podcastGuid: newGuid } });
-    } else {
-      dispatch({ type: 'UPDATE_ALBUM', payload: { podcastGuid: newGuid } });
-    }
+    // Import without sourceUrl so hosted link isn't set; regenerate feed + track
+    // GUIDs so the template doesn't clone the source feed's track identities.
+    handleImport(xml, undefined, true);
     pendingHostedStorage.clear();
   };
 
   const handleTemplateLoadAlbum = (album: Album) => {
     pendingHostedStorage.clear();
-    dispatch({ type: 'SET_ALBUM', payload: { ...album, podcastGuid: crypto.randomUUID() } });
+    dispatch({ type: 'SET_ALBUM', payload: regenerateAlbumGuids(album) });
+    dispatch({ type: 'OPEN_FEED_CHECK' });
   };
 
   const handleSwitchFeedType = (feedType: FeedType) => {
@@ -219,6 +361,16 @@ function AppContent() {
                   >
                     {theme === 'dark' ? '☀️' : '🌙'} Switch to {theme === 'dark' ? 'Light' : 'Dark'} Mode
                   </button>
+                  {/* Local dev only — gated on import.meta.env.DEV so the experimental
+                      toggle is tree-shaken out of production builds */}
+                  {import.meta.env.DEV && (
+                    <button
+                      className="dropdown-item"
+                      onClick={() => { toggleExperimental(); setShowDropdown(false); }}
+                    >
+                      🧪 {showExperimental ? 'Hide' : 'Show'} Experimental Features
+                    </button>
+                  )}
                   <div className="dropdown-divider" />
                   {nostrState.isLoggedIn ? (
                     <button
@@ -235,6 +387,7 @@ function AppContent() {
                       🔑 Sign In (nostr)
                     </button>
                   )}
+                  {/* Local dev only — gated on import.meta.env.DEV so it is tree-shaken out of production builds */}
                   {import.meta.env.DEV && (
                     <>
                       <div className="dropdown-divider" />
@@ -249,16 +402,6 @@ function AppContent() {
                       </button>
                     </>
                   )}
-                  <div className="dropdown-divider" />
-                  <a
-                    className="dropdown-item"
-                    href="https://msp-2-0-git-fafo-chadfs-projects.vercel.app/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={() => setShowDropdown(false)}
-                  >
-                    🧪 Experimental (FAFO)
-                  </a>
                   <div className="dropdown-divider" />
                   <div className="dropdown-version">v{__APP_VERSION__}</div>
                 </div>
@@ -294,11 +437,11 @@ function AppContent() {
           </button>
           <button
             className="bottom-toolbar-btn"
-            onClick={() => setShowPodcastIndexModal(true)}
-            title="Submit to Podcast Index"
+            onClick={() => setShowPodpingModal(true)}
+            title="Send Podping"
           >
-            <img src={piLogo} alt="Podcast Index" className="bottom-toolbar-icon-img" />
-            <span className="bottom-toolbar-label">Podcast Index</span>
+            <span className="bottom-toolbar-icon">📡</span>
+            <span className="bottom-toolbar-label">Podping</span>
           </button>
           <button
             className="bottom-toolbar-btn"
@@ -307,6 +450,20 @@ function AppContent() {
           >
             <span className="bottom-toolbar-icon">👁️</span>
             <span className="bottom-toolbar-label">View Feed</span>
+          </button>
+          <button
+            className="bottom-toolbar-btn"
+            onClick={() => piFeedId && window.open(`https://podcastindex.org/podcast/${piFeedId}`, '_blank', 'noopener,noreferrer')}
+            disabled={!piFeedId}
+            title={piFeedId ? 'View this feed on Podcast Index' : "This feed isn't in Podcast Index yet"}
+            style={{
+              opacity: piFeedId ? 1 : 0.4,
+              cursor: piFeedId ? 'pointer' : 'default',
+              color: piFeedId ? 'var(--success, #10b981)' : undefined,
+            }}
+          >
+            <PodcastIndexIcon className="bottom-toolbar-icon-img" />
+            <span className="bottom-toolbar-label">Podcast Index</span>
           </button>
         </div>
       </div>
@@ -330,6 +487,8 @@ function AppContent() {
           isDirty={state.isDirty}
           isLoggedIn={nostrState.isLoggedIn}
           onImport={handleImport}
+          onPodcastIndexId={setPiFeedId}
+          onPodcastIndexPending={() => setPiWatch(n => n + 1)}
         />
       )}
 
@@ -342,15 +501,22 @@ function AppContent() {
         />
       )}
 
-      {showPodcastIndexModal && (
-        <PodcastIndexModal
-          onClose={() => setShowPodcastIndexModal(false)}
+      {showPodpingModal && (
+        <PodpingModal
+          onClose={() => setShowPodpingModal(false)}
           feedGuid={
             state.feedType === 'publisher' && state.publisherFeed
               ? state.publisherFeed.podcastGuid
               : state.feedType === 'video' && state.videoFeed
                 ? state.videoFeed.podcastGuid
                 : state.album.podcastGuid
+          }
+          medium={
+            state.feedType === 'publisher' && state.publisherFeed
+              ? state.publisherFeed.medium
+              : state.feedType === 'video' && state.videoFeed
+                ? state.videoFeed.medium
+                : state.album.medium
           }
         />
       )}
@@ -377,24 +543,51 @@ function AppContent() {
 // Main App
 function App() {
   const isAdminRoute = window.location.pathname === '/admin';
+  const isChartsRoute = window.location.pathname === '/charts';
+  const isVerifyRoute = window.location.pathname === '/auth/verify';
+
+  if (isVerifyRoute) {
+    return (
+      <ThemeProvider>
+        <VerifyMagicLink />
+      </ThemeProvider>
+    );
+  }
+
+  if (isChartsRoute) {
+    // Admin-only for now, so it needs the Nostr session exactly as /admin does.
+    return (
+      <ThemeProvider>
+        <ExperimentalProvider>
+          <NostrProvider>
+            <ChartsPage />
+          </NostrProvider>
+        </ExperimentalProvider>
+      </ThemeProvider>
+    );
+  }
 
   if (isAdminRoute) {
     return (
       <ThemeProvider>
-        <NostrProvider>
-          <AdminPage />
-        </NostrProvider>
+        <ExperimentalProvider>
+          <NostrProvider>
+            <AdminPage />
+          </NostrProvider>
+        </ExperimentalProvider>
       </ThemeProvider>
     );
   }
 
   return (
     <ThemeProvider>
-      <NostrProvider>
-        <FeedProvider>
-          <AppContent />
-        </FeedProvider>
-      </NostrProvider>
+      <ExperimentalProvider>
+        <NostrProvider>
+          <FeedProvider>
+            <AppContent />
+          </FeedProvider>
+        </NostrProvider>
+      </ExperimentalProvider>
     </ThemeProvider>
   );
 }

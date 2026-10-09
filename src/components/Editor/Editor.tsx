@@ -1,13 +1,16 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useFeed } from '../../store/feedStore';
 import { useNostr } from '../../store/nostrStore';
-import { LANGUAGES, PERSON_GROUPS, PERSON_ROLES, createEmptyPersonRole, createEmptyTrack, isVideoMedium, isCommunitySupport, createSupportRecipients, hasUserRecipients, createEmptyAlternateEnclosure } from '../../types/feed';
+import { LANGUAGES, PERSON_GROUPS, PERSON_ROLES, createEmptyPersonRole, createEmptyTrack, isVideoMedium, isCommunitySupport, createSupportRecipients, hasUserRecipients, TRANSCRIPT_TYPES, DEFAULT_TRANSCRIPT_TYPE, createEmptyAlternateEnclosure } from '../../types/feed';
 import type { PersonGroup, AlternateEnclosure } from '../../types/feed';
 import { FIELD_INFO } from '../../data/fieldInfo';
 import { detectAddressType } from '../../utils/addressUtils';
-import { getMediaDuration, secondsToHHMMSS, formatDuration } from '../../utils/audioUtils';
+import { getMediaDuration, secondsToHHMMSS, formatDuration, getAudioMimeType, isKnownAudioFormat, resolveMediaSize, hhmmssToSeconds } from '../../utils/audioUtils';
 import { getVideoMimeType } from '../../utils/videoUtils';
 import { isNaddrString, resolveNostrVideo } from '../../utils/nostrVideoConverter';
+import { getFeedUrlError, normalizeFeedUrl } from '../../utils/urlValidation';
+import { trackOrderIssue } from '../../utils/trackOrder';
+import { verifyFeedUrl, isGuardRefusal, FORCED_SUBMIT_NOTE } from '../../utils/verifyFeedUrl';
 import { InfoIcon } from '../InfoIcon';
 import { Section } from '../Section';
 import { Toggle } from '../Toggle';
@@ -15,6 +18,8 @@ import { AddRecipientSelect } from '../AddRecipientSelect';
 import { RecipientsList } from '../RecipientsList';
 import { FundingFields } from '../FundingFields';
 import { ArtworkFields } from '../ArtworkFields';
+import { PodcastImagesList } from '../PodcastImagesList';
+import { FeedCheckPanel } from '../FeedCheckPanel';
 
 // Roles Reference Modal
 function RolesModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
@@ -77,9 +82,10 @@ function RolesModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
 function Op3StatsLink({ podcastGuid }: { podcastGuid: string }) {
   const [hasStats, setHasStats] = useState<boolean | null>(null);
 
+  // No setHasStats(null) reset here — the call site keys this component on
+  // podcastGuid, so a guid change remounts it and useState does the reset.
   useEffect(() => {
     let cancelled = false;
-    setHasStats(null);
     fetch(`/api/op3check?guid=${encodeURIComponent(podcastGuid)}`)
       .then(res => res.json())
       .then(data => { if (!cancelled) setHasStats(data.hasStats === true); })
@@ -132,6 +138,9 @@ export function Editor() {
   // Submit to Podcast Index state
   const [piSubmitting, setPiSubmitting] = useState(false);
   const [piSubmitResult, setPiSubmitResult] = useState<{ success: boolean; message: string } | null>(null);
+  // Latch: set when the reachability check warns, so a second click submits anyway.
+  const [piBypassVerify, setPiBypassVerify] = useState(false);
+  const publisherFeedUrlError = getFeedUrlError(album.publisher?.feedUrl || '');
 
   // Auto-lookup publisher feed in Podcast Index when URL changes
   const lookupPublisherFeed = useCallback(async (feedUrl: string) => {
@@ -194,32 +203,48 @@ export function Editor() {
 
   // Submit feed to Podcast Index
   const handleSubmitToPI = async () => {
-    const feedUrl = album.publisher?.feedUrl;
-    if (!feedUrl?.trim()) return;
+    // Normalize here too: the store value can arrive from a feed import, which
+    // never passes through the input's onChange.
+    const feedUrl = normalizeFeedUrl(album.publisher?.feedUrl || '');
+    if (!feedUrl) return;
     setPiSubmitting(true);
     setPiSubmitResult(null);
     try {
-      // First validate it's an actual RSS feed
-      const proxyRes = await fetch(`/api/proxy-feed?url=${encodeURIComponent(feedUrl)}`);
-      if (!proxyRes.ok) {
-        setPiSubmitResult({ success: false, message: 'Could not fetch URL - check the address' });
-        return;
-      }
-      const content = await proxyRes.text();
-      if (!content.includes('<rss') && !content.includes('<feed') && !content.includes('<channel')) {
-        setPiSubmitResult({ success: false, message: 'URL does not appear to be an RSS feed' });
-        return;
+      // Check the feed actually resolves, via /api/verify-feed-url rather than
+      // /api/proxy-feed: this needs a verdict, not the bytes, and a verdict is
+      // cheaper and safer to ask for.
+      // The latch doubles as the override: set by this check or by a server
+      // refusal, and cleared whenever the URL changes.
+      const force = piBypassVerify;
+      if (!force) {
+        const check = await verifyFeedUrl(feedUrl);
+        if (!check.ok) {
+          setPiSubmitResult({
+            success: false,
+            message: `${check.warning} Click again to submit anyway.`
+          });
+          setPiBypassVerify(true);
+          return;
+        }
       }
 
       // Submit to Podcast Index
       const response = await fetch('/api/pisubmit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: feedUrl })
+        body: JSON.stringify({ url: feedUrl, ...(force ? { force: true } : {}) })
       });
       const data = await response.json();
       if (response.ok && data.success) {
-        setPiSubmitResult({ success: true, message: 'Submitted! May take a few minutes to index.' });
+        setPiSubmitResult({
+          success: true,
+          message: `Submitted! May take a few minutes to index.${force ? FORCED_SUBMIT_NOTE : ''}`
+        });
+      } else if (isGuardRefusal(data)) {
+        // The server saw a block our own check missed. Arm the latch so the
+        // button becomes "Submit anyway" rather than a dead end.
+        setPiSubmitResult({ success: false, message: `${data.error} Click again to submit anyway.` });
+        setPiBypassVerify(true);
       } else {
         setPiSubmitResult({ success: false, message: data.error || data.details?.description || 'Failed to submit' });
       }
@@ -232,6 +257,10 @@ export function Editor() {
 
   // Determine if this is a video feed
   const isVideo = isVideoMedium(album.medium);
+
+  // Feeds built or imported before pub dates were kept in sync with list order can still be
+  // out of order; offer a one-click repair rather than rewriting an import behind their back.
+  const orderIssue = useMemo(() => trackOrderIssue(album.tracks), [album.tracks]);
 
   const toggleTrackCollapse = (trackId: string) => {
     setCollapsedTracks(prev => ({
@@ -256,6 +285,7 @@ export function Editor() {
     <>
       <div className="main-content">
         <div className="editor-panel">
+          <FeedCheckPanel />
           {/* Album/Video Info Section */}
           <Section title={isVideo ? "Video Info" : "Album Info"} icon={isVideo ? "🎬" : "💿"}>
             <div className="form-grid">
@@ -323,7 +353,7 @@ export function Editor() {
                   labelSuffix={<InfoIcon text={FIELD_INFO.op3} />}
                 />
                 {album.op3 && album.podcastGuid && (
-                  <Op3StatsLink podcastGuid={album.podcastGuid} />
+                  <Op3StatsLink key={album.podcastGuid} podcastGuid={album.podcastGuid} />
                 )}
               </div>
               <div className="form-group full-width">
@@ -429,6 +459,10 @@ export function Editor() {
               titlePlaceholder={isVideo ? "Video cover description" : "Album cover description"}
               previewAlt={isVideo ? "Video preview" : "Album preview"}
             />
+            <PodcastImagesList
+              images={album.podcastImages || []}
+              onChange={images => dispatch({ type: 'UPDATE_ALBUM', payload: { podcastImages: images } })}
+            />
           </Section>
 
           {/* Credits Section */}
@@ -474,6 +508,19 @@ export function Editor() {
                           onChange={e => dispatch({
                             type: 'UPDATE_PERSON',
                             payload: { index: personIndex, person: { ...person, img: e.target.value } }
+                          })}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Nostr npub<InfoIcon text={FIELD_INFO.personNpub} /></label>
+                        <input
+                          type="text"
+                          className="form-input"
+                          placeholder="npub1..."
+                          value={person.npub || ''}
+                          onChange={e => dispatch({
+                            type: 'UPDATE_PERSON',
+                            payload: { index: personIndex, person: { ...person, npub: e.target.value } }
                           })}
                         />
                       </div>
@@ -666,16 +713,26 @@ export function Editor() {
                 className="form-input"
                 placeholder="https://example.com/publisher-feed.xml"
                 value={album.publisher?.feedUrl || ''}
-                onChange={e => dispatch({
-                  type: 'UPDATE_ALBUM',
-                  payload: {
-                    publisher: {
-                      feedGuid: '',
-                      feedUrl: e.target.value
+                onChange={e => {
+                  setPiBypassVerify(false);
+                  setPiSubmitResult(null);
+                  dispatch({
+                    type: 'UPDATE_ALBUM',
+                    payload: {
+                      publisher: {
+                        feedGuid: '',
+                        feedUrl: normalizeFeedUrl(e.target.value)
+                      }
                     }
-                  }
-                })}
+                  });
+                }}
+                style={publisherFeedUrlError ? { borderColor: 'var(--error, #ef4444)' } : undefined}
               />
+              {publisherFeedUrlError && (
+                <p style={{ color: 'var(--error, #ef4444)', fontSize: '12px', marginTop: '6px', marginBottom: 0 }}>
+                  {publisherFeedUrlError}
+                </p>
+              )}
               {publisherLookup.loading && (
                 <p style={{ color: 'var(--text-tertiary)', marginTop: '8px', fontSize: '12px' }}>
                   Looking up feed in Podcast Index...
@@ -691,10 +748,12 @@ export function Editor() {
                       <button
                         className="btn btn-secondary"
                         onClick={handleSubmitToPI}
-                        disabled={piSubmitting}
+                        disabled={piSubmitting || !!publisherFeedUrlError}
                         style={{ fontSize: '12px', padding: '6px 12px' }}
                       >
-                        {piSubmitting ? 'Submitting...' : 'Submit to Podcast Index'}
+                        {piSubmitting
+                          ? 'Submitting...'
+                          : piBypassVerify ? 'Submit anyway' : 'Submit to Podcast Index'}
                       </button>
                       {piSubmitResult && (
                         <span style={{
@@ -727,6 +786,22 @@ export function Editor() {
 
           {/* Tracks/Videos Section */}
           <Section title={isVideo ? "Videos" : "Tracks"} icon={isVideo ? "🎬" : "🎵"}>
+            {orderIssue && (
+              <div className="track-order-warning">
+                <span>
+                  {orderIssue === 'reversed'
+                    ? `These ${isVideo ? 'videos' : 'tracks'} look like they're in reverse order — ${isVideo ? 'video' : 'track'} 1 is at the bottom.`
+                    : `Pub dates don't match this order, so apps may play these ${isVideo ? 'videos' : 'tracks'} out of order.`}
+                </span>
+                <button
+                  className="btn btn-warning"
+                  onClick={() => dispatch({ type: 'FIX_TRACK_ORDER' })}
+                  style={{ fontSize: '0.875rem', padding: '4px 12px', whiteSpace: 'nowrap' }}
+                >
+                  {orderIssue === 'reversed' ? 'Reverse order' : 'Fix pub dates'}
+                </button>
+              </div>
+            )}
             {album.tracks.length > 0 && (
               <div style={{ marginBottom: '12px', textAlign: 'right' }}>
                 <button
@@ -790,11 +865,11 @@ export function Editor() {
                             type: 'UPDATE_TRACK',
                             payload: { index, track: { enclosureUrl: url } }
                           });
-                          // Auto-detect MIME type for video feeds
-                          if (isVideo && url) {
+                          if (url) {
+                            const mimeType = isVideo ? getVideoMimeType(url) : getAudioMimeType(url);
                             dispatch({
                               type: 'UPDATE_TRACK',
-                              payload: { index, track: { enclosureType: getVideoMimeType(url) } }
+                              payload: { index, track: { enclosureType: mimeType } }
                             });
                           }
                         }}
@@ -808,6 +883,7 @@ export function Editor() {
                             try {
                               const videoData = await resolveNostrVideo(pastedText);
                               if (videoData) {
+                                const bytes = await resolveMediaSize(videoData.url, hhmmssToSeconds(videoData.duration));
                                 dispatch({
                                   type: 'UPDATE_TRACK',
                                   payload: {
@@ -815,7 +891,7 @@ export function Editor() {
                                     track: {
                                       enclosureUrl: videoData.url,
                                       enclosureType: videoData.mimeType,
-                                      enclosureLength: '33',
+                                      enclosureLength: String(bytes),
                                       ...(videoData.duration && { duration: videoData.duration }),
                                     }
                                   }
@@ -838,28 +914,28 @@ export function Editor() {
                               type: 'UPDATE_TRACK',
                               payload: { index, track: { enclosureUrl: url } }
                             });
-                            // Auto-detect MIME type for video feeds
-                            if (isVideo) {
-                              dispatch({
-                                type: 'UPDATE_TRACK',
-                                payload: { index, track: { enclosureType: getVideoMimeType(url) } }
-                              });
-                            }
+                            const mimeType = isVideo ? getVideoMimeType(url) : getAudioMimeType(url);
+                            dispatch({
+                              type: 'UPDATE_TRACK',
+                              payload: { index, track: { enclosureType: mimeType } }
+                            });
                             // Fetch duration using unified Media API (works for both audio and video)
+                            let durationSeconds: number | null = null;
                             if (isNewUrl || !track.duration) {
-                              const duration = await getMediaDuration(url);
-                              if (duration !== null) {
+                              durationSeconds = await getMediaDuration(url);
+                              if (durationSeconds !== null) {
                                 dispatch({
                                   type: 'UPDATE_TRACK',
-                                  payload: { index, track: { duration: secondsToHHMMSS(duration) } }
+                                  payload: { index, track: { duration: secondsToHHMMSS(durationSeconds) } }
                                 });
                               }
                             }
-                            // Set placeholder file size
+                            // Measure the real file size; falls back to an estimate if the host blocks us
                             if (isNewUrl || !track.enclosureLength) {
+                              const bytes = await resolveMediaSize(url, durationSeconds ?? hhmmssToSeconds(track.duration));
                               dispatch({
                                 type: 'UPDATE_TRACK',
-                                payload: { index, track: { enclosureLength: '33' } }
+                                payload: { index, track: { enclosureLength: String(bytes) } }
                               });
                             }
                           }
@@ -868,20 +944,22 @@ export function Editor() {
                           const url = e.target.value;
                           if (url && url.startsWith('http')) {
                             // Fetch duration using unified Media API (works for both audio and video)
+                            let durationSeconds: number | null = null;
                             if (!track.duration) {
-                              const duration = await getMediaDuration(url);
-                              if (duration !== null) {
+                              durationSeconds = await getMediaDuration(url);
+                              if (durationSeconds !== null) {
                                 dispatch({
                                   type: 'UPDATE_TRACK',
-                                  payload: { index, track: { duration: secondsToHHMMSS(duration) } }
+                                  payload: { index, track: { duration: secondsToHHMMSS(durationSeconds) } }
                                 });
                               }
                             }
-                            // Set placeholder file size
+                            // Measure the real file size; falls back to an estimate if the host blocks us
                             if (!track.enclosureLength) {
+                              const bytes = await resolveMediaSize(url, durationSeconds ?? hhmmssToSeconds(track.duration));
                               dispatch({
                                 type: 'UPDATE_TRACK',
-                                payload: { index, track: { enclosureLength: '33' } }
+                                payload: { index, track: { enclosureLength: String(bytes) } }
                               });
                             }
                           }
@@ -900,6 +978,11 @@ export function Editor() {
                       {isVideo && !resolvingNaddr[index] && !track.enclosureUrl && (
                         <div style={{ color: 'var(--text-secondary)', fontSize: '0.8em', marginTop: '4px', opacity: 0.7 }}>
                           Tip: Paste a Nostr naddr to auto-fill video details
+                        </div>
+                      )}
+                      {!isVideo && track.enclosureUrl && !isKnownAudioFormat(track.enclosureUrl) && (
+                        <div style={{ color: 'var(--warning, #b8860b)', fontSize: '0.85em', marginTop: '4px' }}>
+                          URL doesn't end with a recognized audio extension (mp3, flac, wav, m4a, aac, ogg, opus, aiff). Podcast apps may not play it.
                         </div>
                       )}
                       {track.enclosureUrl && (
@@ -1054,18 +1137,47 @@ export function Editor() {
                         })}
                       />
                     </div>
+                    <PodcastImagesList
+                      label="Additional Track Images"
+                      images={track.podcastImages || []}
+                      onChange={images => dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { podcastImages: images } } })}
+                    />
                     <div className="form-group">
                       <label className="form-label">Lyrics URL<InfoIcon text={FIELD_INFO.transcriptUrl} /></label>
-                      <input
-                        type="url"
-                        className="form-input"
-                        placeholder="https://example.com/lyrics.srt"
-                        value={track.transcriptUrl || ''}
-                        onChange={e => dispatch({
-                          type: 'UPDATE_TRACK',
-                          payload: { index, track: { transcriptUrl: e.target.value } }
-                        })}
-                      />
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <input
+                          type="url"
+                          className="form-input"
+                          style={{ flex: '1 1 240px', minWidth: 0 }}
+                          placeholder="https://example.com/lyrics.srt"
+                          value={track.transcriptUrl || ''}
+                          onChange={e => dispatch({
+                            type: 'UPDATE_TRACK',
+                            payload: { index, track: { transcriptUrl: e.target.value } }
+                          })}
+                        />
+                        <select
+                          className="form-select"
+                          style={{ flex: '0 0 auto', minWidth: '170px' }}
+                          aria-label="Lyrics file type"
+                          value={track.transcriptType || DEFAULT_TRANSCRIPT_TYPE}
+                          onChange={e => dispatch({
+                            type: 'UPDATE_TRACK',
+                            payload: { index, track: { transcriptType: e.target.value } }
+                          })}
+                        >
+                          {TRANSCRIPT_TYPES.map(t => (
+                            <option key={t.value} value={t.value}>{t.label}</option>
+                          ))}
+                          {/* An imported feed may carry a type outside the spec list
+                              (MSP itself wrote application/srt for a long time). Show
+                              it rather than silently snapping the value to SubRip. */}
+                          {track.transcriptType &&
+                            !TRANSCRIPT_TYPES.some(t => t.value === track.transcriptType) && (
+                            <option value={track.transcriptType}>{track.transcriptType}</option>
+                          )}
+                        </select>
+                      </div>
                     </div>
                     {/* Music Video fields - only shown on Album page (not Video page) */}
                     {!isVideo && (
@@ -1269,6 +1381,19 @@ export function Editor() {
                                     })}
                                   />
                                 </div>
+                                <div className="form-group">
+                                  <label className="form-label">Nostr npub<InfoIcon text={FIELD_INFO.personNpub} /></label>
+                                  <input
+                                    type="text"
+                                    className="form-input"
+                                    placeholder="npub1..."
+                                    value={person.npub || ''}
+                                    onChange={e => dispatch({
+                                      type: 'UPDATE_TRACK_PERSON',
+                                      payload: { trackIndex: index, personIndex, person: { ...person, npub: e.target.value } }
+                                    })}
+                                  />
+                                </div>
                               </div>
 
                               {/* Roles */}
@@ -1390,7 +1515,7 @@ export function Editor() {
                                       newRecipients[rIndex] = { ...recipient, name: e.target.value };
                                       dispatch({
                                         type: 'UPDATE_TRACK',
-                                        payload: { index, track: { value: { type: 'lightning', method: 'keysend', recipients: newRecipients } } }
+                                        payload: { index, track: { value: { ...track.value, type: 'lightning', method: 'keysend', recipients: newRecipients } } }
                                       });
                                     }}
                                   />
@@ -1409,7 +1534,7 @@ export function Editor() {
                                       newRecipients[rIndex] = { ...recipient, address, type: detectedType };
                                       dispatch({
                                         type: 'UPDATE_TRACK',
-                                        payload: { index, track: { value: { type: 'lightning', method: 'keysend', recipients: newRecipients } } }
+                                        payload: { index, track: { value: { ...track.value, type: 'lightning', method: 'keysend', recipients: newRecipients } } }
                                       });
                                     }}
                                   />
@@ -1428,7 +1553,7 @@ export function Editor() {
                                       newRecipients[rIndex] = { ...recipient, split: parseInt(e.target.value) || 0 };
                                       dispatch({
                                         type: 'UPDATE_TRACK',
-                                        payload: { index, track: { value: { type: 'lightning', method: 'keysend', recipients: newRecipients } } }
+                                        payload: { index, track: { value: { ...track.value, type: 'lightning', method: 'keysend', recipients: newRecipients } } }
                                       });
                                     }}
                                   />
@@ -1443,7 +1568,7 @@ export function Editor() {
                                   newRecipients.splice(rIndex, 1);
                                   dispatch({
                                     type: 'UPDATE_TRACK',
-                                    payload: { index, track: { value: { type: 'lightning', method: 'keysend', recipients: newRecipients } } }
+                                    payload: { index, track: { value: { ...track.value, type: 'lightning', method: 'keysend', recipients: newRecipients } } }
                                   });
                                 }}
                               >
@@ -1455,7 +1580,7 @@ export function Editor() {
                         })}
                         <AddRecipientSelect onAdd={recipient => {
                           const newRecipients = [...trackRecipients, recipient];
-                          dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { value: { type: 'lightning', method: 'keysend', recipients: newRecipients } } } });
+                          dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { value: { ...track.value, type: 'lightning', method: 'keysend', recipients: newRecipients } } } });
                         }} />
                         {trackPlatformRecipients.length === 0 && trackHasUserWithAddress && (
                           <div style={{
@@ -1477,7 +1602,7 @@ export function Editor() {
                               style={{ fontSize: '13px' }}
                               onClick={() => {
                                 const newRecipients = [...trackRecipients, ...createSupportRecipients()];
-                                dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { value: { type: 'lightning', method: 'keysend', recipients: newRecipients } } } });
+                                dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { value: { ...track.value, type: 'lightning', method: 'keysend', recipients: newRecipients } } } });
                               }}
                             >
                               Add Community Support
@@ -1548,7 +1673,7 @@ export function Editor() {
                                           newRecipients[rIndex] = { ...recipient, split: parseInt(e.target.value) || 0 };
                                           dispatch({
                                             type: 'UPDATE_TRACK',
-                                            payload: { index, track: { value: { type: 'lightning', method: 'keysend', recipients: newRecipients } } }
+                                            payload: { index, track: { value: { ...track.value, type: 'lightning', method: 'keysend', recipients: newRecipients } } }
                                           });
                                         }}
                                       />
@@ -1563,7 +1688,7 @@ export function Editor() {
                                       newRecipients.splice(rIndex, 1);
                                       dispatch({
                                         type: 'UPDATE_TRACK',
-                                        payload: { index, track: { value: { type: 'lightning', method: 'keysend', recipients: newRecipients } } }
+                                        payload: { index, track: { value: { ...track.value, type: 'lightning', method: 'keysend', recipients: newRecipients } } }
                                       });
                                     }}
                                   >

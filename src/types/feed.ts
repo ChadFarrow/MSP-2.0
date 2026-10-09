@@ -74,6 +74,32 @@ export interface RemoteItem {
   rel?: string;
 }
 
+// Alternate enclosure types (podcast:alternateEnclosure)
+export interface AlternateEnclosureSource {
+  uri: string;
+  contentType?: string;
+}
+
+export interface AlternateEnclosureIntegrity {
+  type: 'sri' | 'pgp-signature';
+  value: string;
+}
+
+export interface AlternateEnclosure {
+  id: string;
+  type: string;                    // Required: MIME type
+  length?: string;                 // File size in bytes
+  bitrate?: string;                // bits/sec
+  height?: string;                 // Video height
+  lang?: string;                   // BCP 47 language tag
+  title?: string;                  // Max 32 chars
+  rel?: string;                    // Grouping ID, max 32 chars
+  codecs?: string;                 // RFC 6381
+  default?: boolean;
+  sources: AlternateEnclosureSource[];
+  integrity?: AlternateEnclosureIntegrity;
+}
+
 // Podcasting 2.0 additional images (<podcast:image>). These are EXTRA images
 // (banner/canvas/social/etc.) — the primary cover stays in imageUrl/trackArtUrl.
 export interface PodcastImage {
@@ -187,6 +213,7 @@ export interface Track {
   persons: Person[];
   overrideValue: boolean;
   value?: ValueBlock;
+  alternateEnclosures?: AlternateEnclosure[];
   unknownItemElements?: Record<string, unknown>;
 }
 
@@ -528,6 +555,18 @@ export const createEmptyRemoteItem = (): RemoteItem => ({
   feedUrl: '',
   title: '',
   medium: 'music'
+});
+
+// Default empty alternate enclosure source
+export const createEmptyAlternateEnclosureSource = (): AlternateEnclosureSource => ({
+  uri: ''
+});
+
+// Default empty alternate enclosure
+export const createEmptyAlternateEnclosure = (mimeType = 'video/mp4'): AlternateEnclosure => ({
+  id: crypto.randomUUID(),
+  type: mimeType,
+  sources: [createEmptyAlternateEnclosureSource()]
 });
 
 // Default empty publisher reference

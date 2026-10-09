@@ -19,6 +19,7 @@ import { RecipientsList } from '../RecipientsList';
 import { FundingFields } from '../FundingFields';
 import { ArtworkFields } from '../ArtworkFields';
 import { PodcastImagesList } from '../PodcastImagesList';
+import { AlternateEnclosuresList } from '../AlternateEnclosuresList';
 import { FeedCheckPanel } from '../FeedCheckPanel';
 
 // Roles Reference Modal
@@ -1179,6 +1180,16 @@ export function Editor() {
                         </select>
                       </div>
                     </div>
+                    {/* Audio versions on album tracks first; video feeds come later. */}
+                    {!isVideo && (
+                      <AlternateEnclosuresList
+                        enclosures={track.alternateEnclosures || []}
+                        onChange={alternateEnclosures => dispatch({
+                          type: 'UPDATE_TRACK',
+                          payload: { index, track: { alternateEnclosures: alternateEnclosures.length > 0 ? alternateEnclosures : undefined } }
+                        })}
+                      />
+                    )}
                     <div className="form-group">
                       <Toggle
                         checked={track.explicit}

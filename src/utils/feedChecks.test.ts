@@ -255,6 +255,18 @@ describe('getShouldFixIssues', () => {
     expect(getShouldFixIssues(albumFeed(album))).toEqual([]);
   });
 
+  it('flags an alternate version with no URL, and checks every address it has', () => {
+    const album = goodAlbum();
+    album.tracks[0].alternateEnclosures = [{ id: 'a', type: 'video/mp4', title: 'Music Video', sources: [{ uri: ' ' }] }];
+    const issues = getShouldFixIssues(albumFeed(album));
+    expect(codes(issues)).toEqual(['alt-enclosure-no-url']);
+    expect(issues[0].message).toContain('Alternate version 1 ("Music Video")');
+    album.tracks[0].alternateEnclosures[0].sources = [{ uri: 'https://example.com/v.mp4' }, { uri: 'http://mirror.example.com/v.mp4' }];
+    expect(codes(getShouldFixIssues(albumFeed(album)))).toEqual(['url-http']);
+    album.tracks[0].alternateEnclosures[0].sources[1].uri = 'https://mirror.example.com/v.mp4';
+    expect(getShouldFixIssues(albumFeed(album))).toEqual([]);
+  });
+
   it('flags a missing channel link on album and publisher feeds', () => {
     expect(codes(getShouldFixIssues(albumFeed({ ...goodAlbum(), link: '' })))).toEqual(['channel-link-missing']);
     expect(codes(getShouldFixIssues(publisherFeedSnapshot({ ...goodPublisher(), link: ' ' })))).toEqual(['channel-link-missing']);

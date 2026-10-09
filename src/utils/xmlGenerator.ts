@@ -1,5 +1,5 @@
 // MSP 2.0 - XML Generator for Demu RSS Feeds
-import type { Album, Track, Person, ValueBlock, ValueRecipient, Funding, PublisherFeed, RemoteItem, PublisherReference, BaseChannelData, PodcastImage } from '../types/feed';
+import type { Album, Track, Person, ValueBlock, ValueRecipient, Funding, PublisherFeed, RemoteItem, PublisherReference, BaseChannelData, PodcastImage, AlternateEnclosure } from '../types/feed';
 import { DEFAULT_TRANSCRIPT_TYPE } from '../types/feed';
 import { formatRFC822Date } from './dateUtils';
 
@@ -293,6 +293,47 @@ const generatePublisherXml = (publisher: PublisherReference, level: number): str
   return lines.join('\n');
 };
 
+// Generate alternate enclosure XML (podcast:alternateEnclosure)
+const generateAlternateEnclosureXml = (enclosure: AlternateEnclosure, level: number): string => {
+  // Must have at least one source with a URI. Any row may be the filled one:
+  // the editor lets a user blank the first mirror and keep the second.
+  const sources = (enclosure.sources || []).filter(source => source.uri?.trim());
+  if (sources.length === 0) {
+    return '';
+  }
+
+  const lines: string[] = [];
+
+  // Build attributes - type is required
+  const attrs: string[] = [`type="${escapeXml(enclosure.type)}"`];
+  if (enclosure.length) attrs.push(`length="${escapeXml(enclosure.length)}"`);
+  if (enclosure.bitrate) attrs.push(`bitrate="${escapeXml(enclosure.bitrate)}"`);
+  if (enclosure.height) attrs.push(`height="${escapeXml(enclosure.height)}"`);
+  if (enclosure.lang) attrs.push(`lang="${escapeXml(enclosure.lang)}"`);
+  if (enclosure.title) attrs.push(`title="${escapeXml(enclosure.title)}"`);
+  if (enclosure.rel) attrs.push(`rel="${escapeXml(enclosure.rel)}"`);
+  if (enclosure.codecs) attrs.push(`codecs="${escapeXml(enclosure.codecs)}"`);
+  if (enclosure.default) attrs.push('default="true"');
+
+  lines.push(`${indent(level)}<podcast:alternateEnclosure ${attrs.join(' ')}>`);
+
+  // Add sources
+  for (const source of sources) {
+    const sourceAttrs: string[] = [`uri="${escapeXml(source.uri.trim())}"`];
+    if (source.contentType) sourceAttrs.push(`contentType="${escapeXml(source.contentType)}"`);
+    lines.push(`${indent(level + 1)}<podcast:source ${sourceAttrs.join(' ')} />`);
+  }
+
+  // Add integrity if present
+  if (enclosure.integrity?.value) {
+    lines.push(`${indent(level + 1)}<podcast:integrity type="${escapeXml(enclosure.integrity.type)}" value="${escapeXml(enclosure.integrity.value)}" />`);
+  }
+
+  lines.push(`${indent(level)}</podcast:alternateEnclosure>`);
+
+  return lines.join('\n');
+};
+
 // Generate common channel elements shared between Album and PublisherFeed
 const generateCommonChannelElements = (data: BaseChannelData, medium: string, level: number): string[] => {
   const lines: string[] = [];
@@ -497,6 +538,13 @@ const generateTrackXml = (track: Track, album: Album, level: number): string => 
   const enclosureUrl = album.op3 ? applyOp3Prefix(track.enclosureUrl, album.podcastGuid) : track.enclosureUrl;
   lines.push(`${indent(level + 1)}<enclosure url="${escapeXml(enclosureUrl)}" length="${escapeXml(String(fileLength))}" type="${escapeXml(track.enclosureType)}"/>`);
 
+  // Alternate enclosures (e.g., music video for audio track)
+  if (track.alternateEnclosures && track.alternateEnclosures.length > 0) {
+    for (const altEnc of track.alternateEnclosures) {
+      const altEncXml = generateAlternateEnclosureXml(altEnc, level + 1);
+      if (altEncXml) lines.push(altEncXml);
+    }
+  }
 
   // Duration
   lines.push(`${indent(level + 1)}<itunes:duration>${escapeXml(track.duration)}</itunes:duration>`);

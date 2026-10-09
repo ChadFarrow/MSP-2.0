@@ -94,11 +94,6 @@ export function AlternateEnclosuresList({ enclosures, onChange }: AlternateEnclo
   return (
     <div className="form-group" style={{ gridColumn: '1 / -1' }}>
       <label className="form-label">Alternate Versions<InfoIcon text={FIELD_INFO.alternateEnclosures} /></label>
-      <p style={{ fontSize: '0.85rem', opacity: 0.7, margin: '0 0 0.75rem' }}>
-        Optional. The main audio file stays the one every app plays. Apps that support{' '}
-        <code>&lt;podcast:alternateEnclosure&gt;</code> let listeners pick one of these instead — e.g.{' '}
-        a lossless FLAC or a smaller, lower-bitrate copy.
-      </p>
       <div className="repeatable-list">
         {enclosures.map((enc, index) => {
           const firstUri = enc.sources[0]?.uri?.trim() || '';

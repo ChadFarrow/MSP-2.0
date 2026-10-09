@@ -11,14 +11,32 @@ interface AlternateEnclosuresListProps {
   onChange: (enclosures: AlternateEnclosure[]) => void;
 }
 
+// The spec caps title at 32 characters.
+const TITLE_MAX_LEN = 32;
+
+// Every type getAudioMimeType() can produce, so a type set from the URL
+// always has its own entry in the dropdown.
+const AUDIO_TYPES: { value: string; label: string }[] = [
+  { value: 'audio/mpeg', label: 'MP3' },
+  { value: 'audio/flac', label: 'FLAC' },
+  { value: 'audio/x-m4a', label: 'M4A' },
+  { value: 'audio/aac', label: 'AAC' },
+  { value: 'audio/mp4', label: 'MP4 audio (M4B)' },
+  { value: 'audio/ogg', label: 'OGG' },
+  { value: 'audio/opus', label: 'Opus' },
+  { value: 'audio/wav', label: 'WAV' },
+  { value: 'audio/aiff', label: 'AIFF' },
+  { value: 'audio/x-ms-wma', label: 'WMA' },
+];
+
 /**
- * Editor for a track's <podcast:alternateEnclosure> list. An alternate version
- * is a second copy of the track, so each row matches the main file field: one
- * URL, with the type taken from its extension and the size measured from the
- * host. Rows are keyed and updated by `id`, never by index, so an async size
- * lookup that resolves after a removal can't write onto the wrong row.
+ * Editor for a track's <podcast:alternateEnclosure> list: a title, file type,
+ * file size and URL per version. The type follows the URL's extension until
+ * the user picks one, and the size is measured from the host. Rows are keyed
+ * and updated by `id`, never by index, so an async size lookup that resolves
+ * after a removal can't write onto the wrong row.
  *
- * Attributes the editor has no field for (title, default, rel, integrity,
+ * Attributes the editor has no field for (default, rel, bitrate, integrity,
  * extra sources...) are kept from an imported feed and written back as is.
  */
 export function AlternateEnclosuresList({ enclosures, onChange }: AlternateEnclosuresListProps) {
@@ -27,19 +45,26 @@ export function AlternateEnclosuresList({ enclosures, onChange }: AlternateEnclo
   const enclosuresRef = useRef(enclosures);
   useEffect(() => { enclosuresRef.current = enclosures; });
 
+  // Versions whose type the user picked by hand; the URL no longer sets it.
+  const typeChosen = useRef<Set<string>>(new Set());
+
   const update = (id: string, patch: Partial<AlternateEnclosure>) => {
     onChange(enclosuresRef.current.map(enc => (enc.id === id ? { ...enc, ...patch } : enc)));
   };
 
-  // Same rule as the main file: the type follows the URL's extension. A video
-  // version from an imported feed keeps a video type.
+  // As for the main file, the type follows the URL's extension — but only a
+  // recognized one, and only until the user picks a type. A video version from
+  // an imported feed keeps a video type.
   const setUrl = (id: string, url: string) => {
     const enc = enclosuresRef.current.find(e => e.id === id);
     if (!enc) return;
     const [first, ...rest] = enc.sources;
     const changed = (first?.uri || '').trim() !== url.trim();
     const patch: Partial<AlternateEnclosure> = { sources: [{ ...first, uri: url }, ...rest] };
-    if (url.trim()) patch.type = enc.type.startsWith('video/') ? getVideoMimeType(url) : getAudioMimeType(url);
+    if (url.trim() && !typeChosen.current.has(id)) {
+      if (enc.type.startsWith('video/')) patch.type = getVideoMimeType(url);
+      else if (isKnownAudioFormat(url)) patch.type = getAudioMimeType(url);
+    }
     // A size belongs to the file it was measured from.
     if (changed) patch.length = undefined;
     update(id, patch);
@@ -66,6 +91,7 @@ export function AlternateEnclosuresList({ enclosures, onChange }: AlternateEnclo
   };
 
   const remove = (id: string) => {
+    typeChosen.current.delete(id);
     onChange(enclosuresRef.current.filter(enc => enc.id !== id));
   };
 
@@ -79,7 +105,52 @@ export function AlternateEnclosuresList({ enclosures, onChange }: AlternateEnclo
           return (
             <div key={enc.id} className="repeatable-item">
               <div className="repeatable-item-content">
-                <div className="form-group">
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label className="form-label">Title<InfoIcon text={FIELD_INFO.alternateEnclosureTitle} /></label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="e.g., Lossless"
+                      maxLength={TITLE_MAX_LEN}
+                      value={enc.title || ''}
+                      onChange={e => update(enc.id, { title: e.target.value || undefined })}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">File Type <span className="required">*</span></label>
+                    <select
+                      className="form-select"
+                      aria-label={`Alternate version ${index + 1} file type`}
+                      value={enc.type}
+                      onChange={e => {
+                        typeChosen.current.add(enc.id);
+                        update(enc.id, { type: e.target.value });
+                      }}
+                    >
+                      {AUDIO_TYPES.map(t => (
+                        <option key={t.value} value={t.value}>{t.label}</option>
+                      ))}
+                      {/* An imported feed may carry any type (a video version, an
+                          unusual MIME). Show it rather than snapping to MP3. */}
+                      {!AUDIO_TYPES.some(t => t.value === enc.type) && (
+                        <option value={enc.type}>{enc.type}</option>
+                      )}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">File Size (bytes)<InfoIcon text={FIELD_INFO.alternateEnclosureLength} /></label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      className="form-input"
+                      placeholder="e.g., 31200000"
+                      value={enc.length || ''}
+                      onChange={e => update(enc.id, { length: e.target.value.trim() || undefined })}
+                    />
+                  </div>
+                </div>
+                <div className="form-group" style={{ marginTop: '1rem' }}>
                   <label className="form-label">
                     {isVideoVersion ? 'Video URL' : 'Audio URL'} <span className="required">*</span>
                   </label>

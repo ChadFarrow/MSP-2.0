@@ -71,9 +71,5 @@ export const FIELD_INFO = {
   overrideValue: "Enable to set different payment splits for this track. Used for featuring guest artists or different producers per track.",
 
   // Music Video (Alternate Enclosure)
-  alternateEnclosures: "Other versions of this track's media, written as <podcast:alternateEnclosure>. The main file stays the enclosure every app plays; apps that support this tag let listeners pick a version, e.g. a lossless FLAC or a lower-bitrate copy. Add as many as you like.",
-  alternateEnclosureTitle: "A short name apps show in their version picker, e.g. \"Lossless\" or \"Low Data\". 32 characters at most.",
-  alternateEnclosureLength: "File size in bytes. MSP fills it in when your host reports it.",
-  alternateEnclosureDefault: "Marks this version as the same file as the main enclosure. Only one version can be the default.",
-  alternateEnclosureRel: "Versions with the same group name are alternatives of one another, e.g. the same recording in two formats. 32 characters at most.",
+  alternateEnclosures: "A second version of this track, e.g. a lossless FLAC or a smaller, lower-bitrate copy. The main file stays the one every app plays; apps that support <podcast:alternateEnclosure> let listeners pick a version. Paste its URL like the main file: MSP sets the type from the extension and reads the file size from your host.",
 };

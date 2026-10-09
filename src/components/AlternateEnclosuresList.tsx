@@ -1,27 +1,25 @@
 import { useEffect, useRef } from 'react';
 import type { AlternateEnclosure } from '../types/feed';
-import { ALTERNATE_ENCLOSURE_MIME_TYPES, createEmptyAlternateEnclosure, guessAlternateEnclosureType } from '../types/feed';
-import { detectMediaSize } from '../utils/audioUtils';
+import { createEmptyAlternateEnclosure } from '../types/feed';
+import { detectMediaSize, getAudioMimeType, isKnownAudioFormat } from '../utils/audioUtils';
+import { getVideoMimeType } from '../utils/videoUtils';
 import { FIELD_INFO } from '../data/fieldInfo';
 import { InfoIcon } from './InfoIcon';
-import { Toggle } from './Toggle';
 
 interface AlternateEnclosuresListProps {
   enclosures: AlternateEnclosure[];
   onChange: (enclosures: AlternateEnclosure[]) => void;
 }
 
-// The spec caps title and rel at 32 characters.
-const SPEC_MAX_LEN = 32;
-
-// Audio versions only for now; video versions (music videos) come later.
-// A video version from an imported feed is kept and shown under its own type.
-const AUDIO_TYPES = ALTERNATE_ENCLOSURE_MIME_TYPES.filter(t => t.value.startsWith('audio/'));
-
 /**
- * Editor for a track's <podcast:alternateEnclosure> list. Each version has its
- * own type, metadata and one file URL (its first <podcast:source>). Rows are keyed and updated by `id`, never by index, so an async
- * size lookup that resolves after a removal can't write onto the wrong row.
+ * Editor for a track's <podcast:alternateEnclosure> list. An alternate version
+ * is a second copy of the track, so each row matches the main file field: one
+ * URL, with the type taken from its extension and the size measured from the
+ * host. Rows are keyed and updated by `id`, never by index, so an async size
+ * lookup that resolves after a removal can't write onto the wrong row.
+ *
+ * Attributes the editor has no field for (title, default, rel, integrity,
+ * extra sources...) are kept from an imported feed and written back as is.
  */
 export function AlternateEnclosuresList({ enclosures, onChange }: AlternateEnclosuresListProps) {
   // Always points at the latest list so the async size lookup (up to ~10 s)
@@ -29,23 +27,38 @@ export function AlternateEnclosuresList({ enclosures, onChange }: AlternateEnclo
   const enclosuresRef = useRef(enclosures);
   useEffect(() => { enclosuresRef.current = enclosures; });
 
-  // Versions whose type the user chose by hand. A pasted URL only sets the
-  // type from its extension while the user hasn't picked one.
-  const typeChosen = useRef<Set<string>>(new Set());
-  // Per-version URL we last measured, so re-blurring an unchanged URL doesn't refetch.
-  const measuredUrls = useRef<Map<string, string>>(new Map());
-
   const update = (id: string, patch: Partial<AlternateEnclosure>) => {
     onChange(enclosuresRef.current.map(enc => (enc.id === id ? { ...enc, ...patch } : enc)));
   };
 
-  // The editor shows one address per version: the first <podcast:source>.
-  // Extra sources from an imported feed (mirrors of the same file) are kept as is.
-  const updateFirstSourceUri = (id: string, uri: string) => {
+  // Same rule as the main file: the type follows the URL's extension. A video
+  // version from an imported feed keeps a video type.
+  const setUrl = (id: string, url: string) => {
     const enc = enclosuresRef.current.find(e => e.id === id);
     if (!enc) return;
     const [first, ...rest] = enc.sources;
-    update(id, { sources: [{ ...first, uri }, ...rest] });
+    const changed = (first?.uri || '').trim() !== url.trim();
+    const patch: Partial<AlternateEnclosure> = { sources: [{ ...first, uri: url }, ...rest] };
+    if (url.trim()) patch.type = enc.type.startsWith('video/') ? getVideoMimeType(url) : getAudioMimeType(url);
+    // A size belongs to the file it was measured from.
+    if (changed) patch.length = undefined;
+    update(id, patch);
+  };
+
+  // Measure the file on paste or blur. Unlike the main file there is no
+  // estimate: length is optional here, and an estimate from the main file's
+  // duration would be wrong for a lossless or low-bitrate copy.
+  const measure = async (id: string, rawUrl: string) => {
+    const url = rawUrl.trim();
+    if (!url.startsWith('http')) return;
+    const enc = enclosuresRef.current.find(e => e.id === id);
+    if (!enc || enc.length) return;
+    const size = await detectMediaSize(url);
+    if (size === null) return;
+    // Bail if the version was removed or its URL changed while measuring.
+    const current = enclosuresRef.current.find(e => e.id === id);
+    if (!current || current.sources[0]?.uri.trim() !== url) return;
+    update(id, { length: String(size) });
   };
 
   const add = () => {
@@ -53,208 +66,77 @@ export function AlternateEnclosuresList({ enclosures, onChange }: AlternateEnclo
   };
 
   const remove = (id: string) => {
-    typeChosen.current.delete(id);
-    measuredUrls.current.delete(id);
     onChange(enclosuresRef.current.filter(enc => enc.id !== id));
   };
-
-  // Only one version may be the default. Checking one clears the others.
-  const setDefault = (id: string, value: boolean) => {
-    onChange(enclosuresRef.current.map(enc => (
-      enc.id === id ? { ...enc, default: value } : value ? { ...enc, default: false } : enc
-    )));
-  };
-
-  // On the first address's blur: guess the type from the extension (unless the
-  // user picked one) and measure the file size (unless one is already set).
-  const handleFirstSourceBlur = async (id: string, rawUrl: string) => {
-    const url = rawUrl.trim();
-    if (!url) return;
-    const enc = enclosuresRef.current.find(e => e.id === id);
-    if (!enc) return;
-
-    if (!typeChosen.current.has(id)) {
-      const guessed = guessAlternateEnclosureType(url);
-      if (guessed && AUDIO_TYPES.some(t => t.value === guessed) && guessed !== enc.type) update(id, { type: guessed });
-    }
-
-    if (enc.length || measuredUrls.current.get(id) === url) return;
-    measuredUrls.current.set(id, url);
-    const size = await detectMediaSize(url);
-    if (size === null) return;
-    // Bail if the version was removed, its address changed, or the user typed a
-    // size while the request was in flight.
-    const current = enclosuresRef.current.find(e => e.id === id);
-    if (!current || current.sources[0]?.uri.trim() !== url || current.length) return;
-    update(id, { length: String(size) });
-  };
-
-  const typeIsListed = (type: string) => AUDIO_TYPES.some(t => t.value === type);
 
   return (
     <div className="form-group" style={{ gridColumn: '1 / -1' }}>
       <label className="form-label">Alternate Versions<InfoIcon text={FIELD_INFO.alternateEnclosures} /></label>
       <div className="repeatable-list">
         {enclosures.map((enc, index) => {
-          const firstUri = enc.sources[0]?.uri?.trim() || '';
-          const extraSources = enc.sources.length - 1;
+          const url = enc.sources[0]?.uri || '';
+          const isVideoVersion = enc.type.startsWith('video/');
           return (
             <div key={enc.id} className="repeatable-item">
               <div className="repeatable-item-content">
-                <div className="form-grid">
-                  <div className="form-group">
-                    <label className="form-label">Title<InfoIcon text={FIELD_INFO.alternateEnclosureTitle} /></label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="e.g., Lossless"
-                      maxLength={SPEC_MAX_LEN}
-                      value={enc.title || ''}
-                      onChange={e => update(enc.id, { title: e.target.value || undefined })}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">File Type <span className="required">*</span></label>
-                    <select
-                      className="form-select"
-                      aria-label={`Version ${index + 1} file type`}
-                      value={enc.type}
-                      onChange={e => {
-                        typeChosen.current.add(enc.id);
-                        update(enc.id, { type: e.target.value });
-                      }}
-                    >
-                      {AUDIO_TYPES.map(t => (
-                        <option key={t.value} value={t.value}>{t.label}</option>
-                      ))}
-                      {/* An imported feed may carry any MIME type. Show it rather
-                          than silently snapping the value to the first option. */}
-                      {enc.type && !typeIsListed(enc.type) && <option value={enc.type}>{enc.type}</option>}
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">File Size (bytes)<InfoIcon text={FIELD_INFO.alternateEnclosureLength} /></label>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      className="form-input"
-                      placeholder="e.g., 58390859"
-                      value={enc.length || ''}
-                      onChange={e => update(enc.id, { length: e.target.value.trim() || undefined })}
-                    />
-                  </div>
-                  <div className="form-group full-width">
-                    <label className="form-label">File URL <span className="required">*</span></label>
-                    <input
-                      type="url"
-                      className="form-input"
-                      aria-label={`Version ${index + 1} URL`}
-                      placeholder="https://example.com/track.flac"
-                      value={enc.sources[0]?.uri || ''}
-                      onChange={e => updateFirstSourceUri(enc.id, e.target.value)}
-                      onBlur={e => handleFirstSourceBlur(enc.id, e.target.value)}
-                    />
-                    {extraSources > 0 && (
-                      <div style={{ fontSize: '0.8rem', opacity: 0.7, marginTop: '0.25rem' }}>
-                        The imported feed also lists {extraSources} more address{extraSources > 1 ? 'es' : ''} for this file. MSP keeps {extraSources > 1 ? 'them' : 'it'} unchanged.
-                      </div>
-                    )}
-                  </div>
-                  <div className="form-group">
-                    <Toggle
-                      checked={!!enc.default}
-                      onChange={val => setDefault(enc.id, val)}
-                      label="Same file as the main enclosure"
-                      labelSuffix={<InfoIcon text={FIELD_INFO.alternateEnclosureDefault} />}
-                    />
-                  </div>
+                <div className="form-group">
+                  <label className="form-label">
+                    {isVideoVersion ? 'Video URL' : 'Audio URL'} <span className="required">*</span>
+                  </label>
+                  <input
+                    type="url"
+                    className="form-input"
+                    aria-label={`Alternate version ${index + 1} URL`}
+                    placeholder="https://example.com/track.flac"
+                    value={url}
+                    onChange={e => setUrl(enc.id, e.target.value)}
+                    onPaste={e => {
+                      const pasted = e.clipboardData.getData('text').trim();
+                      if (!pasted.startsWith('http')) return;
+                      e.preventDefault();
+                      setUrl(enc.id, pasted);
+                      measure(enc.id, pasted);
+                    }}
+                    onBlur={e => measure(enc.id, e.target.value)}
+                  />
+                  {!isVideoVersion && url.trim() && !isKnownAudioFormat(url) && (
+                    <div style={{ color: 'var(--warning, #b8860b)', fontSize: '0.85em', marginTop: '4px' }}>
+                      URL doesn't end with a recognized audio extension (mp3, flac, wav, m4a, aac, ogg, opus, aiff). Podcast apps may not play it.
+                    </div>
+                  )}
+                  {enc.sources.length > 1 && (
+                    <div style={{ fontSize: '0.8rem', opacity: 0.7, marginTop: '4px' }}>
+                      The imported feed also lists {enc.sources.length - 1} more address{enc.sources.length > 2 ? 'es' : ''} for this file. MSP keeps {enc.sources.length > 2 ? 'them' : 'it'} unchanged.
+                    </div>
+                  )}
+                  {url.trim() && (
+                    isVideoVersion ? (
+                      <video
+                        key={url}
+                        src={url}
+                        controls
+                        preload="metadata"
+                        style={{ width: '100%', marginTop: '8px', maxHeight: '300px' }}
+                        onError={e => { (e.target as HTMLVideoElement).style.display = 'none'; }}
+                      />
+                    ) : (
+                      <audio
+                        key={url}
+                        src={url}
+                        controls
+                        preload="none"
+                        style={{ width: '100%', marginTop: '8px' }}
+                        onError={e => { (e.target as HTMLAudioElement).style.display = 'none'; }}
+                      />
+                    )
+                  )}
                 </div>
-                <details style={{ marginTop: '0.5rem' }}>
-                  <summary style={{ cursor: 'pointer', fontSize: '0.85rem', opacity: 0.8 }}>More options</summary>
-                  <div className="form-grid" style={{ marginTop: '0.5rem' }}>
-                    <div className="form-group">
-                      <label className="form-label">Bitrate (bits/sec)</label>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        className="form-input"
-                        placeholder="e.g., 320000"
-                        value={enc.bitrate || ''}
-                        onChange={e => update(enc.id, { bitrate: e.target.value.trim() || undefined })}
-                      />
-                    </div>
-                    {enc.type.startsWith('video/') && (
-                      <div className="form-group">
-                        <label className="form-label">Video Height (px)</label>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          className="form-input"
-                          placeholder="e.g., 1080"
-                          value={enc.height || ''}
-                          onChange={e => update(enc.id, { height: e.target.value.trim() || undefined })}
-                        />
-                      </div>
-                    )}
-                    <div className="form-group">
-                      <label className="form-label">Language</label>
-                      <input
-                        type="text"
-                        className="form-input"
-                        placeholder="e.g., en-US"
-                        value={enc.lang || ''}
-                        onChange={e => update(enc.id, { lang: e.target.value.trim() || undefined })}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Codecs</label>
-                      <input
-                        type="text"
-                        className="form-input"
-                        placeholder='e.g., avc1.4D401E,mp4a.40.2'
-                        value={enc.codecs || ''}
-                        onChange={e => update(enc.id, { codecs: e.target.value.trim() || undefined })}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Group (rel)<InfoIcon text={FIELD_INFO.alternateEnclosureRel} /></label>
-                      <input
-                        type="text"
-                        className="form-input"
-                        placeholder="e.g., lossless"
-                        maxLength={SPEC_MAX_LEN}
-                        value={enc.rel || ''}
-                        onChange={e => update(enc.id, { rel: e.target.value.trim() || undefined })}
-                      />
-                    </div>
-                  </div>
-                </details>
-                {firstUri && enc.type.startsWith('video/') && (
-                  <video
-                    key={firstUri}
-                    src={firstUri}
-                    controls
-                    preload="metadata"
-                    style={{ width: '100%', marginTop: '8px', maxHeight: '200px' }}
-                    onError={e => { (e.target as HTMLVideoElement).style.display = 'none'; }}
-                  />
-                )}
-                {firstUri && enc.type.startsWith('audio/') && (
-                  <audio
-                    key={firstUri}
-                    src={firstUri}
-                    controls
-                    preload="none"
-                    style={{ width: '100%', marginTop: '8px' }}
-                    onError={e => { (e.target as HTMLAudioElement).style.display = 'none'; }}
-                  />
-                )}
               </div>
               <div className="repeatable-item-actions">
                 <button
                   type="button"
                   className="btn btn-icon btn-danger"
-                  aria-label={`Remove version ${index + 1}`}
+                  aria-label={`Remove alternate version ${index + 1}`}
                   onClick={() => remove(enc.id)}
                 >
                   &#10005;

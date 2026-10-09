@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { parseRssFeed } from './xmlParser';
 import { generateRssFeed } from './xmlGenerator';
-import { createEmptyAlbum, createEmptyTrack, guessAlternateEnclosureType } from '../types/feed';
+import { createEmptyAlbum, createEmptyTrack } from '../types/feed';
 import type { AlternateEnclosure } from '../types/feed';
 
 function feedWithItem(itemExtras: string): string {
@@ -101,18 +101,5 @@ describe('podcast:alternateEnclosure', () => {
     const xml = generateRssFeed(album);
     expect(xml).toContain('title="A &quot;B&quot; &amp; C"');
     expect(xml).toContain('uri="https://example.com/v.mp4?a=1&amp;b=2"');
-  });
-});
-
-describe('guessAlternateEnclosureType', () => {
-  it('maps known extensions and ignores query strings', () => {
-    expect(guessAlternateEnclosureType('https://x.com/v.MP4?token=1')).toBe('video/mp4');
-    expect(guessAlternateEnclosureType('https://x.com/a.flac')).toBe('audio/flac');
-    expect(guessAlternateEnclosureType('https://x.com/live.m3u8')).toBe('application/x-mpegURL');
-  });
-
-  it('returns undefined for an unknown or missing extension', () => {
-    expect(guessAlternateEnclosureType('https://x.com/stream')).toBeUndefined();
-    expect(guessAlternateEnclosureType('https://x.com/file.xyz')).toBeUndefined();
   });
 });

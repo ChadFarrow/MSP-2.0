@@ -71,11 +71,11 @@ export const FIELD_INFO = {
   overrideValue: "Enable to set different payment splits for this track. Used for featuring guest artists or different producers per track.",
 
   // Music Video (Alternate Enclosure)
-  alternateEnclosures: "Other versions of this track's media, written as <podcast:alternateEnclosure>. The main file stays the enclosure every app plays; apps that support this tag let listeners pick a version, e.g. a music video, a lossless FLAC, or a lower-bitrate copy. Add as many as you like.",
-  alternateEnclosureTitle: "A short name apps show in their version picker, e.g. \"Music Video\" or \"Lossless\". 32 characters at most.",
+  alternateEnclosures: "Other versions of this track's media, written as <podcast:alternateEnclosure>. The main file stays the enclosure every app plays; apps that support this tag let listeners pick a version, e.g. a lossless FLAC or a lower-bitrate copy. Add as many as you like.",
+  alternateEnclosureTitle: "A short name apps show in their version picker, e.g. \"Lossless\" or \"Low Data\". 32 characters at most.",
   alternateEnclosureSources: "Where apps download this version. Add more than one address only for copies of the SAME file (a mirror, IPFS, a torrent); a different file is a separate version.",
   alternateEnclosureLength: "File size in bytes. MSP fills it in when your host reports it.",
   alternateEnclosureDefault: "Marks this version as the same file as the main enclosure. Only one version can be the default.",
-  alternateEnclosureRel: "Versions with the same group name are alternatives of one another, e.g. the same video in two languages. 32 characters at most.",
+  alternateEnclosureRel: "Versions with the same group name are alternatives of one another, e.g. the same recording in two formats. 32 characters at most.",
   alternateEnclosureIntegrity: "Optional checksum apps can use to verify the download: an SRI hash (sha384-...) or a PGP signature.",
 };

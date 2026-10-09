@@ -1180,14 +1180,16 @@ export function Editor() {
                         </select>
                       </div>
                     </div>
-                    <AlternateEnclosuresList
-                      enclosures={track.alternateEnclosures || []}
-                      isVideo={isVideo}
-                      onChange={alternateEnclosures => dispatch({
-                        type: 'UPDATE_TRACK',
-                        payload: { index, track: { alternateEnclosures: alternateEnclosures.length > 0 ? alternateEnclosures : undefined } }
-                      })}
-                    />
+                    {/* Audio versions on album tracks first; video feeds come later. */}
+                    {!isVideo && (
+                      <AlternateEnclosuresList
+                        enclosures={track.alternateEnclosures || []}
+                        onChange={alternateEnclosures => dispatch({
+                          type: 'UPDATE_TRACK',
+                          payload: { index, track: { alternateEnclosures: alternateEnclosures.length > 0 ? alternateEnclosures : undefined } }
+                        })}
+                      />
+                    )}
                     <div className="form-group">
                       <Toggle
                         checked={track.explicit}

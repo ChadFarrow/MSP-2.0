@@ -9,12 +9,14 @@ import { Toggle } from './Toggle';
 interface AlternateEnclosuresListProps {
   enclosures: AlternateEnclosure[];
   onChange: (enclosures: AlternateEnclosure[]) => void;
-  /** Video feeds default a new version to audio; album feeds to video. */
-  isVideo?: boolean;
 }
 
 // The spec caps title and rel at 32 characters.
 const SPEC_MAX_LEN = 32;
+
+// Audio versions only for now; video versions (music videos) come later.
+// A video version from an imported feed is kept and shown under its own type.
+const AUDIO_TYPES = ALTERNATE_ENCLOSURE_MIME_TYPES.filter(t => t.value.startsWith('audio/'));
 
 /**
  * Editor for a track's <podcast:alternateEnclosure> list. Each version has its
@@ -22,7 +24,7 @@ const SPEC_MAX_LEN = 32;
  * same file. Rows are keyed and updated by `id`, never by index, so an async
  * size lookup that resolves after a removal can't write onto the wrong row.
  */
-export function AlternateEnclosuresList({ enclosures, onChange, isVideo = false }: AlternateEnclosuresListProps) {
+export function AlternateEnclosuresList({ enclosures, onChange }: AlternateEnclosuresListProps) {
   // Always points at the latest list so the async size lookup (up to ~10 s)
   // doesn't clobber edits made while it was running.
   const enclosuresRef = useRef(enclosures);
@@ -45,7 +47,7 @@ export function AlternateEnclosuresList({ enclosures, onChange, isVideo = false 
   };
 
   const add = () => {
-    onChange([...enclosuresRef.current, createEmptyAlternateEnclosure(isVideo ? 'audio/mpeg' : 'video/mp4')]);
+    onChange([...enclosuresRef.current, createEmptyAlternateEnclosure('audio/mpeg')]);
   };
 
   const remove = (id: string) => {
@@ -83,7 +85,7 @@ export function AlternateEnclosuresList({ enclosures, onChange, isVideo = false 
 
     if (!typeChosen.current.has(id)) {
       const guessed = guessAlternateEnclosureType(url);
-      if (guessed && guessed !== enc.type) update(id, { type: guessed });
+      if (guessed && AUDIO_TYPES.some(t => t.value === guessed) && guessed !== enc.type) update(id, { type: guessed });
     }
 
     if (enc.length || measuredUrls.current.get(id) === url) return;
@@ -97,15 +99,15 @@ export function AlternateEnclosuresList({ enclosures, onChange, isVideo = false 
     update(id, { length: String(size) });
   };
 
-  const typeIsListed = (type: string) => ALTERNATE_ENCLOSURE_MIME_TYPES.some(t => t.value === type);
+  const typeIsListed = (type: string) => AUDIO_TYPES.some(t => t.value === type);
 
   return (
     <div className="form-group" style={{ gridColumn: '1 / -1' }}>
       <label className="form-label">Alternate Versions<InfoIcon text={FIELD_INFO.alternateEnclosures} /></label>
       <p style={{ fontSize: '0.85rem', opacity: 0.7, margin: '0 0 0.75rem' }}>
-        Optional. The main {isVideo ? 'video' : 'audio'} file stays the one every app plays. Apps that support{' '}
+        Optional. The main audio file stays the one every app plays. Apps that support{' '}
         <code>&lt;podcast:alternateEnclosure&gt;</code> let listeners pick one of these instead — e.g.{' '}
-        {isVideo ? 'an audio-only version or a smaller video' : 'a music video, a lossless FLAC, or a lower-bitrate copy'}.
+        a lossless FLAC or a smaller, lower-bitrate copy.
       </p>
       <div className="repeatable-list">
         {enclosures.map((enc, index) => {
@@ -120,7 +122,7 @@ export function AlternateEnclosuresList({ enclosures, onChange, isVideo = false 
                     <input
                       type="text"
                       className="form-input"
-                      placeholder={isVideo ? 'e.g., Audio Only' : 'e.g., Music Video'}
+                      placeholder="e.g., Lossless"
                       maxLength={SPEC_MAX_LEN}
                       value={enc.title || ''}
                       onChange={e => update(enc.id, { title: e.target.value || undefined })}
@@ -137,7 +139,7 @@ export function AlternateEnclosuresList({ enclosures, onChange, isVideo = false 
                         update(enc.id, { type: e.target.value });
                       }}
                     >
-                      {ALTERNATE_ENCLOSURE_MIME_TYPES.map(t => (
+                      {AUDIO_TYPES.map(t => (
                         <option key={t.value} value={t.value}>{t.label}</option>
                       ))}
                       {/* An imported feed may carry any MIME type. Show it rather
@@ -169,7 +171,7 @@ export function AlternateEnclosuresList({ enclosures, onChange, isVideo = false 
                           style={{ flex: '1 1 auto', minWidth: 0 }}
                           aria-label={sourceIndex === 0 ? `Version ${index + 1} URL` : `Version ${index + 1} mirror ${sourceIndex}`}
                           placeholder={sourceIndex === 0
-                            ? (isVideo ? 'https://example.com/track.mp3' : 'https://example.com/video.mp4')
+                            ? 'https://example.com/track.flac'
                             : 'Another address for the same file (mirror, IPFS, torrent)'}
                           value={source.uri}
                           onChange={e => updateSource(enc.id, sourceIndex, { uri: e.target.value })}
@@ -214,17 +216,19 @@ export function AlternateEnclosuresList({ enclosures, onChange, isVideo = false 
                         onChange={e => update(enc.id, { bitrate: e.target.value.trim() || undefined })}
                       />
                     </div>
-                    <div className="form-group">
-                      <label className="form-label">Video Height (px)</label>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        className="form-input"
-                        placeholder="e.g., 1080"
-                        value={enc.height || ''}
-                        onChange={e => update(enc.id, { height: e.target.value.trim() || undefined })}
-                      />
-                    </div>
+                    {enc.type.startsWith('video/') && (
+                      <div className="form-group">
+                        <label className="form-label">Video Height (px)</label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          className="form-input"
+                          placeholder="e.g., 1080"
+                          value={enc.height || ''}
+                          onChange={e => update(enc.id, { height: e.target.value.trim() || undefined })}
+                        />
+                      </div>
+                    )}
                     <div className="form-group">
                       <label className="form-label">Language</label>
                       <input

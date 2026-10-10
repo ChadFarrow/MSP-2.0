@@ -187,6 +187,13 @@ export interface Track {
   persons: Person[];
   overrideValue: boolean;
   value?: ValueBlock;
+  /**
+   * A suggested starting track for new listeners, written as a channel-level
+   * <podcast:pinned> pointing at this track's guid. Proposed tag only
+   * (podcast-namespace discussions #570 / #747), so the editor shows it behind
+   * the experimental toggle. See generatePinnedXml in xmlGenerator.ts.
+   */
+  pinned?: boolean;
   unknownItemElements?: Record<string, unknown>;
 }
 

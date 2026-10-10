@@ -269,6 +269,23 @@ export const parseRssFeed = (xmlString: string): Album => {
     }
   }
 
+  // Suggested tracks (<podcast:pinned>, a proposed tag). A pin naming one of
+  // this feed's tracks becomes track.pinned, and the generator writes it back,
+  // so it leaves the passthrough; a pin naming no track here round-trips as is.
+  // Both `guid` (the proposal) and `itemGuid` (the rename discussed on it) are read.
+  const pinTags = channel['podcast:pinned'];
+  const pinArray: unknown[] = pinTags ? (Array.isArray(pinTags) ? pinTags : [pinTags]) : [];
+  if (pinArray.length > 0) {
+    const tracksByGuid = new Map(album.tracks.map(track => [track.guid, track]));
+    const unmatchedPins = pinArray.filter(pin => {
+      const track = tracksByGuid.get(getAttr(pin, 'guid') || getAttr(pin, 'itemGuid'));
+      if (!track) return true;
+      track.pinned = true;
+      return false;
+    });
+    album.unknownChannelElements = keepPassthrough(album.unknownChannelElements, 'podcast:pinned', unmatchedPins);
+  }
+
   return album;
 };
 

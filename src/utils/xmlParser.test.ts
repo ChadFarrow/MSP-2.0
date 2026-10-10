@@ -759,3 +759,74 @@ describe('harmless extras round-trip', () => {
     expect(generateRssFeed(album)).toContain('<podcast:locked>yes</podcast:locked>');
   });
 });
+
+describe('suggested tracks (<podcast:pinned>)', () => {
+  function buildPinnedFeed(pins: string): string {
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:podcast="https://podcastindex.org/namespace/1.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" version="2.0">
+  <channel>
+    <title>Pinned</title>
+    <itunes:author>Artist</itunes:author>
+    <description>A feed with suggested tracks</description>
+    <language>en</language>
+    <podcast:medium>music</podcast:medium>
+    ${pins}
+    <item>
+      <title>Track 1</title>
+      <guid isPermaLink="false">track-guid-1</guid>
+      <enclosure url="https://example.com/t1.mp3" length="123456" type="audio/mpeg"/>
+    </item>
+    <item>
+      <title>Track 2</title>
+      <guid isPermaLink="false">track-guid-2</guid>
+      <enclosure url="https://example.com/t2.mp3" length="123456" type="audio/mpeg"/>
+    </item>
+  </channel>
+</rss>`;
+  }
+
+  it('reads a pin into the track it names and writes it back once', () => {
+    const album = parseRssFeed(buildPinnedFeed('<podcast:pinned guid="track-guid-2" />'));
+    expect(album.tracks.map(t => !!t.pinned)).toEqual([false, true]);
+    expect(album.unknownChannelElements?.['podcast:pinned']).toBeUndefined();
+    const xml = generateRssFeed(album);
+    expect(xml.match(/<podcast:pinned /g)).toHaveLength(1);
+    expect(xml).toContain('<podcast:pinned guid="track-guid-2" />');
+  });
+
+  it('reads the itemGuid spelling and writes the proposal spelling', () => {
+    const album = parseRssFeed(buildPinnedFeed('<podcast:pinned itemGuid="track-guid-1" />'));
+    expect(album.tracks[0].pinned).toBe(true);
+    expect(generateRssFeed(album)).toContain('<podcast:pinned guid="track-guid-1" />');
+  });
+
+  it('writes several pins in track order', () => {
+    const album = parseRssFeed(buildPinnedFeed(
+      '<podcast:pinned guid="track-guid-2" /><podcast:pinned guid="track-guid-1" />'
+    ));
+    const xml = generateRssFeed(album);
+    expect(xml.indexOf('guid="track-guid-1" />')).toBeLessThan(xml.indexOf('guid="track-guid-2" />'));
+  });
+
+  it('keeps a pin that names no track in this feed', () => {
+    const album = parseRssFeed(buildPinnedFeed(
+      '<podcast:pinned guid="track-guid-1" /><podcast:pinned guid="gone" />'
+    ));
+    const xml = generateRssFeed(album);
+    expect(xml).toContain('<podcast:pinned guid="track-guid-1" />');
+    expect(xml).toContain('<podcast:pinned guid="gone" />');
+    expect(xml.match(/<podcast:pinned /g)).toHaveLength(2);
+  });
+
+  it('writes nothing for a feed with no suggestion', () => {
+    expect(generateRssFeed(parseRssFeed(buildPinnedFeed('')))).not.toContain('podcast:pinned');
+  });
+
+  it('follows the track guid when it changes', () => {
+    const album = parseRssFeed(buildPinnedFeed('<podcast:pinned guid="track-guid-1" />'));
+    album.tracks[0].guid = 'new-guid';
+    const xml = generateRssFeed(album);
+    expect(xml).toContain('<podcast:pinned guid="new-guid" />');
+    expect(xml).not.toContain('track-guid-1" />');
+  });
+});

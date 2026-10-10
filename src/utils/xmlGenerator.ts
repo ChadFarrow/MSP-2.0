@@ -463,6 +463,14 @@ const generatePodcastImageXml = (image: PodcastImage): string | null => {
   return `<podcast:image ${attrs.join(' ')} />`;
 };
 
+// <podcast:pinned> is a proposal, not part of the namespace yet
+// (podcast-namespace discussion #570). Its attribute may be renamed from `guid`
+// to `itemGuid`, or the tag replaced by an item-level <podcast:sortOrder>
+// (#747) — this is the one place that writes it, so a spec change lands here.
+// The parser reads both attribute names.
+export const generatePinnedXml = (trackGuid: string): string =>
+  `<podcast:pinned guid="${escapeXml(trackGuid)}" />`;
+
 // Generate track/item XML
 const generateTrackXml = (track: Track, album: Album, level: number): string => {
   const lines: string[] = [];
@@ -559,6 +567,11 @@ export const generateRssFeed = (album: Album): string => {
     const publisherXml = generatePublisherXml(album.publisher, 2);
     if (publisherXml) lines.push(publisherXml);
   }
+
+  // Suggested tracks, in track order
+  album.tracks
+    .filter(track => track.pinned && track.guid)
+    .forEach(track => lines.push(`${indent(2)}${generatePinnedXml(track.guid)}`));
 
   // Unknown/unsupported channel elements (preserved from import)
   if (album.unknownChannelElements) {

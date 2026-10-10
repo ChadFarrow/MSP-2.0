@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useFeed } from '../../store/feedStore';
 import { useNostr } from '../../store/nostrStore';
+import { useExperimental } from '../../store/experimentalStore';
 import { LANGUAGES, PERSON_GROUPS, PERSON_ROLES, createEmptyPersonRole, createEmptyTrack, isVideoMedium, isCommunitySupport, createSupportRecipients, hasUserRecipients, TRANSCRIPT_TYPES, DEFAULT_TRANSCRIPT_TYPE } from '../../types/feed';
 import type { PersonGroup } from '../../types/feed';
 import { FIELD_INFO } from '../../data/fieldInfo';
@@ -117,6 +118,7 @@ function Op3StatsLink({ podcastGuid }: { podcastGuid: string }) {
 export function Editor() {
   const { state, dispatch } = useFeed();
   const { state: nostrState } = useNostr();
+  const { showExperimental } = useExperimental();
   // Get the active album based on feedType (album or videoFeed)
   const album = state.feedType === 'video' && state.videoFeed ? state.videoFeed : state.album;
 
@@ -1190,6 +1192,21 @@ export function Editor() {
                         labelSuffix={<InfoIcon text={FIELD_INFO.trackExplicit} />}
                       />
                     </div>
+                    {/* Shown when the feed already has a suggestion, so turning the
+                        experimental toggle off can never hide one that will be written. */}
+                    {(showExperimental || track.pinned) && (
+                      <div className="form-group">
+                        <Toggle
+                          checked={!!track.pinned}
+                          onChange={val => dispatch({
+                            type: 'UPDATE_TRACK',
+                            payload: { index, track: { pinned: val } }
+                          })}
+                          label="Suggested track 🧪"
+                          labelSuffix={<InfoIcon text={FIELD_INFO.trackPinned} />}
+                        />
+                      </div>
+                    )}
                     <div className="form-group">
                       <Toggle
                         checked={track.overridePersons}

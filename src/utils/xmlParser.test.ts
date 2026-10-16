@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { parseRssFeed, parsePublisherRssFeed } from './xmlParser';
 import { generateRssFeed, generatePublisherRssFeed } from './xmlGenerator';
 import { createEmptyPublisherFeed } from '../types/feed';
+import { withoutIdentityPassthrough } from './regenerateGuids';
 
 // Helper to build minimal RSS XML for testing
 function buildRssXml(enclosureUrl: string, podcastGuid?: string): string {
@@ -822,11 +823,96 @@ describe('suggested tracks (<podcast:pinned>)', () => {
     expect(generateRssFeed(parseRssFeed(buildPinnedFeed('')))).not.toContain('podcast:pinned');
   });
 
+  it('does not match a pin without guid to a track without one', () => {
+    const album = parseRssFeed(buildPinnedFeed('<podcast:pinned feedGuid="album-guid" />').replace(
+      '<guid isPermaLink="false">track-guid-1</guid>', ''
+    ));
+    expect(album.tracks.map(t => !!t.pinned)).toEqual([false, false]);
+    expect(generateRssFeed(album)).toContain('<podcast:pinned feedGuid="album-guid" />');
+  });
+
   it('follows the track guid when it changes', () => {
     const album = parseRssFeed(buildPinnedFeed('<podcast:pinned guid="track-guid-1" />'));
     album.tracks[0].guid = 'new-guid';
     const xml = generateRssFeed(album);
     expect(xml).toContain('<podcast:pinned guid="new-guid" />');
     expect(xml).not.toContain('track-guid-1" />');
+  });
+});
+
+describe('suggested albums in a publisher feed', () => {
+  // #570 only pins an episode of the same feed, and a publisher feed has none,
+  // so a pinned album is MSP's extension: <podcast:pinned feedGuid="…"/>.
+  function buildPublisherFeed(pins: string): string {
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:podcast="https://podcastindex.org/namespace/1.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" version="2.0">
+  <channel>
+    <title>Label</title>
+    <itunes:author>Label</itunes:author>
+    <description>A publisher feed with suggested albums</description>
+    <podcast:guid>pub-guid</podcast:guid>
+    <podcast:medium>publisher</podcast:medium>
+    <podcast:remoteItem feedGuid="album-guid-1" feedUrl="https://example.com/1.xml" medium="music" title="Album One" />
+    <podcast:remoteItem feedGuid="album-guid-2" feedUrl="https://example.com/2.xml" medium="music" title="Album Two" />
+    ${pins}
+  </channel>
+</rss>`;
+  }
+
+  it('reads a feedGuid pin into the catalog feed it names and writes it back once', () => {
+    const feed = parsePublisherRssFeed(buildPublisherFeed('<podcast:pinned feedGuid="album-guid-2" />'));
+    expect(feed.remoteItems.map(item => !!item.pinned)).toEqual([false, true]);
+    expect(feed.unknownChannelElements?.['podcast:pinned']).toBeUndefined();
+    const xml = generatePublisherRssFeed(feed);
+    expect(xml.match(/<podcast:pinned /g)).toHaveLength(1);
+    expect(xml).toContain('<podcast:pinned feedGuid="album-guid-2" />');
+  });
+
+  it('writes several pins in catalog order, and a reorder moves them', () => {
+    const feed = parsePublisherRssFeed(buildPublisherFeed(
+      '<podcast:pinned feedGuid="album-guid-2" /><podcast:pinned feedGuid="album-guid-1" />'
+    ));
+    const pinOrder = (xml: string) => [...xml.matchAll(/<podcast:pinned feedGuid="([^"]+)" \/>/g)].map(m => m[1]);
+    expect(pinOrder(generatePublisherRssFeed(feed))).toEqual(['album-guid-1', 'album-guid-2']);
+    feed.remoteItems.reverse();
+    expect(pinOrder(generatePublisherRssFeed(feed))).toEqual(['album-guid-2', 'album-guid-1']);
+  });
+
+  it('keeps a pin that names no catalog feed, and a guid= pin, unchanged', () => {
+    const feed = parsePublisherRssFeed(buildPublisherFeed(
+      '<podcast:pinned feedGuid="album-guid-1" /><podcast:pinned feedGuid="gone" /><podcast:pinned guid="album-guid-2" />'
+    ));
+    expect(feed.remoteItems.map(item => !!item.pinned)).toEqual([true, false]);
+    const xml = generatePublisherRssFeed(feed);
+    expect(xml.match(/<podcast:pinned /g)).toHaveLength(3);
+    expect(xml).toContain('<podcast:pinned feedGuid="album-guid-1" />');
+    expect(xml).toContain('<podcast:pinned feedGuid="gone" />');
+    expect(xml).toContain('<podcast:pinned guid="album-guid-2" />');
+  });
+
+  it('does not match a pin without feedGuid to a catalog feed without one', () => {
+    const feed = parsePublisherRssFeed(buildPublisherFeed(
+      '<podcast:remoteItem feedUrl="https://example.com/3.xml" medium="music" /><podcast:pinned guid="episode-guid" />'
+    ));
+    expect(feed.remoteItems.map(item => !!item.pinned)).toEqual([false, false, false]);
+    expect(generatePublisherRssFeed(feed)).toContain('<podcast:pinned guid="episode-guid" />');
+  });
+
+  it('writes nothing when no catalog feed is pinned, or the pinned one has no feedGuid', () => {
+    const feed = parsePublisherRssFeed(buildPublisherFeed(''));
+    expect(generatePublisherRssFeed(feed)).not.toContain('podcast:pinned');
+    feed.remoteItems.push({ feedGuid: '', feedUrl: 'https://example.com/3.xml', pinned: true });
+    expect(generatePublisherRssFeed(feed)).not.toContain('podcast:pinned');
+  });
+
+  it('a template keeps the pinned album and drops the pin that names no catalog feed', () => {
+    const feed = parsePublisherRssFeed(buildPublisherFeed(
+      '<podcast:pinned feedGuid="album-guid-2" /><podcast:pinned feedGuid="gone" />'
+    ));
+    // The publisher template path in App.tsx handleImport
+    feed.unknownChannelElements = withoutIdentityPassthrough(feed.unknownChannelElements);
+    const xml = generatePublisherRssFeed(feed);
+    expect(xml.match(/<podcast:pinned /g)).toHaveLength(1);
+    expect(xml).toContain('<podcast:pinned feedGuid="album-guid-2" />');
   });
 });

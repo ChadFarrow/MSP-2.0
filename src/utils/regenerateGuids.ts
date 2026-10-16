@@ -5,10 +5,11 @@ import type { Album } from '../types/feed';
  * `<podcast:txt>` (verification tokens such as applepodcastsverify name one
  * specific feed) and an `<atom:link rel="self">` URL. A template is a new feed,
  * so it must not carry the source's. Every passthrough `<podcast:pinned>` goes
- * too: the parser leaves a pin there only when it names no track of the feed,
- * so in a template it can only point at the source's episodes. A pin on one of
- * the feed's own tracks is `track.pinned` and is kept. Other passthrough
- * elements are kept.
+ * too: the parser leaves a pin there only when it names nothing the feed models
+ * (no track of an album, no catalog feed of a publisher), so in a template it
+ * can only point at the source's episodes. A pin on one of the feed's own
+ * tracks or catalog feeds is `pinned` on that track or remote item, and is
+ * kept. Other passthrough elements are kept.
  *
  * Does not mutate the input; returns undefined once nothing is left, matching
  * the parser's own passthrough maps.

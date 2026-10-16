@@ -72,6 +72,13 @@ export interface RemoteItem {
   // The publisher's role, e.g. "artist" or "label". Not in the spec yet — see
   // utils/publisherRole.ts. Absent means not stated.
   rel?: string;
+  /**
+   * Publisher catalog only: a suggested starting album for new listeners,
+   * written as a channel-level <podcast:pinned feedGuid> naming this feed. That
+   * is MSP's extension — the proposal (podcast-namespace #570) only pins an
+   * episode of the same feed. See generatePinnedXml in xmlGenerator.ts.
+   */
+  pinned?: boolean;
 }
 
 // Podcasting 2.0 additional images (<podcast:image>). These are EXTRA images

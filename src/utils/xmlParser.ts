@@ -19,6 +19,15 @@ export function stripOp3Prefix(url: string): string {
   return stripped;
 }
 
+// Alternate sources follow the OP3 toggle like the main enclosure: stored bare,
+// prefixed on save when OP3 is on. Stripped whatever the toggle says, or a
+// template would keep counting their downloads against the source feed's GUID.
+function stripAlternateOp3(enclosures: AlternateEnclosure[]): void {
+  for (const source of enclosures.flatMap(enclosure => enclosure.sources)) {
+    if (OP3_PREFIX_RE.test(source.uri)) source.uri = stripOp3Prefix(source.uri);
+  }
+}
+
 // Known channel keys that we explicitly parse (don't capture as unknown)
 const KNOWN_CHANNEL_KEYS = new Set([
   'title',
@@ -269,15 +278,8 @@ export const parseRssFeed = (xmlString: string): Album => {
       }
     }
   }
-  // Alternate sources follow the same toggle: stored bare, prefixed on save
-  // when OP3 is on. Stripped whatever the toggle says, or a template would keep
-  // counting their downloads against the source feed's GUID.
   for (const track of album.tracks) {
-    for (const enclosure of track.alternateEnclosures ?? []) {
-      for (const source of enclosure.sources) {
-        if (OP3_PREFIX_RE.test(source.uri)) source.uri = stripOp3Prefix(source.uri);
-      }
-    }
+    stripAlternateOp3(track.alternateEnclosures ?? []);
   }
 
   return album;
@@ -627,6 +629,44 @@ function splitAlternateEnclosures(nodes: unknown): { versions: AlternateEnclosur
     else unreadable.push(node);
   }
   return { versions, unreadable };
+}
+
+/**
+ * Bring a track saved in localStorage up to date. From Jan to Oct 2026 MSP did
+ * not model <podcast:alternateEnclosure>, so the element was stored verbatim in
+ * unknownItemElements; left there, the generator still writes it while the
+ * editor never shows it, and "+ Add Alternate Version" adds a second copy
+ * beside one the user can't see or remove. A version stored in Jan 2026, when
+ * the feature briefly existed, may carry a modelled `integrity`. Safe to run on
+ * every load: a second run changes nothing.
+ */
+export function migrateStoredAlternateEnclosures(track: Track): Track {
+  type StoredVersion = AlternateEnclosure & { integrity?: { type: string; value: string } };
+  const stored = (track.alternateEnclosures ?? []) as StoredVersion[];
+  if (stored.length === 0 && !(track.unknownItemElements && 'podcast:alternateEnclosure' in track.unknownItemElements)) {
+    return track;
+  }
+  const current = stored.map(({ integrity, ...enc }) => ({
+    ...enc,
+    id: enc.id || crypto.randomUUID(),
+    ...(integrity?.value
+      ? { unknownElements: { ...enc.unknownElements, 'podcast:integrity': { '@_type': integrity.type, '@_value': integrity.value } } }
+      : {})
+  }));
+
+  const { versions, unreadable } = splitAlternateEnclosures(track.unknownItemElements?.['podcast:alternateEnclosure']);
+  stripAlternateOp3(versions);
+
+  const alternateEnclosures = [...current, ...versions];
+  return {
+    ...track,
+    alternateEnclosures: alternateEnclosures.length > 0 ? alternateEnclosures : undefined,
+    unknownItemElements: keepPassthrough(
+      track.unknownItemElements ? { ...track.unknownItemElements } : undefined,
+      'podcast:alternateEnclosure',
+      unreadable
+    )
+  };
 }
 
 // Parse common channel elements shared between Album and PublisherFeed

@@ -1,8 +1,9 @@
-import { describe, it, expect } from 'vitest';
-import { parseRssFeed } from './xmlParser';
+import { describe, it, expect, vi } from 'vitest';
+import { parseRssFeed, migrateStoredAlternateEnclosures } from './xmlParser';
+import { albumStorage, videoStorage } from './storage';
 import { generateRssFeed } from './xmlGenerator';
 import { createEmptyAlbum, createEmptyTrack } from '../types/feed';
-import type { AlternateEnclosure } from '../types/feed';
+import type { AlternateEnclosure, Track } from '../types/feed';
 
 function feedWithItem(itemExtras: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -166,5 +167,63 @@ describe('podcast:alternateEnclosure with OP3', () => {
     const off = generateRssFeed({ ...album, op3: false });
     expect(off).toContain('<podcast:source uri="https://example.com/1.flac" />');
     expect(off).not.toContain('op3.dev');
+  });
+});
+
+describe('alternate versions saved in localStorage', () => {
+  // How master stored <podcast:alternateEnclosure> while it was not modelled:
+  // the fast-xml-parser node, verbatim, in unknownItemElements.
+  const storedTrack = (): Track => ({
+    ...createEmptyTrack(1),
+    enclosureUrl: 'https://example.com/1.mp3',
+    unknownItemElements: {
+      'podcast:alternateEnclosure': [
+        { '@_type': 'audio/flac', '@_title': 'Lossless', 'podcast:source': { '@_uri': 'https://op3.dev/e/example.com/1.flac' } },
+        { '@_length': '1', 'podcast:source': { '@_uri': 'https://example.com/no-type.flac' } },
+      ],
+      'podcast:chapters': { '@_url': 'https://example.com/ch.json', '@_type': 'application/json+chapters' },
+    },
+  });
+
+  it('moves stored versions into the editable list and keeps the rest', () => {
+    const track = migrateStoredAlternateEnclosures(storedTrack());
+    expect(track.alternateEnclosures).toHaveLength(1);
+    expect(track.alternateEnclosures![0]).toMatchObject({ type: 'audio/flac', title: 'Lossless', sources: [{ uri: 'https://example.com/1.flac' }] });
+    expect(track.alternateEnclosures![0].id).toEqual(expect.any(String));
+    expect(Object.keys(track.unknownItemElements!)).toEqual(['podcast:alternateEnclosure', 'podcast:chapters']);
+    expect(track.unknownItemElements!['podcast:alternateEnclosure']).toMatchObject({ '@_length': '1' });
+
+    const album = createEmptyAlbum();
+    album.tracks = [track];
+    const xml = generateRssFeed(album);
+    expect(xml.match(/<podcast:alternateEnclosure[ >]/g)).toHaveLength(2);
+  });
+
+  it('changes nothing on a second run', () => {
+    const once = migrateStoredAlternateEnclosures(storedTrack());
+    const twice = migrateStoredAlternateEnclosures(structuredClone(once));
+    expect(twice).toEqual(once);
+  });
+
+  it('gives a version an id if it has none, and keeps a January 2026 integrity', () => {
+    const track = migrateStoredAlternateEnclosures({
+      ...createEmptyTrack(1),
+      alternateEnclosures: [{ type: 'video/mp4', sources: [{ uri: 'https://example.com/v.mp4' }], integrity: { type: 'sri', value: 'sha384-x' } } as unknown as AlternateEnclosure],
+    });
+    expect(track.alternateEnclosures![0].id).toEqual(expect.any(String));
+    const album = createEmptyAlbum();
+    album.tracks = [track];
+    expect(generateRssFeed(album)).toContain('<podcast:integrity type="sri" value="sha384-x" />');
+  });
+
+  it('runs when an album is loaded', () => {
+    const stored = { ...createEmptyAlbum(), tracks: [storedTrack()] };
+    vi.stubGlobal('localStorage', { getItem: () => JSON.stringify(stored) });
+    try {
+      expect(albumStorage.load()!.tracks[0].alternateEnclosures).toHaveLength(1);
+      expect(videoStorage.load()!.tracks[0].alternateEnclosures).toHaveLength(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

@@ -80,11 +80,6 @@ export interface AlternateEnclosureSource {
   contentType?: string;
 }
 
-export interface AlternateEnclosureIntegrity {
-  type: 'sri' | 'pgp-signature';
-  value: string;
-}
-
 export interface AlternateEnclosure {
   id: string;
   type: string;                    // Required: MIME type
@@ -97,7 +92,9 @@ export interface AlternateEnclosure {
   codecs?: string;                 // RFC 6381
   default?: boolean;
   sources: AlternateEnclosureSource[];
-  integrity?: AlternateEnclosureIntegrity;
+  // Children other than <podcast:source> (<podcast:integrity>, anything newer),
+  // carried through from import unchanged.
+  unknownElements?: Record<string, unknown>;
 }
 
 // Podcasting 2.0 additional images (<podcast:image>). These are EXTRA images

@@ -265,7 +265,9 @@ export function getShouldFixIssues(feed: FeedSnapshot): FeedIssue[] {
     (track.alternateEnclosures || []).forEach((enc, n) => {
       const name = `Alternate version ${n + 1}${enc.title?.trim() ? ` ("${enc.title.trim()}")` : ''}`;
       const uris = enc.sources.map(source => source.uri?.trim()).filter(Boolean);
-      if (uris.length === 0) {
+      // The first source is the version's URL; the generator leaves a version
+      // without one out, whatever other addresses it has.
+      if (!enc.sources[0]?.uri?.trim()) {
         should('alt-enclosure-no-url', 'tracks', `${name} has no file URL, so MSP leaves it out of the feed. Add the URL or remove the version.`, track.id);
       }
       uris.forEach(uri => issues.push(...urlIssues(uri, `${name} URL`, 'tracks', track.id)));

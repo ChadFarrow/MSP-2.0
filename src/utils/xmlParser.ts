@@ -1,6 +1,6 @@
 // MSP 2.0 - XML Parser for importing Demu RSS Feeds
 import { XMLParser } from 'fast-xml-parser';
-import type { Album, Track, Person, PersonGroup, ValueRecipient, ValueBlock, Funding, PublisherFeed, RemoteItem, PublisherReference, BaseChannelData, PodcastImage, AlternateEnclosure, AlternateEnclosureSource, AlternateEnclosureIntegrity } from '../types/feed';
+import type { Album, Track, Person, PersonGroup, ValueRecipient, ValueBlock, Funding, PublisherFeed, RemoteItem, PublisherReference, BaseChannelData, PodcastImage, AlternateEnclosure, AlternateEnclosureSource } from '../types/feed';
 import { createEmptyTrack, LEGACY_MSP_NODE_PUBKEY, MSP_SUPPORT_RECIPIENT, DEFAULT_TRANSCRIPT_TYPE } from '../types/feed';
 import { areValueBlocksStrictEqual, arePersonsEqual } from './comparison';
 import { detectAddressType } from './addressUtils';
@@ -556,21 +556,14 @@ function parseAlternateEnclosureSource(node: unknown): AlternateEnclosureSource 
   };
 }
 
-// Parse alternate enclosure integrity (podcast:integrity)
-function parseAlternateEnclosureIntegrity(node: unknown): AlternateEnclosureIntegrity | null {
-  if (!node) return null;
-  const value = getAttr(node, 'value');
-  if (!value) return null;
+// '#text' too, for the same reason as VALUE_BLOCK_KNOWN_KEYS.
+const ALTERNATE_ENCLOSURE_KNOWN_KEYS = new Set(['podcast:source', '#text']);
 
-  return {
-    type: getAttr(node, 'type') === 'pgp-signature' ? 'pgp-signature' : 'sri',
-    value
-  };
-}
-
-// Parse alternate enclosure (podcast:alternateEnclosure)
+// Parse alternate enclosure (podcast:alternateEnclosure). Null when MSP can't
+// read it (no type, or no source with a uri); the caller keeps such a node in
+// the passthrough instead.
 function parseAlternateEnclosure(node: unknown): AlternateEnclosure | null {
-  if (!node) return null;
+  if (!node || typeof node !== 'object' || Array.isArray(node)) return null;
 
   const type = getAttr(node, 'type');
   if (!type) return null; // type is required
@@ -588,9 +581,10 @@ function parseAlternateEnclosure(node: unknown): AlternateEnclosure | null {
   // Must have at least one source
   if (sources.length === 0) return null;
 
-  // Parse integrity
-  const integrityNode = enclosureNode['podcast:integrity'];
-  const integrity = integrityNode ? parseAlternateEnclosureIntegrity(integrityNode) : undefined;
+  // <podcast:integrity> and any other child are carried through as they are:
+  // MSP has no field for them, and reading them into a model dropped a second
+  // integrity element and rewrote an unknown integrity type as "sri".
+  const unknownElements = captureUnknownElements(enclosureNode, ALTERNATE_ENCLOSURE_KNOWN_KEYS);
 
   return {
     id: crypto.randomUUID(),
@@ -604,15 +598,25 @@ function parseAlternateEnclosure(node: unknown): AlternateEnclosure | null {
     codecs: getAttr(node, 'codecs') || undefined,
     default: getAttr(node, 'default') === 'true',
     sources,
-    integrity: integrity || undefined
+    ...(unknownElements ? { unknownElements } : {})
   };
 }
 
-// Parse alternate enclosures array
-function parseAlternateEnclosures(nodes: unknown): AlternateEnclosure[] {
-  if (!nodes) return [];
-  const nodeArray = Array.isArray(nodes) ? nodes : [nodes];
-  return nodeArray.map(parseAlternateEnclosure).filter(Boolean) as AlternateEnclosure[];
+/**
+ * Split a track's <podcast:alternateEnclosure> nodes into the versions MSP can
+ * edit and the ones it can't read. The unreadable ones go back in the
+ * passthrough, so a re-save writes them unchanged instead of deleting them.
+ */
+function splitAlternateEnclosures(nodes: unknown): { versions: AlternateEnclosure[]; unreadable: unknown[] } {
+  const versions: AlternateEnclosure[] = [];
+  const unreadable: unknown[] = [];
+  if (!nodes) return { versions, unreadable };
+  for (const node of Array.isArray(nodes) ? nodes : [nodes]) {
+    const version = parseAlternateEnclosure(node);
+    if (version) versions.push(version);
+    else unreadable.push(node);
+  }
+  return { versions, unreadable };
 }
 
 // Parse common channel elements shared between Album and PublisherFeed
@@ -874,14 +878,20 @@ function parseTrack(node: unknown, trackNumber: number, albumValue: ValueBlock, 
     track.overrideValue = !areValueBlocksStrictEqual(track.value, albumValue);
   }
 
-  // Alternate enclosures (e.g., music video for audio track)
-  const alternateEnclosures = item['podcast:alternateEnclosure'];
-  if (alternateEnclosures) {
-    track.alternateEnclosures = parseAlternateEnclosures(alternateEnclosures);
+  // Alternate versions (e.g. a lossless copy of the track)
+  const { versions, unreadable } = splitAlternateEnclosures(item['podcast:alternateEnclosure']);
+  if (versions.length > 0) {
+    track.alternateEnclosures = versions;
   }
 
   // Capture unknown item elements
   track.unknownItemElements = captureUnknownElements(item, KNOWN_ITEM_KEYS);
+  if (unreadable.length > 0) {
+    track.unknownItemElements = {
+      ...track.unknownItemElements,
+      'podcast:alternateEnclosure': unreadable.length === 1 ? unreadable[0] : unreadable
+    };
+  }
 
   return track;
 }

@@ -267,6 +267,13 @@ describe('getShouldFixIssues', () => {
     expect(getShouldFixIssues(albumFeed(album))).toEqual([]);
   });
 
+  it('flags an alternate version whose own URL is blank, even with other addresses', () => {
+    // The generator leaves such a version out, so the check must say so.
+    const album = goodAlbum();
+    album.tracks[0].alternateEnclosures = [{ id: 'a', type: 'audio/flac', sources: [{ uri: '' }, { uri: 'https://mirror.example.com/1.flac' }] }];
+    expect(codes(getShouldFixIssues(albumFeed(album)))).toEqual(['alt-enclosure-no-url']);
+  });
+
   it('flags a missing channel link on album and publisher feeds', () => {
     expect(codes(getShouldFixIssues(albumFeed({ ...goodAlbum(), link: '' })))).toEqual(['channel-link-missing']);
     expect(codes(getShouldFixIssues(publisherFeedSnapshot({ ...goodPublisher(), link: ' ' })))).toEqual(['channel-link-missing']);

@@ -70,6 +70,9 @@ const collectAlbumNamespaces = (album: Album): Set<string> => {
   for (const track of album.tracks) {
     collectNamespacePrefixes(track.unknownItemElements, prefixes);
     collectNamespacePrefixes(track.value?.unknownElements, prefixes);
+    for (const enclosure of track.alternateEnclosures ?? []) {
+      collectNamespacePrefixes(enclosure.unknownElements, prefixes);
+    }
   }
 
   return prefixes;
@@ -295,12 +298,14 @@ const generatePublisherXml = (publisher: PublisherReference, level: number): str
 
 // Generate alternate enclosure XML (podcast:alternateEnclosure)
 const generateAlternateEnclosureXml = (enclosure: AlternateEnclosure, level: number): string => {
-  // Must have at least one source with a URI. Any row may be the filled one:
-  // the editor lets a user blank the first mirror and keep the second.
-  const sources = (enclosure.sources || []).filter(source => source.uri?.trim());
-  if (sources.length === 0) {
+  // The first source is the version's URL, the one field the editor shows. With
+  // it blank the version is left out (the Feed check says so) rather than
+  // written from a mirror the user can't see.
+  const [first, ...mirrors] = enclosure.sources || [];
+  if (!first?.uri?.trim()) {
     return '';
   }
+  const sources = [first, ...mirrors.filter(source => source.uri?.trim())];
 
   const lines: string[] = [];
 
@@ -324,9 +329,10 @@ const generateAlternateEnclosureXml = (enclosure: AlternateEnclosure, level: num
     lines.push(`${indent(level + 1)}<podcast:source ${sourceAttrs.join(' ')} />`);
   }
 
-  // Add integrity if present
-  if (enclosure.integrity?.value) {
-    lines.push(`${indent(level + 1)}<podcast:integrity type="${escapeXml(enclosure.integrity.type)}" value="${escapeXml(enclosure.integrity.value)}" />`);
+  // Carried-through children such as <podcast:integrity>, kept from import.
+  if (enclosure.unknownElements) {
+    const unknownXml = generateUnknownXml(enclosure.unknownElements, level + 1);
+    if (unknownXml) lines.push(unknownXml);
   }
 
   lines.push(`${indent(level)}</podcast:alternateEnclosure>`);

@@ -49,11 +49,9 @@ describe('podcast:alternateEnclosure', () => {
     expect(encs[1]).toMatchObject({
       type: 'video/mp4', length: '58390859', height: '1080', title: 'Music Video', rel: 'video',
       sources: [{ uri: 'https://example.com/1.mp4' }, { uri: 'ipfs://bafyexample', contentType: 'video/mp4' }],
-      integrity: { type: 'sri', value: 'sha384-abc' },
     });
     expect(encs[2]).toMatchObject({
       type: 'audio/flac', bitrate: '1411200', lang: 'en-US', codecs: 'flac',
-      integrity: { type: 'pgp-signature' },
     });
     expect(new Set(encs.map(e => e.id)).size).toBe(3);
   });
@@ -69,17 +67,55 @@ describe('podcast:alternateEnclosure', () => {
     expect(xml.match(/<podcast:alternateEnclosure /g)).toHaveLength(3);
   });
 
-  it('writes a version whose first address is blank from its other addresses', () => {
+  it('leaves out a version whose own URL is blank, even if it has other addresses', () => {
+    // The editor shows only the first source. Writing the version from a hidden
+    // mirror would publish an address the user can't see or change.
     const album = createEmptyAlbum();
     const track = createEmptyTrack(1);
     track.alternateEnclosures = [{
-      id: 'a', type: 'video/mp4',
-      sources: [{ uri: '  ' }, { uri: 'https://example.com/mirror.mp4' }],
+      id: 'a', type: 'audio/flac',
+      sources: [{ uri: '  ' }, { uri: 'ipfs://bafymirror' }],
     }];
     album.tracks = [track];
+    expect(generateRssFeed(album)).not.toContain('podcast:alternateEnclosure');
+  });
+
+  it('keeps every integrity element and unknown child unchanged', () => {
+    const xml = generateRssFeed(parseRssFeed(feedWithItem(`
+      <podcast:alternateEnclosure type="audio/flac">
+        <podcast:source uri="https://example.com/1.flac" />
+        <podcast:integrity type="sri" value="sha384-abc" />
+        <podcast:integrity type="blake3" value="b3-def" />
+        <podcast:future note="1" />
+      </podcast:alternateEnclosure>`)));
+    expect(xml).toContain('<podcast:integrity type="sri" value="sha384-abc" />');
+    expect(xml).toContain('<podcast:integrity type="blake3" value="b3-def" />');
+    expect(xml).toContain('<podcast:future note="1" />');
+  });
+
+  it('declares the namespace of a carried-through child', () => {
+    const source = feedWithItem(`
+      <podcast:alternateEnclosure type="audio/flac">
+        <podcast:source uri="https://example.com/1.flac" />
+        <media:hash algo="md5">abc</media:hash>
+      </podcast:alternateEnclosure>`).replace('<rss ', '<rss xmlns:media="http://search.yahoo.com/mrss/" ');
+    const xml = generateRssFeed(parseRssFeed(source));
+    expect(xml).toContain('<media:hash algo="md5">abc</media:hash>');
+    expect(xml).toContain('xmlns:media="http://search.yahoo.com/mrss/"');
+  });
+
+  it('writes back a version it cannot read, once, and does not offer it for editing', () => {
+    const album = parseRssFeed(feedWithItem(`
+      <podcast:alternateEnclosure length="1"><podcast:source uri="https://example.com/no-type.flac" /></podcast:alternateEnclosure>
+      <podcast:alternateEnclosure type="audio/flac" length="2" />
+      <podcast:alternateEnclosure type="audio/flac"><podcast:source uri="https://example.com/ok.flac" /></podcast:alternateEnclosure>`));
+    expect(album.tracks[0].alternateEnclosures!.map(e => e.sources[0].uri)).toEqual(['https://example.com/ok.flac']);
     const xml = generateRssFeed(album);
-    expect(xml).toContain('<podcast:source uri="https://example.com/mirror.mp4" />');
-    expect(xml).not.toContain('<podcast:source uri="  "');
+    expect(xml.match(/<podcast:alternateEnclosure[ >]/g)).toHaveLength(3);
+    expect(xml).toContain('<podcast:source uri="https://example.com/no-type.flac" />');
+    expect(xml).toContain('<podcast:alternateEnclosure type="audio/flac" length="2" />');
+    // A second round trip changes nothing.
+    expect(generateRssFeed(parseRssFeed(xml))).toBe(xml);
   });
 
   it('leaves out a version with no address at all', () => {

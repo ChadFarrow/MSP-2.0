@@ -761,14 +761,14 @@ describe('harmless extras round-trip', () => {
   });
 });
 
-describe('featured tracks (<podcast:pinned>)', () => {
+describe('recommended tracks (<podcast:pinned>)', () => {
   function buildPinnedFeed(pins: string): string {
     return `<?xml version="1.0" encoding="UTF-8"?>
 <rss xmlns:podcast="https://podcastindex.org/namespace/1.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" version="2.0">
   <channel>
     <title>Pinned</title>
     <itunes:author>Artist</itunes:author>
-    <description>A feed with featured tracks</description>
+    <description>A feed with recommended tracks</description>
     <language>en</language>
     <podcast:medium>music</podcast:medium>
     ${pins}
@@ -819,7 +819,7 @@ describe('featured tracks (<podcast:pinned>)', () => {
     expect(xml.match(/<podcast:pinned /g)).toHaveLength(2);
   });
 
-  it('writes nothing for a feed with no suggestion', () => {
+  it('writes nothing for a feed with no recommendation', () => {
     expect(generateRssFeed(parseRssFeed(buildPinnedFeed('')))).not.toContain('podcast:pinned');
   });
 
@@ -840,7 +840,7 @@ describe('featured tracks (<podcast:pinned>)', () => {
   });
 });
 
-describe('featured albums in a publisher feed', () => {
+describe('recommended albums in a publisher feed', () => {
   // #570 only pins an episode of the same feed, and a publisher feed has none,
   // so a pinned album is MSP's extension: <podcast:pinned feedGuid="…"/>.
   function buildPublisherFeed(pins: string): string {
@@ -849,7 +849,7 @@ describe('featured albums in a publisher feed', () => {
   <channel>
     <title>Label</title>
     <itunes:author>Label</itunes:author>
-    <description>A publisher feed with featured albums</description>
+    <description>A publisher feed with recommended albums</description>
     <podcast:guid>pub-guid</podcast:guid>
     <podcast:medium>publisher</podcast:medium>
     <podcast:remoteItem feedGuid="album-guid-1" feedUrl="https://example.com/1.xml" medium="music" title="Album One" />

@@ -1192,7 +1192,7 @@ export function Editor() {
                         labelSuffix={<InfoIcon text={FIELD_INFO.trackExplicit} />}
                       />
                     </div>
-                    {/* Shown when the feed already has a suggestion, so turning the
+                    {/* Shown when the feed already has a recommendation, so turning the
                         experimental toggle off can never hide one that will be written. */}
                     {(showExperimental || track.pinned) && (
                       <div className="form-group">
@@ -1202,7 +1202,7 @@ export function Editor() {
                             type: 'UPDATE_TRACK',
                             payload: { index, track: { pinned: val } }
                           })}
-                          label="Featured 🧪"
+                          label="Recommended 🧪"
                           labelSuffix={<InfoIcon text={FIELD_INFO.trackPinned} />}
                         />
                       </div>

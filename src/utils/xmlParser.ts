@@ -269,7 +269,7 @@ export const parseRssFeed = (xmlString: string): Album => {
     }
   }
 
-  // Featured tracks. Both `guid` (the proposal) and `itemGuid` (the rename
+  // Recommended tracks. Both `guid` (the proposal) and `itemGuid` (the rename
   // discussed on it) are read.
   const tracksByGuid = new Map(album.tracks.filter(track => track.guid).map(track => [track.guid, track]));
   album.unknownChannelElements = consumePins(
@@ -1020,7 +1020,7 @@ export const parsePublisherRssFeed = (xmlString: string): PublisherFeed => {
     feed.remoteItems = remoteArray.map(parseRemoteItem).filter(Boolean) as RemoteItem[];
   }
 
-  // Featured albums: MSP's <podcast:pinned feedGuid>, since a publisher feed
+  // Recommended albums: MSP's <podcast:pinned feedGuid>, since a publisher feed
   // has no episodes for the proposal's `guid` to name. A `guid` pin is left alone.
   // A feedUrl-only item has feedGuid '', which every pin without the attribute
   // would otherwise match.

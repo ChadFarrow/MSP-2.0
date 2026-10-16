@@ -572,7 +572,7 @@ export const generateRssFeed = (album: Album): string => {
     if (publisherXml) lines.push(publisherXml);
   }
 
-  // Featured tracks, in track order
+  // Recommended tracks, in track order
   album.tracks
     .filter(track => track.pinned && track.guid)
     .forEach(track => lines.push(`${indent(2)}${generatePinnedXml('guid', track.guid)}`));
@@ -647,7 +647,7 @@ export const generatePublisherRssFeed = (publisher: PublisherFeed): string => {
     });
   }
 
-  // Featured albums, in catalog order
+  // Recommended albums, in catalog order
   publisher.remoteItems
     .filter(item => item.pinned && item.feedGuid)
     .forEach(item => lines.push(`${indent(2)}${generatePinnedXml('feedGuid', item.feedGuid)}`));

@@ -572,7 +572,7 @@ export const generateRssFeed = (album: Album): string => {
     if (publisherXml) lines.push(publisherXml);
   }
 
-  // Suggested tracks, in track order
+  // Featured tracks, in track order
   album.tracks
     .filter(track => track.pinned && track.guid)
     .forEach(track => lines.push(`${indent(2)}${generatePinnedXml('guid', track.guid)}`));

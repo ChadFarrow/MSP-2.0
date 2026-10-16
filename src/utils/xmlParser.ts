@@ -269,7 +269,7 @@ export const parseRssFeed = (xmlString: string): Album => {
     }
   }
 
-  // Suggested tracks. Both `guid` (the proposal) and `itemGuid` (the rename
+  // Featured tracks. Both `guid` (the proposal) and `itemGuid` (the rename
   // discussed on it) are read.
   const tracksByGuid = new Map(album.tracks.filter(track => track.guid).map(track => [track.guid, track]));
   album.unknownChannelElements = consumePins(

@@ -73,7 +73,7 @@ export interface RemoteItem {
   // utils/publisherRole.ts. Absent means not stated.
   rel?: string;
   /**
-   * Publisher catalog only: a suggested starting album for new listeners,
+   * Publisher catalog only: a featured album, suggested to new listeners,
    * written as a channel-level <podcast:pinned feedGuid> naming this feed. That
    * is MSP's extension — the proposal (podcast-namespace #570) only pins an
    * episode of the same feed. See generatePinnedXml in xmlGenerator.ts.
@@ -195,7 +195,7 @@ export interface Track {
   overrideValue: boolean;
   value?: ValueBlock;
   /**
-   * A suggested starting track for new listeners, written as a channel-level
+   * A featured track, suggested to new listeners, written as a channel-level
    * <podcast:pinned> pointing at this track's guid. Proposed tag only
    * (podcast-namespace discussions #570 / #747), so the editor shows it behind
    * the experimental toggle. See generatePinnedXml in xmlGenerator.ts.

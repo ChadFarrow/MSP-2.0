@@ -1202,7 +1202,7 @@ export function Editor() {
                             type: 'UPDATE_TRACK',
                             payload: { index, track: { pinned: val } }
                           })}
-                          label="Recommended 🧪"
+                          label="Recommended first listen 🧪"
                           labelSuffix={<InfoIcon text={FIELD_INFO.trackPinned} />}
                         />
                       </div>

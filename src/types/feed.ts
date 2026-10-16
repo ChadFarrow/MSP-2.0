@@ -92,6 +92,10 @@ export interface AlternateEnclosure {
   codecs?: string;                 // RFC 6381
   default?: boolean;
   sources: AlternateEnclosureSource[];
+  // Editor only, never written to XML: the user picked the type, so a URL edit
+  // no longer sets it from the extension. Kept on the version, not in the
+  // component, so it survives collapsing the track and a reload.
+  typeSetByHand?: boolean;
   // Children other than <podcast:source> (<podcast:integrity>, anything newer),
   // carried through from import unchanged.
   unknownElements?: Record<string, unknown>;

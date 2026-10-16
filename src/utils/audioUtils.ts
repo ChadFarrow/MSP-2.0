@@ -25,6 +25,19 @@ function matchAudioExtension(url: string): string | null {
 }
 
 /**
+ * Every type getAudioMimeType() can produce, once, in table order (MP3 first),
+ * labelled by its extensions — for a file-type dropdown that must offer whatever
+ * a URL sets. Built from the table so the two can't drift apart.
+ */
+export const AUDIO_FILE_TYPES: ReadonlyArray<{ value: string; label: string }> = (() => {
+  const extensions = new Map<string, string[]>();
+  for (const [ext, mime] of AUDIO_MIME_BY_EXTENSION) {
+    extensions.set(mime, [...(extensions.get(mime) ?? []), ext.slice(1).toUpperCase()]);
+  }
+  return [...extensions].map(([value, exts]) => ({ value, label: exts.join(' / ') }));
+})();
+
+/**
  * Detect audio MIME type from URL extension. Falls back to audio/mpeg.
  */
 export function getAudioMimeType(url: string): string {

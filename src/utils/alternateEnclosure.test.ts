@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { parseRssFeed, migrateStoredAlternateEnclosures } from './xmlParser';
 import { albumStorage, videoStorage } from './storage';
 import { generateRssFeed } from './xmlGenerator';
+import { urlChange, createSizeMeasurer } from './alternateEnclosure';
 import { createEmptyAlbum, createEmptyTrack } from '../types/feed';
 import type { AlternateEnclosure, Track } from '../types/feed';
 
@@ -225,5 +226,105 @@ describe('alternate versions saved in localStorage', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe('urlChange', () => {
+  const version = (partial: Partial<AlternateEnclosure> = {}): AlternateEnclosure => ({
+    id: 'v', type: 'audio/mpeg', sources: [{ uri: 'https://example.com/1.mp3' }], ...partial
+  });
+
+  it('drops what described the old file: size, source contentType and integrity', () => {
+    const patch = urlChange(version({
+      length: '5000000',
+      sources: [{ uri: 'https://example.com/1.mp4', contentType: 'video/mp4' }, { uri: 'ipfs://bafymirror' }],
+      unknownElements: { 'podcast:integrity': { '@_type': 'sri', '@_value': 'sha384-x' }, 'podcast:future': { '@_a': '1' } }
+    }), 'https://example.com/1.flac');
+    expect(patch).toMatchObject({ length: undefined, sources: [{ uri: 'https://example.com/1.flac' }, { uri: 'ipfs://bafymirror' }] });
+    expect(patch.sources![0]).not.toHaveProperty('contentType');
+    expect(patch.unknownElements).toEqual({ 'podcast:future': { '@_a': '1' } });
+  });
+
+  it('keeps all of that when only the surrounding spaces change', () => {
+    const enc = version({ length: '5000000', sources: [{ uri: 'https://example.com/1.flac', contentType: 'audio/flac' }] });
+    const patch = urlChange(enc, ' https://example.com/1.flac ');
+    expect(patch).not.toHaveProperty('length');
+    expect(patch.sources).toEqual([{ uri: ' https://example.com/1.flac ', contentType: 'audio/flac' }]);
+  });
+
+  it('sets the type from a recognized extension, until the user picks one by hand', () => {
+    expect(urlChange(version(), 'https://example.com/1.flac').type).toBe('audio/flac');
+    expect(urlChange(version(), 'https://example.com/stream')).not.toHaveProperty('type');
+    expect(urlChange(version({ type: 'audio/mp4', typeSetByHand: true }), 'https://example.com/1.m4a')).not.toHaveProperty('type');
+  });
+
+  it('gives an audio URL an audio type even on an imported video version', () => {
+    expect(urlChange(version({ type: 'video/mp4' }), 'https://example.com/1.flac').type).toBe('audio/flac');
+    expect(urlChange(version({ type: 'video/mp4' }), 'https://example.com/1.webm').type).toBe('video/webm');
+  });
+});
+
+describe('createSizeMeasurer', () => {
+  const v = (partial: Partial<AlternateEnclosure> = {}): AlternateEnclosure => ({
+    id: 'v', type: 'audio/flac', sources: [{ uri: 'https://example.com/1.flac' }], ...partial
+  });
+
+  // A HEAD request the test answers by hand.
+  function setup(list: AlternateEnclosure[]) {
+    const state = { list, active: true };
+    const writes: [string, string][] = [];
+    const requests: { url: string; answer: (size: number | null) => void }[] = [];
+    const measure = createSizeMeasurer({
+      latest: () => state.list,
+      active: () => state.active,
+      write: (id, length) => writes.push([id, length]),
+      detect: url => new Promise(resolve => requests.push({ url, answer: resolve }))
+    });
+    return { state, writes, requests, measure };
+  }
+
+  it('writes the measured size to the version', async () => {
+    const { writes, requests, measure } = setup([v()]);
+    const done = measure('v', ' https://example.com/1.flac ');
+    requests[0].answer(31200000);
+    await done;
+    expect(requests.map(r => r.url)).toEqual(['https://example.com/1.flac']);
+    expect(writes).toEqual([['v', '31200000']]);
+  });
+
+  it('sends one request when paste and blur ask for the same URL', async () => {
+    const { requests, measure } = setup([v()]);
+    const pasted = measure('v', 'https://example.com/1.flac');
+    const blurred = measure('v', 'https://example.com/1.flac');
+    expect(requests).toHaveLength(1);
+    requests[0].answer(1);
+    await Promise.all([pasted, blurred]);
+  });
+
+  it('writes nothing once the editor is gone', async () => {
+    const { state, writes, requests, measure } = setup([v()]);
+    const done = measure('v', 'https://example.com/1.flac');
+    state.active = false; // track collapsed or removed, or another feed loaded
+    requests[0].answer(1);
+    await done;
+    expect(writes).toEqual([]);
+  });
+
+  it('writes nothing if, meanwhile, the version went, its URL changed or a size was typed', async () => {
+    for (const later of [[], [v({ sources: [{ uri: 'https://example.com/2.flac' }] })], [v({ length: '42' })]]) {
+      const { state, writes, requests, measure } = setup([v()]);
+      const done = measure('v', 'https://example.com/1.flac');
+      state.list = later;
+      requests[0].answer(1);
+      await done;
+      expect(writes).toEqual([]);
+    }
+  });
+
+  it('does not measure a version that has a size, or a URL that is not a web address', async () => {
+    const { requests, measure } = setup([v({ length: '42' }), v({ id: 'w', sources: [{ uri: 'ipfs://bafy' }] })]);
+    await measure('v', 'https://example.com/1.flac');
+    await measure('w', 'ipfs://bafy');
+    expect(requests).toEqual([]);
   });
 });

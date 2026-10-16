@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react';
 import type { AlternateEnclosure } from '../types/feed';
 import { createEmptyAlternateEnclosure } from '../types/feed';
-import { detectMediaSize, getAudioMimeType, isKnownAudioFormat } from '../utils/audioUtils';
-import { getVideoMimeType } from '../utils/videoUtils';
+import { AUDIO_FILE_TYPES, isKnownAudioFormat } from '../utils/audioUtils';
+import { createSizeMeasurer, urlChange } from '../utils/alternateEnclosure';
 import { FIELD_INFO } from '../data/fieldInfo';
 import { InfoIcon } from './InfoIcon';
 
@@ -14,86 +14,67 @@ interface AlternateEnclosuresListProps {
 // The spec caps title at 32 characters.
 const TITLE_MAX_LEN = 32;
 
-// Every type getAudioMimeType() can produce, so a type set from the URL
-// always has its own entry in the dropdown.
-const AUDIO_TYPES: { value: string; label: string }[] = [
-  { value: 'audio/mpeg', label: 'MP3' },
-  { value: 'audio/flac', label: 'FLAC' },
-  { value: 'audio/x-m4a', label: 'M4A' },
-  { value: 'audio/aac', label: 'AAC' },
-  { value: 'audio/mp4', label: 'MP4 audio (M4B)' },
-  { value: 'audio/ogg', label: 'OGG' },
-  { value: 'audio/opus', label: 'Opus' },
-  { value: 'audio/wav', label: 'WAV' },
-  { value: 'audio/aiff', label: 'AIFF' },
-  { value: 'audio/x-ms-wma', label: 'WMA' },
-];
-
 /**
  * Editor for a track's <podcast:alternateEnclosure> list: a title, file type,
  * file size and URL per version. The type follows the URL's extension until
  * the user picks one, and the size is measured from the host. Rows are keyed
- * and updated by `id`, never by index, so an async size lookup that resolves
- * after a removal can't write onto the wrong row.
+ * and updated by `id`, never by index. The rules live in
+ * utils/alternateEnclosure.ts, where they are unit-tested.
  *
  * Attributes the editor has no field for (default, rel, bitrate, integrity,
  * extra sources...) are kept from an imported feed and written back as is.
  */
 export function AlternateEnclosuresList({ enclosures, onChange }: AlternateEnclosuresListProps) {
-  // Always points at the latest list so the async size lookup (up to ~10 s)
-  // doesn't clobber edits made while it was running.
+  // The latest list and onChange. A size lookup lands up to ~10 s after it
+  // starts, when the props it closed over are stale: the list may have changed,
+  // and the track moved, so the old onChange would write to the wrong index.
   const enclosuresRef = useRef(enclosures);
-  useEffect(() => { enclosuresRef.current = enclosures; });
+  const onChangeRef = useRef(onChange);
+  useEffect(() => {
+    enclosuresRef.current = enclosures;
+    onChangeRef.current = onChange;
+  });
 
-  // Versions whose type the user picked by hand; the URL no longer sets it.
-  const typeChosen = useRef<Set<string>>(new Set());
+  // False once unmounted (track collapsed or removed, another feed loaded). A
+  // lookup that lands then must not write: this instance's list is stale, and
+  // a new instance may already hold newer edits.
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
-  const update = (id: string, patch: Partial<AlternateEnclosure>) => {
-    onChange(enclosuresRef.current.map(enc => (enc.id === id ? { ...enc, ...patch } : enc)));
+  // Writes the ref through, so a second call in the same event (paste sets the
+  // URL, then measures) sees the first one's change before React re-renders.
+  const commit = (next: AlternateEnclosure[]) => {
+    enclosuresRef.current = next;
+    onChangeRef.current(next);
+  };
+  const update = (id: string, patch: Partial<AlternateEnclosure>) =>
+    commit(enclosuresRef.current.map(enc => (enc.id === id ? { ...enc, ...patch } : enc)));
+
+  // One measurer per instance, made on first use (from an event handler, never
+  // during render), so its in-flight set spans every call. It reads only the
+  // refs above, so it never goes stale. Unlike the main file there is no size
+  // estimate: length is optional here, and one from the main file's duration
+  // would be wrong for a lossless or low-bitrate copy.
+  const measurer = useRef<ReturnType<typeof createSizeMeasurer> | null>(null);
+  const measure = (id: string, url: string) => {
+    measurer.current ??= createSizeMeasurer({
+      latest: () => enclosuresRef.current,
+      active: () => mounted.current,
+      write: (versionId, length) => update(versionId, { length })
+    });
+    return measurer.current(id, url);
   };
 
-  // As for the main file, the type follows the URL's extension — but only a
-  // recognized one, and only until the user picks a type. A video version from
-  // an imported feed keeps a video type.
   const setUrl = (id: string, url: string) => {
     const enc = enclosuresRef.current.find(e => e.id === id);
-    if (!enc) return;
-    const [first, ...rest] = enc.sources;
-    const changed = (first?.uri || '').trim() !== url.trim();
-    const patch: Partial<AlternateEnclosure> = { sources: [{ ...first, uri: url }, ...rest] };
-    if (url.trim() && !typeChosen.current.has(id)) {
-      if (enc.type.startsWith('video/')) patch.type = getVideoMimeType(url);
-      else if (isKnownAudioFormat(url)) patch.type = getAudioMimeType(url);
-    }
-    // A size belongs to the file it was measured from.
-    if (changed) patch.length = undefined;
-    update(id, patch);
+    if (enc) update(id, urlChange(enc, url));
   };
 
-  // Measure the file on paste or blur. Unlike the main file there is no
-  // estimate: length is optional here, and an estimate from the main file's
-  // duration would be wrong for a lossless or low-bitrate copy.
-  const measure = async (id: string, rawUrl: string) => {
-    const url = rawUrl.trim();
-    if (!url.startsWith('http')) return;
-    const enc = enclosuresRef.current.find(e => e.id === id);
-    if (!enc || enc.length) return;
-    const size = await detectMediaSize(url);
-    if (size === null) return;
-    // Bail if the version was removed or its URL changed while measuring.
-    const current = enclosuresRef.current.find(e => e.id === id);
-    if (!current || current.sources[0]?.uri.trim() !== url) return;
-    update(id, { length: String(size) });
-  };
-
-  const add = () => {
-    onChange([...enclosuresRef.current, createEmptyAlternateEnclosure('audio/mpeg')]);
-  };
-
-  const remove = (id: string) => {
-    typeChosen.current.delete(id);
-    onChange(enclosuresRef.current.filter(enc => enc.id !== id));
-  };
+  const add = () => commit([...enclosuresRef.current, createEmptyAlternateEnclosure('audio/mpeg')]);
+  const remove = (id: string) => commit(enclosuresRef.current.filter(enc => enc.id !== id));
 
   return (
     <div className="form-group" style={{ gridColumn: '1 / -1' }}>
@@ -123,17 +104,14 @@ export function AlternateEnclosuresList({ enclosures, onChange }: AlternateEnclo
                       className="form-select"
                       aria-label={`Alternate version ${index + 1} file type`}
                       value={enc.type}
-                      onChange={e => {
-                        typeChosen.current.add(enc.id);
-                        update(enc.id, { type: e.target.value });
-                      }}
+                      onChange={e => update(enc.id, { type: e.target.value, typeSetByHand: true })}
                     >
-                      {AUDIO_TYPES.map(t => (
+                      {AUDIO_FILE_TYPES.map(t => (
                         <option key={t.value} value={t.value}>{t.label}</option>
                       ))}
                       {/* An imported feed may carry any type (a video version, an
                           unusual MIME). Show it rather than snapping to MP3. */}
-                      {!AUDIO_TYPES.some(t => t.value === enc.type) && (
+                      {!AUDIO_FILE_TYPES.some(t => t.value === enc.type) && (
                         <option value={enc.type}>{enc.type}</option>
                       )}
                     </select>

@@ -1020,7 +1020,7 @@ export const parsePublisherRssFeed = (xmlString: string): PublisherFeed => {
     feed.remoteItems = remoteArray.map(parseRemoteItem).filter(Boolean) as RemoteItem[];
   }
 
-  // Suggested albums: MSP's <podcast:pinned feedGuid>, since a publisher feed
+  // Featured albums: MSP's <podcast:pinned feedGuid>, since a publisher feed
   // has no episodes for the proposal's `guid` to name. A `guid` pin is left alone.
   // A feedUrl-only item has feedGuid '', which every pin without the attribute
   // would otherwise match.

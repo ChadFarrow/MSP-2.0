@@ -34,7 +34,7 @@ const PUBLISHER_FIELD_INFO = {
   remoteItemFeedGuid: 'The podcast:guid of the feed you want to include in your publisher catalog. This is the unique identifier that links to the feed.',
   remoteItemFeedUrl: 'The URL of the RSS feed (optional but recommended). This helps apps find the feed if they cannot resolve the GUID.',
   remoteItemTitle: 'A display title for this feed (optional). If not provided, apps will fetch the title from the feed itself.',
-  remoteItemPinned: 'Suggest this release as a place for new listeners to start. Written as <podcast:pinned feedGuid>: the proposed Podcasting 2.0 tag only pins an episode of the same feed, so naming a catalog feed is MSP\'s own extension, and no app reads it yet. The catalog order is not changed.',
+  remoteItemPinned: 'Feature this release as a place for new listeners to start. Written as <podcast:pinned feedGuid>: the proposed Podcasting 2.0 tag only pins an episode of the same feed, so naming a catalog feed is MSP\'s own extension, and no app reads it yet. The catalog order is not changed.',
   publisherRole: 'Tells apps whether this publisher is the artist of these feeds or a label. MSP writes it as rel on each catalog feed, and on the publisher reference of each album when you publish. "Not stated" writes nothing. rel is proposed in podcast-namespace discussion #579.',
 };
 
@@ -669,7 +669,7 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
                           type: 'UPDATE_REMOTE_ITEM',
                           payload: { index, item: { ...item, pinned: val } }
                         })}
-                        label={item.medium === 'video' ? 'Suggested video 🧪' : 'Suggested album 🧪'}
+                        label="Featured 🧪"
                         labelSuffix={<InfoIcon text={PUBLISHER_FIELD_INFO.remoteItemPinned} />}
                       />
                     </div>

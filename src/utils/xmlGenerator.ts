@@ -647,7 +647,7 @@ export const generatePublisherRssFeed = (publisher: PublisherFeed): string => {
     });
   }
 
-  // Suggested albums, in catalog order
+  // Featured albums, in catalog order
   publisher.remoteItems
     .filter(item => item.pinned && item.feedGuid)
     .forEach(item => lines.push(`${indent(2)}${generatePinnedXml('feedGuid', item.feedGuid)}`));

@@ -41,6 +41,7 @@ export type IssueCode =
   | 'video-audio-type'
   | 'transcript-type'
   | 'alt-enclosure-no-url'
+  | 'alt-enclosure-length'
   | 'channel-link-missing'
   | 'track-order'
   // Should fix — link check
@@ -262,15 +263,21 @@ export function getShouldFixIssues(feed: FeedSnapshot): FeedIssue[] {
       should('video-audio-type', 'tracks', `Its file type is ${track.enclosureType}, an audio type. Paste the video URL again so MSP sets the video type.`, track.id);
     }
 
-    (track.alternateEnclosures || []).forEach((enc, n) => {
+    // Only what the editor shows can be reported: it edits alternate versions on
+    // album tracks only, and of each version only the first source (its URL).
+    // Imported mirrors are kept as they are, and ipfs:// is a valid one.
+    (isVideo ? [] : track.alternateEnclosures || []).forEach((enc, n) => {
       const name = `Alternate version ${n + 1}${enc.title?.trim() ? ` ("${enc.title.trim()}")` : ''}`;
-      const uris = enc.sources.map(source => source.uri?.trim()).filter(Boolean);
-      // The first source is the version's URL; the generator leaves a version
-      // without one out, whatever other addresses it has.
-      if (!enc.sources[0]?.uri?.trim()) {
+      const url = enc.sources[0]?.uri?.trim();
+      if (!url) {
+        // The generator leaves a version without one out, whatever mirrors it has.
         should('alt-enclosure-no-url', 'tracks', `${name} has no file URL, so MSP leaves it out of the feed. Add the URL or remove the version.`, track.id);
       }
-      uris.forEach(uri => issues.push(...urlIssues(uri, `${name} URL`, 'tracks', track.id)));
+      issues.push(...urlIssues(url, `${name} URL`, 'tracks', track.id));
+      const length = enc.length?.trim();
+      if (length && !/^\d+$/.test(length)) {
+        should('alt-enclosure-length', 'tracks', `${name} File Size is "${length}". Enter the size in bytes, digits only (e.g. 31200000), or leave it empty.`, track.id);
+      }
     });
 
     if (track.transcriptUrl?.trim() && track.transcriptType === 'application/srt') {

@@ -255,15 +255,38 @@ describe('getShouldFixIssues', () => {
     expect(getShouldFixIssues(albumFeed(album))).toEqual([]);
   });
 
-  it('flags an alternate version with no URL, and checks every address it has', () => {
+  it('flags an alternate version with no URL, and checks the URL it has', () => {
     const album = goodAlbum();
-    album.tracks[0].alternateEnclosures = [{ id: 'a', type: 'video/mp4', title: 'Music Video', sources: [{ uri: ' ' }] }];
+    album.tracks[0].alternateEnclosures = [{ id: 'a', type: 'audio/flac', title: 'Lossless', sources: [{ uri: ' ' }] }];
     const issues = getShouldFixIssues(albumFeed(album));
     expect(codes(issues)).toEqual(['alt-enclosure-no-url']);
-    expect(issues[0].message).toContain('Alternate version 1 ("Music Video")');
-    album.tracks[0].alternateEnclosures[0].sources = [{ uri: 'https://example.com/v.mp4' }, { uri: 'http://mirror.example.com/v.mp4' }];
+    expect(issues[0].message).toContain('Alternate version 1 ("Lossless")');
+    album.tracks[0].alternateEnclosures[0].sources = [{ uri: 'http://example.com/1.flac' }];
     expect(codes(getShouldFixIssues(albumFeed(album)))).toEqual(['url-http']);
-    album.tracks[0].alternateEnclosures[0].sources[1].uri = 'https://mirror.example.com/v.mp4';
+  });
+
+  it('does not check imported mirrors, which have no field to fix them in', () => {
+    // ipfs:// is a valid <podcast:source>; flagging it would leave the user
+    // nothing to do but delete the whole version.
+    const album = goodAlbum();
+    album.tracks[0].alternateEnclosures = [{
+      id: 'a', type: 'audio/flac',
+      sources: [{ uri: 'https://example.com/1.flac' }, { uri: 'ipfs://bafymirror' }, { uri: 'http://mirror.example.com/1.flac' }]
+    }];
+    expect(getShouldFixIssues(albumFeed(album))).toEqual([]);
+  });
+
+  it('skips alternate versions in a video feed, whose editor has no field for them yet', () => {
+    const album = { ...goodAlbum(), tracks: [{ ...goodAlbum().tracks[0], enclosureType: 'video/mp4', enclosureUrl: 'https://example.com/1.mp4' }] };
+    album.tracks[0].alternateEnclosures = [{ id: 'a', type: 'video/mp4', length: 'big', sources: [{ uri: 'http://example.com/1.webm' }] }];
+    expect(getShouldFixIssues(albumFeed(album, 'video'))).toEqual([]);
+  });
+
+  it('flags an alternate File Size that is not a number of bytes', () => {
+    const album = goodAlbum();
+    album.tracks[0].alternateEnclosures = [{ id: 'a', type: 'audio/flac', length: '31 MB', sources: [{ uri: 'https://example.com/1.flac' }] }];
+    expect(codes(getShouldFixIssues(albumFeed(album)))).toEqual(['alt-enclosure-length']);
+    album.tracks[0].alternateEnclosures[0].length = '31200000';
     expect(getShouldFixIssues(albumFeed(album))).toEqual([]);
   });
 

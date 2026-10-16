@@ -73,7 +73,7 @@ export function AlternateEnclosuresList({ enclosures, onChange }: AlternateEnclo
     if (enc) update(id, urlChange(enc, url));
   };
 
-  const add = () => commit([...enclosuresRef.current, createEmptyAlternateEnclosure('audio/mpeg')]);
+  const add = () => commit([...enclosuresRef.current, createEmptyAlternateEnclosure()]);
   const remove = (id: string) => commit(enclosuresRef.current.filter(enc => enc.id !== id));
 
   return (

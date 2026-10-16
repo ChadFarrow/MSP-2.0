@@ -564,7 +564,7 @@ export const createEmptyAlternateEnclosureSource = (): AlternateEnclosureSource 
 });
 
 // Default empty alternate enclosure
-export const createEmptyAlternateEnclosure = (mimeType = 'video/mp4'): AlternateEnclosure => ({
+export const createEmptyAlternateEnclosure = (mimeType = 'audio/mpeg'): AlternateEnclosure => ({
   id: crypto.randomUUID(),
   type: mimeType,
   sources: [createEmptyAlternateEnclosureSource()]

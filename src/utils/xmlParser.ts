@@ -269,6 +269,16 @@ export const parseRssFeed = (xmlString: string): Album => {
       }
     }
   }
+  // Alternate sources follow the same toggle: stored bare, prefixed on save
+  // when OP3 is on. Stripped whatever the toggle says, or a template would keep
+  // counting their downloads against the source feed's GUID.
+  for (const track of album.tracks) {
+    for (const enclosure of track.alternateEnclosures ?? []) {
+      for (const source of enclosure.sources) {
+        if (OP3_PREFIX_RE.test(source.uri)) source.uri = stripOp3Prefix(source.uri);
+      }
+    }
+  }
 
   return album;
 };

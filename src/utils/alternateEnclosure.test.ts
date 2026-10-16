@@ -139,3 +139,32 @@ describe('podcast:alternateEnclosure', () => {
     expect(xml).toContain('uri="https://example.com/v.mp4?a=1&amp;b=2"');
   });
 });
+
+describe('podcast:alternateEnclosure with OP3', () => {
+  const OLD_GUID = '11111111-1111-4111-8111-111111111111';
+  const NEW_GUID = '22222222-2222-4222-8222-222222222222';
+  const op3Feed = feedWithItem(`
+      <podcast:alternateEnclosure type="audio/flac">
+        <podcast:source uri="https://op3.dev/e,pg=${OLD_GUID}/example.com/1.flac" />
+        <podcast:source uri="ipfs://bafymirror" />
+      </podcast:alternateEnclosure>`)
+    .replace('https://example.com/1.mp3', `https://op3.dev/e,pg=${OLD_GUID}/example.com/1.mp3`);
+
+  it('strips the prefix from alternate sources on import', () => {
+    const album = parseRssFeed(op3Feed);
+    expect(album.op3).toBe(true);
+    expect(album.tracks[0].alternateEnclosures![0].sources.map(s => s.uri)).toEqual(['https://example.com/1.flac', 'ipfs://bafymirror']);
+  });
+
+  it('prefixes web sources with the current GUID when OP3 is on, and none when it is off', () => {
+    const album = parseRssFeed(op3Feed);
+    album.podcastGuid = NEW_GUID; // as a template does
+    const on = generateRssFeed(album);
+    expect(on).toContain(`<podcast:source uri="https://op3.dev/e,pg=${NEW_GUID}/example.com/1.flac" />`);
+    expect(on).toContain('<podcast:source uri="ipfs://bafymirror" />');
+    expect(on).not.toContain(OLD_GUID);
+    const off = generateRssFeed({ ...album, op3: false });
+    expect(off).toContain('<podcast:source uri="https://example.com/1.flac" />');
+    expect(off).not.toContain('op3.dev');
+  });
+});

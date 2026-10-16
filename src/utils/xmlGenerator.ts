@@ -296,8 +296,9 @@ const generatePublisherXml = (publisher: PublisherReference, level: number): str
   return lines.join('\n');
 };
 
-// Generate alternate enclosure XML (podcast:alternateEnclosure)
-const generateAlternateEnclosureXml = (enclosure: AlternateEnclosure, level: number): string => {
+// Generate alternate enclosure XML (podcast:alternateEnclosure). `op3Guid` is
+// the feed's GUID when OP3 is on, null when it is off.
+const generateAlternateEnclosureXml = (enclosure: AlternateEnclosure, level: number, op3Guid: string | null): string => {
   // The first source is the version's URL, the one field the editor shows. With
   // it blank the version is left out (the Feed check says so) rather than
   // written from a mirror the user can't see.
@@ -324,7 +325,10 @@ const generateAlternateEnclosureXml = (enclosure: AlternateEnclosure, level: num
 
   // Add sources
   for (const source of sources) {
-    const sourceAttrs: string[] = [`uri="${escapeXml(source.uri.trim())}"`];
+    const uri = source.uri.trim();
+    // OP3 only redirects web URLs; an ipfs:// or magnet: source stays as it is.
+    const written = op3Guid !== null && /^https?:\/\//i.test(uri) ? applyOp3Prefix(uri, op3Guid) : uri;
+    const sourceAttrs: string[] = [`uri="${escapeXml(written)}"`];
     if (source.contentType) sourceAttrs.push(`contentType="${escapeXml(source.contentType)}"`);
     lines.push(`${indent(level + 1)}<podcast:source ${sourceAttrs.join(' ')} />`);
   }
@@ -544,10 +548,10 @@ const generateTrackXml = (track: Track, album: Album, level: number): string => 
   const enclosureUrl = album.op3 ? applyOp3Prefix(track.enclosureUrl, album.podcastGuid) : track.enclosureUrl;
   lines.push(`${indent(level + 1)}<enclosure url="${escapeXml(enclosureUrl)}" length="${escapeXml(String(fileLength))}" type="${escapeXml(track.enclosureType)}"/>`);
 
-  // Alternate enclosures (e.g., music video for audio track)
+  // Alternate versions (e.g. a lossless copy of the track)
   if (track.alternateEnclosures && track.alternateEnclosures.length > 0) {
     for (const altEnc of track.alternateEnclosures) {
-      const altEncXml = generateAlternateEnclosureXml(altEnc, level + 1);
+      const altEncXml = generateAlternateEnclosureXml(altEnc, level + 1, album.op3 ? album.podcastGuid : null);
       if (altEncXml) lines.push(altEncXml);
     }
   }

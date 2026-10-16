@@ -318,6 +318,7 @@ export function linkIssues(targets: LinkTarget[], links: Record<string, LinkResu
     const where: { area: IssueArea; trackId?: string } =
       target.roles.includes('artwork') || !trackId ? { area: 'artwork' } : { area: 'tracks', trackId };
     const label = target.roles.includes('enclosure') ? (isVideo ? 'The video file' : 'The audio file')
+      : target.roles.includes('alternate') ? 'An alternate version'
       : target.roles.includes('artwork') ? coverLabel
         : target.roles.includes('trackArt') ? `The ${isVideo ? 'video' : 'track'} art`
           : 'An extra image (podcast:image)';

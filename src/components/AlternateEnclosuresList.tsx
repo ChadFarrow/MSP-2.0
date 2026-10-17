@@ -1,7 +1,7 @@
 import { useRef } from 'react';
 import type { AlternateEnclosure } from '../types/feed';
 import { createEmptyAlternateEnclosure } from '../types/feed';
-import { AUDIO_FILE_TYPES, isKnownAudioFormat } from '../utils/audioUtils';
+import { AUDIO_EXTENSION_LIST, AUDIO_FILE_TYPES, isKnownAudioFormat } from '../utils/audioUtils';
 import { createSizeMeasurer, typeChange, urlChange } from '../utils/alternateEnclosure';
 import { FIELD_INFO } from '../data/fieldInfo';
 import { InfoIcon } from './InfoIcon';
@@ -123,7 +123,7 @@ export function AlternateEnclosuresList({ enclosures, onChange, onMeasured }: Al
                   />
                   {!isVideoVersion && url.trim() && !isKnownAudioFormat(url) && (
                     <div style={{ color: 'var(--warning, #b8860b)', fontSize: '0.85em', marginTop: '4px' }}>
-                      URL doesn't end with a recognized audio extension (mp3, flac, wav, m4a, aac, ogg, opus, aiff). Podcast apps may not play it.
+                      URL doesn't end with a recognized audio extension ({AUDIO_EXTENSION_LIST}). Podcast apps may not play it.
                     </div>
                   )}
                   {enc.sources.length > 1 && (

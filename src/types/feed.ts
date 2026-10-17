@@ -82,6 +82,17 @@ export interface AlternateEnclosureSource {
   unknownAttributes?: Record<string, string>;
 }
 
+// Everything on an alternate version that describes one particular file.
+export interface AlternateEnclosureFile {
+  source: AlternateEnclosureSource;  // the first <podcast:source>, as it was
+  type: string;
+  length?: string;
+  bitrate?: string;
+  height?: string;
+  codecs?: string;
+  integrity?: unknown;               // the 'podcast:integrity' passthrough entry
+}
+
 export interface AlternateEnclosure {
   id: string;
   type: string;                    // Required: MIME type
@@ -100,6 +111,10 @@ export interface AlternateEnclosure {
   // no longer sets it from the extension. Kept on the version, not in the
   // component, so it survives collapsing the track and a reload.
   typeSetByHand?: boolean;
+  // Editor only, never written to XML: what described the file at the URL the
+  // version had before the user edited it, so an edit that returns to that URL
+  // gets it back. Set by urlChange() in utils/alternateEnclosure.ts.
+  originalFile?: AlternateEnclosureFile;
   // Children other than <podcast:source> (<podcast:integrity>, anything newer),
   // carried through from import unchanged.
   unknownElements?: Record<string, unknown>;

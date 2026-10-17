@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { AlternateEnclosure } from '../types/feed';
 import { createEmptyAlternateEnclosure } from '../types/feed';
 import { AUDIO_FILE_TYPES, isKnownAudioFormat } from '../utils/audioUtils';
-import { createSizeMeasurer, urlChange } from '../utils/alternateEnclosure';
+import { createSizeMeasurer, typeChange, urlChange } from '../utils/alternateEnclosure';
 import { FIELD_INFO } from '../data/fieldInfo';
 import { InfoIcon } from './InfoIcon';
 
@@ -104,7 +104,7 @@ export function AlternateEnclosuresList({ enclosures, onChange }: AlternateEnclo
                       className="form-select"
                       aria-label={`Alternate version ${index + 1} file type`}
                       value={enc.type}
-                      onChange={e => update(enc.id, { type: e.target.value, typeSetByHand: true })}
+                      onChange={e => update(enc.id, typeChange(enc, e.target.value))}
                     >
                       {AUDIO_FILE_TYPES.map(t => (
                         <option key={t.value} value={t.value}>{t.label}</option>

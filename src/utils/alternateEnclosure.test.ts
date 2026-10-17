@@ -3,7 +3,7 @@ import { parseRssFeed, migrateStoredAlternateEnclosures } from './xmlParser';
 import { albumStorage, videoStorage } from './storage';
 import { generateRssFeed } from './xmlGenerator';
 import { regenerateAlbumGuids } from './regenerateGuids';
-import { urlChange, createSizeMeasurer } from './alternateEnclosure';
+import { urlChange, typeChange, createSizeMeasurer } from './alternateEnclosure';
 import { createEmptyAlbum, createEmptyTrack } from '../types/feed';
 import type { AlternateEnclosure, Track } from '../types/feed';
 
@@ -287,28 +287,59 @@ describe('urlChange', () => {
     id: 'v', type: 'audio/mpeg', sources: [{ uri: 'https://example.com/1.mp3' }], ...partial
   });
 
-  it('drops what described the old file: size, source contentType and integrity', () => {
-    const patch = urlChange(version({
-      length: '5000000',
-      sources: [{ uri: 'https://example.com/1.mp4', contentType: 'video/mp4' }, { uri: 'ipfs://bafymirror' }],
-      unknownElements: { 'podcast:integrity': { '@_type': 'sri', '@_value': 'sha384-x' }, 'podcast:future': { '@_a': '1' } }
-    }), 'https://example.com/1.flac');
-    expect(patch).toMatchObject({ length: undefined, sources: [{ uri: 'https://example.com/1.flac' }, { uri: 'ipfs://bafymirror' }] });
-    expect(patch.sources![0]).not.toHaveProperty('contentType');
+  // An imported version with everything that describes its file filled in.
+  const imported = () => version({
+    type: 'video/mp4', length: '5000000', bitrate: '128000', height: '1080', codecs: 'avc1.4d401e',
+    sources: [{ uri: 'https://example.com/1.mp4', contentType: 'video/mp4', unknownAttributes: { 'data-cdn': 'eu' } }, { uri: 'ipfs://bafymirror' }],
+    unknownElements: { 'podcast:integrity': { '@_type': 'sri', '@_value': 'sha384-x' }, 'podcast:future': { '@_a': '1' } }
+  });
+  // Every keystroke in the URL field is one urlChange.
+  const typeInto = (enc: AlternateEnclosure, ...urls: string[]) =>
+    urls.reduce((current, url) => ({ ...current, ...urlChange(current, url) }), enc);
+
+  it('drops what described the old file: size, bitrate, height, codecs, source attributes and integrity', () => {
+    const patch = urlChange(imported(), 'https://example.com/1.flac');
+    expect(patch).toMatchObject({
+      length: undefined, bitrate: undefined, height: undefined, codecs: undefined,
+      sources: [{ uri: 'https://example.com/1.flac' }, { uri: 'ipfs://bafymirror' }]
+    });
+    expect(patch.sources![0]).toEqual({ uri: 'https://example.com/1.flac' });
     expect(patch.unknownElements).toEqual({ 'podcast:future': { '@_a': '1' } });
   });
 
-  it('keeps all of that when only the surrounding spaces change', () => {
-    const enc = version({ length: '5000000', sources: [{ uri: 'https://example.com/1.flac', contentType: 'audio/flac' }] });
-    const patch = urlChange(enc, ' https://example.com/1.flac ');
-    expect(patch).not.toHaveProperty('length');
-    expect(patch.sources).toEqual([{ uri: ' https://example.com/1.flac ', contentType: 'audio/flac' }]);
+  it('gets all of it back when an edit returns to the old URL', () => {
+    const enc = imported();
+    const back = typeInto(enc, 'https://example.com/1.mp4x', 'https://example.com/1.mp4');
+    expect(back).toEqual(enc);
+    // and the version is written as it was imported
+    const album = createEmptyAlbum();
+    album.tracks = [{ ...createEmptyTrack(1), alternateEnclosures: [back] }];
+    expect(generateRssFeed(album)).toContain('<podcast:integrity type="sri" value="sha384-x" />');
+  });
+
+  it('does not bring the old codecs back under a type the user picked meanwhile', () => {
+    const enc = imported();
+    const picked = { ...typeInto(enc, 'https://example.com/other'), ...typeChange(enc, 'video/webm') };
+    const back = typeInto(picked, 'https://example.com/1.mp4');
+    expect(back).toMatchObject({ type: 'video/webm', codecs: undefined, length: '5000000', bitrate: '128000' });
+  });
+
+  it('keeps all of that, and the type, when only the surrounding spaces change', () => {
+    // audio/mp4 is what the feed declares; the extension table says audio/x-m4a.
+    const enc = version({ type: 'audio/mp4', length: '5000000', sources: [{ uri: 'https://example.com/1.m4a ', contentType: 'audio/mp4' }] });
+    const patch = urlChange(enc, 'https://example.com/1.m4a');
+    expect(patch).toEqual({ sources: [{ uri: 'https://example.com/1.m4a', contentType: 'audio/mp4' }] });
   });
 
   it('sets the type from a recognized extension, until the user picks one by hand', () => {
     expect(urlChange(version(), 'https://example.com/1.flac').type).toBe('audio/flac');
     expect(urlChange(version(), 'https://example.com/stream')).not.toHaveProperty('type');
     expect(urlChange(version({ type: 'audio/mp4', typeSetByHand: true }), 'https://example.com/1.m4a')).not.toHaveProperty('type');
+  });
+
+  it('a type picked by hand drops codecs from another type', () => {
+    expect(typeChange(version({ codecs: 'mp4a.40.2' }), 'audio/flac')).toEqual({ type: 'audio/flac', typeSetByHand: true, codecs: undefined });
+    expect(typeChange(version({ codecs: 'mp4a.40.2' }), 'audio/mpeg')).toEqual({ type: 'audio/mpeg', typeSetByHand: true });
   });
 
   it('gives an audio URL an audio type even on an imported video version', () => {

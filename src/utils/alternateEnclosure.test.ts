@@ -349,35 +349,29 @@ describe('urlChange', () => {
 });
 
 describe('createSizeMeasurer', () => {
-  const v = (partial: Partial<AlternateEnclosure> = {}): AlternateEnclosure => ({
-    id: 'v', type: 'audio/flac', sources: [{ uri: 'https://example.com/1.flac' }], ...partial
-  });
-
-  // A HEAD request the test answers by hand.
-  function setup(list: AlternateEnclosure[]) {
-    const state = { list, active: true };
-    const writes: [string, string][] = [];
+  // A HEAD request the test answers by hand. Whether the size still belongs to
+  // the version when it lands is the reducer's call (SET_ALTERNATE_ENCLOSURE_LENGTH).
+  function setup() {
+    const writes: [string, string, string][] = [];
     const requests: { url: string; answer: (size: number | null) => void }[] = [];
     const measure = createSizeMeasurer({
-      latest: () => state.list,
-      active: () => state.active,
-      write: (id, length) => writes.push([id, length]),
+      write: (id, url, length) => writes.push([id, url, length]),
       detect: url => new Promise(resolve => requests.push({ url, answer: resolve }))
     });
-    return { state, writes, requests, measure };
+    return { writes, requests, measure };
   }
 
-  it('writes the measured size to the version', async () => {
-    const { writes, requests, measure } = setup([v()]);
+  it('reports the measured size with the URL it belongs to', async () => {
+    const { writes, requests, measure } = setup();
     const done = measure('v', ' https://example.com/1.flac ');
     requests[0].answer(31200000);
     await done;
     expect(requests.map(r => r.url)).toEqual(['https://example.com/1.flac']);
-    expect(writes).toEqual([['v', '31200000']]);
+    expect(writes).toEqual([['v', 'https://example.com/1.flac', '31200000']]);
   });
 
   it('sends one request when paste and blur ask for the same URL', async () => {
-    const { requests, measure } = setup([v()]);
+    const { requests, measure } = setup();
     const pasted = measure('v', 'https://example.com/1.flac');
     const blurred = measure('v', 'https://example.com/1.flac');
     expect(requests).toHaveLength(1);
@@ -385,29 +379,16 @@ describe('createSizeMeasurer', () => {
     await Promise.all([pasted, blurred]);
   });
 
-  it('writes nothing once the editor is gone', async () => {
-    const { state, writes, requests, measure } = setup([v()]);
+  it('reports nothing when the host gives no size', async () => {
+    const { writes, requests, measure } = setup();
     const done = measure('v', 'https://example.com/1.flac');
-    state.active = false; // track collapsed or removed, or another feed loaded
-    requests[0].answer(1);
+    requests[0].answer(null);
     await done;
     expect(writes).toEqual([]);
   });
 
-  it('writes nothing if, meanwhile, the version went, its URL changed or a size was typed', async () => {
-    for (const later of [[], [v({ sources: [{ uri: 'https://example.com/2.flac' }] })], [v({ length: '42' })]]) {
-      const { state, writes, requests, measure } = setup([v()]);
-      const done = measure('v', 'https://example.com/1.flac');
-      state.list = later;
-      requests[0].answer(1);
-      await done;
-      expect(writes).toEqual([]);
-    }
-  });
-
-  it('does not measure a version that has a size, or a URL that is not a web address', async () => {
-    const { requests, measure } = setup([v({ length: '42' }), v({ id: 'w', sources: [{ uri: 'ipfs://bafy' }] })]);
-    await measure('v', 'https://example.com/1.flac');
+  it('does not measure a URL that is not a web address', async () => {
+    const { requests, measure } = setup();
     await measure('w', 'ipfs://bafy');
     expect(requests).toEqual([]);
   });

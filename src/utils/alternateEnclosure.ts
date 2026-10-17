@@ -87,38 +87,47 @@ export function typeChange(enc: AlternateEnclosure, type: string): Partial<Alter
 
 /**
  * Returns `measure(id, url)`, which reads a version's file size from the host
- * and writes it with `write`. The HEAD request can take ~10 s, and by then the
- * editor's props are stale: the user may have edited the list, moved the track
- * or closed it. So the answer is checked against `latest()` when it lands, and
- * nothing is written once `active()` is false.
+ * and reports it with `write(id, url, length)`. The HEAD request can take ~10 s,
+ * and by then the user may have edited the list, moved the track or closed it,
+ * so `write` must not go through anything a render closed over: the editor
+ * dispatches SET_ALTERNATE_ENCLOSURE_LENGTH, which finds the track and the
+ * version by id and applies withMeasuredLength().
  */
 export function createSizeMeasurer(options: {
-  latest: () => AlternateEnclosure[];
-  active: () => boolean;
-  write: (id: string, length: string) => void;
+  write: (id: string, url: string, length: string) => void;
   detect?: (url: string) => Promise<number | null>;
 }): (id: string, url: string) => Promise<void> {
-  const { latest, active, write, detect = detectMediaSize } = options;
+  const { write, detect = detectMediaSize } = options;
   // Paste then blur asks twice for the same URL; send one request.
   const inFlight = new Set<string>();
 
   return async (id, rawUrl) => {
     const url = rawUrl.trim();
     if (!/^https?:\/\//i.test(url)) return;
-    const enc = latest().find(e => e.id === id);
-    if (!enc || enc.length) return;
     const key = `${id} ${url}`;
     if (inFlight.has(key)) return;
     inFlight.add(key);
     try {
       const size = await detect(url);
-      if (size === null || !active()) return;
-      // Not if, meanwhile, the version went, its URL changed or the user typed a size.
-      const current = latest().find(e => e.id === id);
-      if (!current || current.length || current.sources[0]?.uri.trim() !== url) return;
-      write(id, String(size));
+      if (size !== null) write(id, url, String(size));
     } finally {
       inFlight.delete(key);
     }
   };
+}
+
+/**
+ * The list with a measured size written to version `id`, or null when it no
+ * longer belongs there: the version went, its URL is no longer `url`, or the
+ * user typed a size meanwhile.
+ */
+export function withMeasuredLength(
+  enclosures: AlternateEnclosure[],
+  id: string,
+  url: string,
+  length: string
+): AlternateEnclosure[] | null {
+  const enc = enclosures.find(e => e.id === id);
+  if (!enc || enc.length || enc.sources[0]?.uri.trim() !== url.trim()) return null;
+  return enclosures.map(e => (e.id === id ? { ...e, length } : e));
 }

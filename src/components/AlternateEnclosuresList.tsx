@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useRef } from 'react';
 import type { AlternateEnclosure } from '../types/feed';
 import { createEmptyAlternateEnclosure } from '../types/feed';
 import { AUDIO_FILE_TYPES, isKnownAudioFormat } from '../utils/audioUtils';
@@ -9,6 +9,11 @@ import { InfoIcon } from './InfoIcon';
 interface AlternateEnclosuresListProps {
   enclosures: AlternateEnclosure[];
   onChange: (enclosures: AlternateEnclosure[]) => void;
+  // A measured file size. It lands up to ~10 s after the lookup starts, when
+  // this editor may be gone and its props stale, so the caller writes it by
+  // track id and version id (SET_ALTERNATE_ENCLOSURE_LENGTH), never through
+  // onChange, whose index came from an old render.
+  onMeasured: (versionId: string, url: string, length: string) => void;
 }
 
 // The spec caps title at 32 characters.
@@ -24,57 +29,23 @@ const TITLE_MAX_LEN = 32;
  * Attributes the editor has no field for (default, rel, bitrate, integrity,
  * extra sources...) are kept from an imported feed and written back as is.
  */
-export function AlternateEnclosuresList({ enclosures, onChange }: AlternateEnclosuresListProps) {
-  // The latest list and onChange. A size lookup lands up to ~10 s after it
-  // starts, when the props it closed over are stale: the list may have changed,
-  // and the track moved, so the old onChange would write to the wrong index.
-  const enclosuresRef = useRef(enclosures);
-  const onChangeRef = useRef(onChange);
-  useEffect(() => {
-    enclosuresRef.current = enclosures;
-    onChangeRef.current = onChange;
-  });
-
-  // False once unmounted (track collapsed or removed, another feed loaded). A
-  // lookup that lands then must not write: this instance's list is stale, and
-  // a new instance may already hold newer edits.
-  const mounted = useRef(false);
-  useEffect(() => {
-    mounted.current = true;
-    return () => { mounted.current = false; };
-  }, []);
-
-  // Writes the ref through, so a second call in the same event (paste sets the
-  // URL, then measures) sees the first one's change before React re-renders.
-  const commit = (next: AlternateEnclosure[]) => {
-    enclosuresRef.current = next;
-    onChangeRef.current(next);
-  };
+export function AlternateEnclosuresList({ enclosures, onChange, onMeasured }: AlternateEnclosuresListProps) {
   const update = (id: string, patch: Partial<AlternateEnclosure>) =>
-    commit(enclosuresRef.current.map(enc => (enc.id === id ? { ...enc, ...patch } : enc)));
+    onChange(enclosures.map(enc => (enc.id === id ? { ...enc, ...patch } : enc)));
 
   // One measurer per instance, made on first use (from an event handler, never
-  // during render), so its in-flight set spans every call. It reads only the
-  // refs above, so it never goes stale. Unlike the main file there is no size
-  // estimate: length is optional here, and one from the main file's duration
-  // would be wrong for a lossless or low-bitrate copy.
+  // during render), so its in-flight set spans every call. It keeps the first
+  // onMeasured, which is safe because that names this track by id. Unlike the
+  // main file there is no size estimate: length is optional here, and one from
+  // the main file's duration would be wrong for a lossless or low-bitrate copy.
   const measurer = useRef<ReturnType<typeof createSizeMeasurer> | null>(null);
   const measure = (id: string, url: string) => {
-    measurer.current ??= createSizeMeasurer({
-      latest: () => enclosuresRef.current,
-      active: () => mounted.current,
-      write: (versionId, length) => update(versionId, { length })
-    });
+    measurer.current ??= createSizeMeasurer({ write: onMeasured });
     return measurer.current(id, url);
   };
 
-  const setUrl = (id: string, url: string) => {
-    const enc = enclosuresRef.current.find(e => e.id === id);
-    if (enc) update(id, urlChange(enc, url));
-  };
-
-  const add = () => commit([...enclosuresRef.current, createEmptyAlternateEnclosure()]);
-  const remove = (id: string) => commit(enclosuresRef.current.filter(enc => enc.id !== id));
+  const add = () => onChange([...enclosures, createEmptyAlternateEnclosure()]);
+  const remove = (id: string) => onChange(enclosures.filter(enc => enc.id !== id));
 
   return (
     <div className="form-group" style={{ gridColumn: '1 / -1' }}>
@@ -138,15 +109,17 @@ export function AlternateEnclosuresList({ enclosures, onChange }: AlternateEnclo
                     aria-label={`Alternate version ${index + 1} URL`}
                     placeholder="https://example.com/track.flac"
                     value={url}
-                    onChange={e => setUrl(enc.id, e.target.value)}
+                    onChange={e => update(enc.id, urlChange(enc, e.target.value))}
                     onPaste={e => {
                       const pasted = e.clipboardData.getData('text').trim();
                       if (!pasted.startsWith('http')) return;
                       e.preventDefault();
-                      setUrl(enc.id, pasted);
-                      measure(enc.id, pasted);
+                      const patch = urlChange(enc, pasted);
+                      update(enc.id, patch);
+                      // Not when the paste kept the size or brought the old one back.
+                      if (!{ ...enc, ...patch }.length) measure(enc.id, pasted);
                     }}
-                    onBlur={e => measure(enc.id, e.target.value)}
+                    onBlur={e => { if (!enc.length) measure(enc.id, e.target.value); }}
                   />
                   {!isVideoVersion && url.trim() && !isKnownAudioFormat(url) && (
                     <div style={{ color: 'var(--warning, #b8860b)', fontSize: '0.85em', marginTop: '4px' }}>

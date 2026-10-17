@@ -1188,6 +1188,10 @@ export function Editor() {
                           type: 'UPDATE_TRACK',
                           payload: { index, track: { alternateEnclosures: alternateEnclosures.length > 0 ? alternateEnclosures : undefined } }
                         })}
+                        onMeasured={(versionId, url, length) => dispatch({
+                          type: 'SET_ALTERNATE_ENCLOSURE_LENGTH',
+                          payload: { trackId: track.id, versionId, url, length }
+                        })}
                       />
                     )}
                     <div className="form-group">

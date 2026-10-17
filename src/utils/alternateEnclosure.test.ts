@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { parseRssFeed, migrateStoredAlternateEnclosures } from './xmlParser';
 import { albumStorage, videoStorage } from './storage';
 import { generateRssFeed } from './xmlGenerator';
+import { regenerateAlbumGuids } from './regenerateGuids';
 import { urlChange, createSizeMeasurer } from './alternateEnclosure';
 import { createEmptyAlbum, createEmptyTrack } from '../types/feed';
 import type { AlternateEnclosure, Track } from '../types/feed';
@@ -187,6 +188,35 @@ describe('podcast:alternateEnclosure with OP3', () => {
     expect(off).toContain('<podcast:source uri="https://example.com/1.flac" />');
     expect(off).not.toContain('op3.dev');
   });
+
+  // album.op3 comes from the main enclosures, so it is off here.
+  const alternatesOnly = feedWithItem(`
+      <podcast:alternateEnclosure type="audio/flac">
+        <podcast:source uri="https://op3.dev/e,pg=${OLD_GUID}/example.com/1.flac" />
+      </podcast:alternateEnclosure>`);
+
+  it('keeps the prefix on alternate sources when the main file has none', () => {
+    // Stripping it would lose the alternates' OP3 for good: the save only
+    // prefixes when OP3 is on.
+    const album = parseRssFeed(alternatesOnly);
+    expect(album.op3).toBe(false);
+    expect(generateRssFeed(album)).toContain(`<podcast:source uri="https://op3.dev/e,pg=${OLD_GUID}/example.com/1.flac" />`);
+  });
+
+  it('drops the source feed\'s prefix from alternate sources in a template', () => {
+    const template = regenerateAlbumGuids(parseRssFeed(alternatesOnly));
+    expect(template.tracks[0].alternateEnclosures![0].sources[0].uri).toBe('https://example.com/1.flac');
+    expect(generateRssFeed(template)).not.toContain(OLD_GUID);
+  });
+
+  it('prefixes a source with an uppercase scheme once, and reads it back', () => {
+    const album = parseRssFeed(op3Feed);
+    album.podcastGuid = NEW_GUID;
+    album.tracks[0].alternateEnclosures![0].sources[0].uri = 'HTTPS://example.com/1.flac';
+    const xml = generateRssFeed(album);
+    expect(xml).toContain(`<podcast:source uri="https://op3.dev/e,pg=${NEW_GUID}/example.com/1.flac" />`);
+    expect(parseRssFeed(xml).tracks[0].alternateEnclosures![0].sources[0].uri).toBe('https://example.com/1.flac');
+  });
 });
 
 describe('alternate versions saved in localStorage', () => {
@@ -205,7 +235,7 @@ describe('alternate versions saved in localStorage', () => {
   });
 
   it('moves stored versions into the editable list and keeps the rest', () => {
-    const track = migrateStoredAlternateEnclosures(storedTrack());
+    const track = migrateStoredAlternateEnclosures(storedTrack(), true);
     expect(track.alternateEnclosures).toHaveLength(1);
     expect(track.alternateEnclosures![0]).toMatchObject({ type: 'audio/flac', title: 'Lossless', sources: [{ uri: 'https://example.com/1.flac' }] });
     expect(track.alternateEnclosures![0].id).toEqual(expect.any(String));
@@ -219,8 +249,8 @@ describe('alternate versions saved in localStorage', () => {
   });
 
   it('changes nothing on a second run', () => {
-    const once = migrateStoredAlternateEnclosures(storedTrack());
-    const twice = migrateStoredAlternateEnclosures(structuredClone(once));
+    const once = migrateStoredAlternateEnclosures(storedTrack(), true);
+    const twice = migrateStoredAlternateEnclosures(structuredClone(once), true);
     expect(twice).toEqual(once);
   });
 
@@ -228,18 +258,23 @@ describe('alternate versions saved in localStorage', () => {
     const track = migrateStoredAlternateEnclosures({
       ...createEmptyTrack(1),
       alternateEnclosures: [{ type: 'video/mp4', sources: [{ uri: 'https://example.com/v.mp4' }], integrity: { type: 'sri', value: 'sha384-x' } } as unknown as AlternateEnclosure],
-    });
+    }, false);
     expect(track.alternateEnclosures![0].id).toEqual(expect.any(String));
     const album = createEmptyAlbum();
     album.tracks = [track];
     expect(generateRssFeed(album)).toContain('<podcast:integrity type="sri" value="sha384-x" />');
   });
 
-  it('runs when an album is loaded', () => {
-    const stored = { ...createEmptyAlbum(), tracks: [storedTrack()] };
+  it('keeps the OP3 prefix on a stored version when the album has OP3 off', () => {
+    const track = migrateStoredAlternateEnclosures(storedTrack(), false);
+    expect(track.alternateEnclosures![0].sources[0].uri).toBe('https://op3.dev/e/example.com/1.flac');
+  });
+
+  it('runs when an album is loaded, with the album\'s OP3 setting', () => {
+    const stored = { ...createEmptyAlbum(), op3: true, tracks: [storedTrack()] };
     vi.stubGlobal('localStorage', { getItem: () => JSON.stringify(stored) });
     try {
-      expect(albumStorage.load()!.tracks[0].alternateEnclosures).toHaveLength(1);
+      expect(albumStorage.load()!.tracks[0].alternateEnclosures![0].sources[0].uri).toBe('https://example.com/1.flac');
       expect(videoStorage.load()!.tracks[0].alternateEnclosures).toHaveLength(1);
     } finally {
       vi.unstubAllGlobals();

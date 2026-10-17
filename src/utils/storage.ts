@@ -54,7 +54,7 @@ function migrateAlbum(album: Album & { persons?: OldPerson[]; tracks?: Array<{ p
       if (track.persons) {
         track.persons = track.persons.map(migratePerson);
       }
-      return migrateStoredAlternateEnclosures(track as Track);
+      return migrateStoredAlternateEnclosures(track as Track, album.op3);
     });
   }
   return album as Album;

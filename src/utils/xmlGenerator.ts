@@ -500,10 +500,10 @@ const generateCommonChannelElements = (data: BaseChannelData, medium: string, le
 const applyOp3Prefix = (url: string, podcastGuid?: string): string => {
   if (!url) return url;
   // Don't double-prefix URLs that already have OP3
-  if (url.startsWith('https://op3.dev/e')) return url;
+  if (/^https:\/\/op3\.dev\/e/i.test(url)) return url;
   const pgParam = podcastGuid ? `,pg=${podcastGuid}` : '';
-  // For HTTPS URLs, strip the protocol; for HTTP, keep it
-  const urlWithoutProtocol = url.startsWith('https://') ? url.slice(8) : url;
+  // For HTTPS URLs, strip the protocol (in any letter case); for HTTP, keep it
+  const urlWithoutProtocol = /^https:\/\//i.test(url) ? url.slice(8) : url;
   return `https://op3.dev/e${pgParam}/${urlWithoutProtocol}`;
 };
 

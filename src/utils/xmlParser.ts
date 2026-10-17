@@ -13,15 +13,16 @@ export const OP3_PREFIX_RE = /^https:\/\/op3\.dev\/e(?:,[^/]*)?\//;
 export function stripOp3Prefix(url: string): string {
   const stripped = url.replace(OP3_PREFIX_RE, '');
   // If the remaining URL doesn't start with a protocol, it was HTTPS
-  if (!stripped.startsWith('http://') && !stripped.startsWith('https://')) {
+  if (!/^https?:\/\//i.test(stripped)) {
     return `https://${stripped}`;
   }
   return stripped;
 }
 
 // Alternate sources follow the OP3 toggle like the main enclosure: stored bare,
-// prefixed on save when OP3 is on. Stripped whatever the toggle says, or a
-// template would keep counting their downloads against the source feed's GUID.
+// prefixed on save when OP3 is on. Only strip when the feed's main enclosures
+// carried OP3 (album.op3), or the save would not put the prefix back. A template
+// drops the rest in regenerateAlbumGuids.
 function stripAlternateOp3(enclosures: AlternateEnclosure[]): void {
   for (const source of enclosures.flatMap(enclosure => enclosure.sources)) {
     if (OP3_PREFIX_RE.test(source.uri)) source.uri = stripOp3Prefix(source.uri);
@@ -276,10 +277,8 @@ export const parseRssFeed = (xmlString: string): Album => {
       if (OP3_PREFIX_RE.test(track.enclosureUrl)) {
         track.enclosureUrl = stripOp3Prefix(track.enclosureUrl);
       }
+      stripAlternateOp3(track.alternateEnclosures ?? []);
     }
-  }
-  for (const track of album.tracks) {
-    stripAlternateOp3(track.alternateEnclosures ?? []);
   }
 
   return album;
@@ -655,10 +654,11 @@ function splitAlternateEnclosures(nodes: unknown): { versions: AlternateEnclosur
  * unknownItemElements; left there, the generator still writes it while the
  * editor never shows it, and "+ Add Alternate Version" adds a second copy
  * beside one the user can't see or remove. A version stored in Jan 2026, when
- * the feature briefly existed, may carry a modelled `integrity`. Safe to run on
- * every load: a second run changes nothing.
+ * the feature briefly existed, may carry a modelled `integrity`. `stripOp3` is
+ * the album's op3, as on import. Safe to run on every load: a second run
+ * changes nothing.
  */
-export function migrateStoredAlternateEnclosures(track: Track): Track {
+export function migrateStoredAlternateEnclosures(track: Track, stripOp3: boolean): Track {
   type StoredVersion = AlternateEnclosure & { integrity?: { type: string; value: string } };
   const stored = (track.alternateEnclosures ?? []) as StoredVersion[];
   if (stored.length === 0 && !(track.unknownItemElements && 'podcast:alternateEnclosure' in track.unknownItemElements)) {
@@ -673,7 +673,7 @@ export function migrateStoredAlternateEnclosures(track: Track): Track {
   }));
 
   const { versions, unreadable } = splitAlternateEnclosures(track.unknownItemElements?.['podcast:alternateEnclosure']);
-  stripAlternateOp3(versions);
+  if (stripOp3) stripAlternateOp3(versions);
 
   const alternateEnclosures = [...current, ...versions];
   return {

@@ -277,9 +277,24 @@ describe('getShouldFixIssues', () => {
   });
 
   it('skips alternate versions in a video feed, whose editor has no field for them yet', () => {
-    const album = { ...goodAlbum(), tracks: [{ ...goodAlbum().tracks[0], enclosureType: 'video/mp4', enclosureUrl: 'https://example.com/1.mp4' }] };
+    const album = { ...goodAlbum(), medium: 'video' as const, tracks: [{ ...goodAlbum().tracks[0], enclosureType: 'video/mp4', enclosureUrl: 'https://example.com/1.mp4' }] };
     album.tracks[0].alternateEnclosures = [{ id: 'a', type: 'video/mp4', length: 'big', sources: [{ uri: 'http://example.com/1.webm' }] }];
     expect(getShouldFixIssues(albumFeed(album, 'video'))).toEqual([]);
+  });
+
+  it('skips them too for a video feed loaded into the album slot, as the editor does', () => {
+    // Load from Nostr puts any feed in the album slot; the editor goes by medium.
+    const album = { ...goodAlbum(), medium: 'video' as const };
+    album.tracks[0].alternateEnclosures = [{ id: 'a', type: 'video/mp4', length: 'big', sources: [{ uri: 'http://example.com/1.webm' }] }];
+    expect(codes(getShouldFixIssues(albumFeed(album))).filter(code => code.startsWith('alt-') || code.startsWith('url-'))).toEqual([]);
+  });
+
+  it('accepts an ipfs:// version URL, but not one with no scheme', () => {
+    const album = goodAlbum();
+    album.tracks[0].alternateEnclosures = [{ id: 'a', type: 'audio/flac', sources: [{ uri: 'ipfs://bafyexample' }] }];
+    expect(getShouldFixIssues(albumFeed(album))).toEqual([]);
+    album.tracks[0].alternateEnclosures[0].sources = [{ uri: 'example.com/1.flac' }];
+    expect(codes(getShouldFixIssues(albumFeed(album)))).toEqual(['url-scheme']);
   });
 
   it('flags an alternate File Size that is not a number of bytes', () => {

@@ -1,8 +1,27 @@
 // Editing rules for a track's alternate versions (<podcast:alternateEnclosure>).
 // Kept out of AlternateEnclosuresList so they run under unit tests in node.
-import type { AlternateEnclosure, AlternateEnclosureFile } from '../types/feed';
+import type { Album, AlternateEnclosure, AlternateEnclosureFile } from '../types/feed';
+import { isVideoMedium } from '../types/feed';
 import { detectMediaSize, getAudioMimeType, isKnownAudioFormat } from './audioUtils';
 import { getVideoMimeType, isVideoUrl } from './videoUtils';
+
+/**
+ * True when the editor shows Alternate Versions for this feed: album tracks
+ * only, for now (audio first; video versions are a later step). The Feed check
+ * and the link check use the same test, so they report nothing the user has no
+ * field to fix. It goes by medium, as the editor does, not by which slot the
+ * feed is in: Load from Nostr puts a video feed in the album slot.
+ */
+export function editsAlternateVersions(album: Pick<Album, 'medium'>): boolean {
+  return !isVideoMedium(album.medium);
+}
+
+/**
+ * A <podcast:source> on a network other than the web. The spec allows them (its
+ * examples use ipfs://); OP3 cannot prefix them and the link check cannot probe
+ * them, but they are not a mistake to report.
+ */
+export const NON_WEB_SOURCE_RE = /^(ipfs|ipns|magnet|ar):/i;
 
 const INTEGRITY = 'podcast:integrity';
 

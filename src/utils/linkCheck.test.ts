@@ -70,8 +70,10 @@ describe('collectLinkTargets', () => {
   });
 
   it('skips alternate versions in a video feed, which has no editor for them yet', () => {
-    const a = album({ tracks: [track(1, { enclosureType: 'video/mp4', alternateEnclosures: [{ id: 'v', type: 'video/webm', sources: [{ uri: 'https://example.com/1.webm' }] }] })] });
+    const a = album({ medium: 'video', tracks: [track(1, { enclosureType: 'video/mp4', alternateEnclosures: [{ id: 'v', type: 'video/webm', sources: [{ uri: 'https://example.com/1.webm' }] }] })] });
     expect(collectLinkTargets(snapshot(a, 'video')).some(t => t.roles.includes('alternate'))).toBe(false);
+    // also when that feed sits in the album slot (Load from Nostr)
+    expect(collectLinkTargets(snapshot(a)).some(t => t.roles.includes('alternate'))).toBe(false);
   });
 
   it('lists a publisher feed\'s artwork only', () => {

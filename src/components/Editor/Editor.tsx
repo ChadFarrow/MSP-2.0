@@ -20,6 +20,7 @@ import { FundingFields } from '../FundingFields';
 import { ArtworkFields } from '../ArtworkFields';
 import { PodcastImagesList } from '../PodcastImagesList';
 import { AlternateEnclosuresList } from '../AlternateEnclosuresList';
+import { editsAlternateVersions } from '../../utils/alternateEnclosure';
 import { FeedCheckPanel } from '../FeedCheckPanel';
 
 // Roles Reference Modal
@@ -1181,7 +1182,7 @@ export function Editor() {
                       </div>
                     </div>
                     {/* Audio versions on album tracks first; video feeds come later. */}
-                    {!isVideo && (
+                    {editsAlternateVersions(album) && (
                       <AlternateEnclosuresList
                         enclosures={track.alternateEnclosures || []}
                         onChange={alternateEnclosures => dispatch({

@@ -296,6 +296,10 @@ const generatePublisherXml = (publisher: PublisherReference, level: number): str
   return lines.join('\n');
 };
 
+// Attributes kept from an imported version or source that MSP has no field for.
+const unknownAttributesXml = (attributes: Record<string, string> | undefined): string[] =>
+  Object.entries(attributes ?? {}).map(([name, value]) => `${name}="${escapeXml(value)}"`);
+
 // Generate alternate enclosure XML (podcast:alternateEnclosure). `op3Guid` is
 // the feed's GUID when OP3 is on, null when it is off.
 const generateAlternateEnclosureXml = (enclosure: AlternateEnclosure, level: number, op3Guid: string | null): string => {
@@ -320,6 +324,7 @@ const generateAlternateEnclosureXml = (enclosure: AlternateEnclosure, level: num
   if (enclosure.rel) attrs.push(`rel="${escapeXml(enclosure.rel)}"`);
   if (enclosure.codecs) attrs.push(`codecs="${escapeXml(enclosure.codecs)}"`);
   if (enclosure.default) attrs.push('default="true"');
+  attrs.push(...unknownAttributesXml(enclosure.unknownAttributes));
 
   lines.push(`${indent(level)}<podcast:alternateEnclosure ${attrs.join(' ')}>`);
 
@@ -330,6 +335,7 @@ const generateAlternateEnclosureXml = (enclosure: AlternateEnclosure, level: num
     const written = op3Guid !== null && /^https?:\/\//i.test(uri) ? applyOp3Prefix(uri, op3Guid) : uri;
     const sourceAttrs: string[] = [`uri="${escapeXml(written)}"`];
     if (source.contentType) sourceAttrs.push(`contentType="${escapeXml(source.contentType)}"`);
+    sourceAttrs.push(...unknownAttributesXml(source.unknownAttributes));
     lines.push(`${indent(level + 1)}<podcast:source ${sourceAttrs.join(' ')} />`);
   }
 

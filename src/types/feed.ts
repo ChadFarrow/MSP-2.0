@@ -78,6 +78,8 @@ export interface RemoteItem {
 export interface AlternateEnclosureSource {
   uri: string;
   contentType?: string;
+  // Attributes MSP has no field for, carried through from import unchanged.
+  unknownAttributes?: Record<string, string>;
 }
 
 export interface AlternateEnclosure {
@@ -92,6 +94,8 @@ export interface AlternateEnclosure {
   codecs?: string;                 // RFC 6381
   default?: boolean;
   sources: AlternateEnclosureSource[];
+  // Attributes MSP has no field for, carried through from import unchanged.
+  unknownAttributes?: Record<string, string>;
   // Editor only, never written to XML: the user picked the type, so a URL edit
   // no longer sets it from the extension. Kept on the version, not in the
   // component, so it survives collapsing the track and a reload.

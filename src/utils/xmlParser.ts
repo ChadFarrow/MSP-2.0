@@ -556,15 +556,31 @@ function parseValueBlock(node: unknown): ValueBlock {
   };
 }
 
+// Attributes of an alternate version or source that MSP has no field for. They
+// ride on the model and are written back, as unknown children are: once the
+// element is modelled, nothing on it reaches the item passthrough.
+function captureUnknownAttributes(node: object, known: ReadonlySet<string>): Record<string, string> | undefined {
+  const unknown: Record<string, string> = {};
+  for (const [key, value] of Object.entries(node)) {
+    if (key.startsWith('@_') && !known.has(key.slice(2))) unknown[key.slice(2)] = String(value);
+  }
+  return Object.keys(unknown).length > 0 ? unknown : undefined;
+}
+
+const ALTERNATE_SOURCE_ATTRIBUTES = new Set(['uri', 'contentType']);
+const ALTERNATE_ENCLOSURE_ATTRIBUTES = new Set(['type', 'length', 'bitrate', 'height', 'lang', 'title', 'rel', 'codecs', 'default']);
+
 // Parse alternate enclosure source (podcast:source)
 function parseAlternateEnclosureSource(node: unknown): AlternateEnclosureSource | null {
-  if (!node) return null;
+  if (!node || typeof node !== 'object') return null;
   const uri = getAttr(node, 'uri');
   if (!uri) return null;
 
+  const unknownAttributes = captureUnknownAttributes(node, ALTERNATE_SOURCE_ATTRIBUTES);
   return {
     uri,
-    contentType: getAttr(node, 'contentType') || undefined
+    contentType: getAttr(node, 'contentType') || undefined,
+    ...(unknownAttributes ? { unknownAttributes } : {})
   };
 }
 
@@ -597,6 +613,7 @@ function parseAlternateEnclosure(node: unknown): AlternateEnclosure | null {
   // MSP has no field for them, and reading them into a model dropped a second
   // integrity element and rewrote an unknown integrity type as "sri".
   const unknownElements = captureUnknownElements(enclosureNode, ALTERNATE_ENCLOSURE_KNOWN_KEYS);
+  const unknownAttributes = captureUnknownAttributes(enclosureNode, ALTERNATE_ENCLOSURE_ATTRIBUTES);
 
   return {
     id: crypto.randomUUID(),
@@ -608,8 +625,9 @@ function parseAlternateEnclosure(node: unknown): AlternateEnclosure | null {
     title: getAttr(node, 'title') || undefined,
     rel: getAttr(node, 'rel') || undefined,
     codecs: getAttr(node, 'codecs') || undefined,
-    default: getAttr(node, 'default') === 'true',
+    default: getAttr(node, 'default').trim().toLowerCase() === 'true',
     sources,
+    ...(unknownAttributes ? { unknownAttributes } : {}),
     ...(unknownElements ? { unknownElements } : {})
   };
 }

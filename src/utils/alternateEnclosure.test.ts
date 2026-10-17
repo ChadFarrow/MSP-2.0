@@ -95,6 +95,24 @@ describe('podcast:alternateEnclosure', () => {
     expect(xml).toContain('<podcast:future note="1" />');
   });
 
+  it('keeps attributes it has no field for, on the version and on each source', () => {
+    const xml = generateRssFeed(parseRssFeed(feedWithItem(`
+      <podcast:alternateEnclosure type="audio/flac" x-vendor="a &amp; b">
+        <podcast:source uri="https://example.com/1.flac" data-cdn="eu" />
+        <podcast:source uri="ipfs://bafymirror" data-pin="yes" />
+      </podcast:alternateEnclosure>`)));
+    expect(xml).toContain('<podcast:alternateEnclosure type="audio/flac" x-vendor="a &amp; b">');
+    expect(xml).toContain('<podcast:source uri="https://example.com/1.flac" data-cdn="eu" />');
+    expect(xml).toContain('<podcast:source uri="ipfs://bafymirror" data-pin="yes" />');
+  });
+
+  it('reads default in any letter case', () => {
+    const encs = parseRssFeed(feedWithItem(`
+      <podcast:alternateEnclosure type="audio/flac" default="TRUE"><podcast:source uri="https://example.com/1.flac" /></podcast:alternateEnclosure>
+      <podcast:alternateEnclosure type="audio/opus" default="false"><podcast:source uri="https://example.com/1.opus" /></podcast:alternateEnclosure>`)).tracks[0].alternateEnclosures!;
+    expect(encs.map(e => e.default)).toEqual([true, false]);
+  });
+
   it('declares the namespace of a carried-through child', () => {
     const source = feedWithItem(`
       <podcast:alternateEnclosure type="audio/flac">

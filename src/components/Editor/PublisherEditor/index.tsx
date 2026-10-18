@@ -9,10 +9,13 @@ import { DownloadCatalogSection } from './DownloadCatalogSection';
 import { PublishSection } from './PublishSection';
 import { shouldShowPublishSection } from '../../../utils/publisherPublish';
 import { FeedCheckPanel } from '../../FeedCheckPanel';
+import { useLinkBackStatus } from './useLinkBackStatus';
 
 export function PublisherEditor() {
   const { state, dispatch } = useFeed();
   const { publisherFeed, publisherFeedInstance } = state;
+  // Before the early return below: hooks must run on every render.
+  const linkBack = useLinkBackStatus(publisherFeed, publisherFeedInstance);
 
   if (!publisherFeed) {
     return (
@@ -37,11 +40,11 @@ export function PublisherEditor() {
         <FeedCheckPanel />
         <PublisherInfoSection publisherFeed={publisherFeed} dispatch={dispatch} />
         <PublisherArtworkSection publisherFeed={publisherFeed} dispatch={dispatch} />
-        <CatalogFeedsSection publisherFeed={publisherFeed} dispatch={dispatch} />
+        <CatalogFeedsSection publisherFeed={publisherFeed} dispatch={dispatch} linkBack={linkBack} />
         <PublisherValueSection publisherFeed={publisherFeed} dispatch={dispatch} />
         <PublisherFundingSection publisherFeed={publisherFeed} dispatch={dispatch} />
         <PublisherFeedReminderSection publisherFeed={publisherFeed} feedInstance={publisherFeedInstance} />
-        <DownloadCatalogSection publisherFeed={publisherFeed} feedInstance={publisherFeedInstance} />
+        <DownloadCatalogSection publisherFeed={publisherFeed} feedInstance={publisherFeedInstance} linkBack={linkBack} />
         {showPublishSection && <PublishSection publisherFeed={publisherFeed} />}
       </div>
     </div>

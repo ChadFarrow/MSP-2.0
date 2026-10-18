@@ -6,14 +6,17 @@ import { generateRssFeed, downloadXml } from '../../../utils/xmlGenerator';
 import { getHostedFeedInfo, buildHostedUrl } from '../../../utils/hostedFeed';
 import { getFeedUrlError, normalizeFeedUrl } from '../../../utils/urlValidation';
 import { verifyFeedUrl, isGuardRefusal, FORCED_SUBMIT_NOTE } from '../../../utils/verifyFeedUrl';
+import { getPlatformHost, linkBackMessage, platformWarning } from '../../../utils/publisherControl';
+import type { LinkBackState } from './useLinkBackStatus';
 
 interface DownloadCatalogSectionProps {
   publisherFeed: PublisherFeed;
   /** Store-level counter, bumped whenever a different publisher feed is loaded. */
   feedInstance: number;
+  linkBack: LinkBackState;
 }
 
-export function DownloadCatalogSection({ publisherFeed, feedInstance }: DownloadCatalogSectionProps) {
+export function DownloadCatalogSection({ publisherFeed, feedInstance, linkBack }: DownloadCatalogSectionProps) {
   const [downloadingIndex, setDownloadingIndex] = useState<number | null>(null);
   const [downloadingAll, setDownloadingAll] = useState(false);
   const [publisherFeedUrl, setPublisherFeedUrl] = useState('');
@@ -401,6 +404,16 @@ export function DownloadCatalogSection({ publisherFeed, feedInstance }: Download
                 <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                   {item.feedGuid}
                 </div>
+                {(() => {
+                  // A copy of these would be no use (platform) or would take the
+                  // album from the publisher it names now (other), so say so here.
+                  const platform = getPlatformHost(item.feedUrl);
+                  const status = platform ? undefined : linkBack.statusFor(item);
+                  const text = platform
+                    ? platformWarning(platform)
+                    : status && status !== 'checking' && status.status === 'other' ? linkBackMessage(status, false) : null;
+                  return text && <div style={{ fontSize: '12px', color: 'var(--warning)', marginTop: '4px' }}>⚠ {text}</div>;
+                })()}
               </div>
               <button
                 className="btn btn-secondary"

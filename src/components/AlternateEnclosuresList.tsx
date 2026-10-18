@@ -2,7 +2,8 @@ import { useRef } from 'react';
 import type { AlternateEnclosure } from '../types/feed';
 import { createEmptyAlternateEnclosure } from '../types/feed';
 import { AUDIO_EXTENSION_LIST, AUDIO_FILE_TYPES, isKnownAudioFormat } from '../utils/audioUtils';
-import { createSizeMeasurer, typeChange, urlChange } from '../utils/alternateEnclosure';
+import { createSizeMeasurer, isVideoType, typeChange, urlChange } from '../utils/alternateEnclosure';
+import { matchVideoExtension, VIDEO_EXTENSION_LIST, VIDEO_FILE_TYPES } from '../utils/videoUtils';
 import { FIELD_INFO } from '../data/fieldInfo';
 import { InfoIcon } from './InfoIcon';
 
@@ -18,6 +19,7 @@ interface AlternateEnclosuresListProps {
 
 // The spec caps title at 32 characters.
 const TITLE_MAX_LEN = 32;
+const KNOWN_TYPES = [...AUDIO_FILE_TYPES, ...VIDEO_FILE_TYPES];
 
 /**
  * Editor for a track's <podcast:alternateEnclosure> list: a title, file type,
@@ -53,7 +55,7 @@ export function AlternateEnclosuresList({ enclosures, onChange, onMeasured }: Al
       <div className="repeatable-list">
         {enclosures.map((enc, index) => {
           const url = enc.sources[0]?.uri || '';
-          const isVideoVersion = enc.type.startsWith('video/');
+          const isVideoVersion = isVideoType(enc.type);
           return (
             <div key={enc.id} className="repeatable-item">
               <div className="repeatable-item-content">
@@ -63,7 +65,7 @@ export function AlternateEnclosuresList({ enclosures, onChange, onMeasured }: Al
                     <input
                       type="text"
                       className="form-input"
-                      placeholder="e.g., Lossless"
+                      placeholder="e.g., Lossless or Music Video"
                       maxLength={TITLE_MAX_LEN}
                       value={enc.title || ''}
                       onChange={e => update(enc.id, { title: e.target.value || undefined })}
@@ -77,12 +79,20 @@ export function AlternateEnclosuresList({ enclosures, onChange, onMeasured }: Al
                       value={enc.type}
                       onChange={e => update(enc.id, typeChange(enc, e.target.value))}
                     >
-                      {AUDIO_FILE_TYPES.map(t => (
-                        <option key={t.value} value={t.value}>{t.label}</option>
-                      ))}
-                      {/* An imported feed may carry any type (a video version, an
-                          unusual MIME). Show it rather than snapping to MP3. */}
-                      {!AUDIO_FILE_TYPES.some(t => t.value === enc.type) && (
+                      <optgroup label="Audio">
+                        {AUDIO_FILE_TYPES.map(t => (
+                          <option key={t.value} value={t.value}>{t.label}</option>
+                        ))}
+                      </optgroup>
+                      {/* A music video of the song */}
+                      <optgroup label="Video">
+                        {VIDEO_FILE_TYPES.map(t => (
+                          <option key={t.value} value={t.value}>{t.label}</option>
+                        ))}
+                      </optgroup>
+                      {/* An imported feed may carry any type (a streaming playlist,
+                          an unusual MIME). Show it rather than snapping to MP3. */}
+                      {!KNOWN_TYPES.some(t => t.value === enc.type) && (
                         <option value={enc.type}>{enc.type}</option>
                       )}
                     </select>
@@ -107,7 +117,7 @@ export function AlternateEnclosuresList({ enclosures, onChange, onMeasured }: Al
                     type="url"
                     className="form-input"
                     aria-label={`Alternate version ${index + 1} URL`}
-                    placeholder="https://example.com/track.flac"
+                    placeholder={isVideoVersion ? 'https://example.com/music-video.mp4' : 'https://example.com/track.flac'}
                     value={url}
                     onChange={e => update(enc.id, urlChange(enc, e.target.value))}
                     onPaste={e => {
@@ -121,9 +131,9 @@ export function AlternateEnclosuresList({ enclosures, onChange, onMeasured }: Al
                     }}
                     onBlur={e => { if (!enc.length) measure(enc.id, e.target.value); }}
                   />
-                  {!isVideoVersion && url.trim() && !isKnownAudioFormat(url) && (
+                  {url.trim() && !isKnownAudioFormat(url) && !matchVideoExtension(url) && (
                     <div style={{ color: 'var(--warning, #b8860b)', fontSize: '0.85em', marginTop: '4px' }}>
-                      URL doesn't end with a recognized audio extension ({AUDIO_EXTENSION_LIST}). Podcast apps may not play it.
+                      URL doesn't end with a recognized audio extension ({AUDIO_EXTENSION_LIST}) or video extension ({VIDEO_EXTENSION_LIST}). Podcast apps may not play it.
                     </div>
                   )}
                   {enc.sources.length > 1 && (
@@ -133,11 +143,13 @@ export function AlternateEnclosuresList({ enclosures, onChange, onMeasured }: Al
                   )}
                   {url.trim() && (
                     isVideoVersion ? (
+                      // preload="none": a URL being typed must not fetch the
+                      // file on every keystroke. The height is read on paste/blur.
                       <video
                         key={url}
                         src={url}
                         controls
-                        preload="metadata"
+                        preload="none"
                         style={{ width: '100%', marginTop: '8px', maxHeight: '300px' }}
                         onError={e => { (e.target as HTMLVideoElement).style.display = 'none'; }}
                       />

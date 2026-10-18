@@ -337,6 +337,20 @@ describe('urlChange', () => {
     expect(urlChange(version({ type: 'audio/mp4', typeSetByHand: true }), 'https://example.com/1.m4a')).not.toHaveProperty('type');
   });
 
+  it('sets a video type from a video extension, so a version can be a music video', () => {
+    expect(urlChange(version(), 'https://example.com/video.mp4').type).toBe('video/mp4');
+    expect(urlChange(version(), 'https://example.com/video.webm?dl=1').type).toBe('video/webm');
+    // only the extension the URL ends with counts
+    expect(urlChange(version(), 'https://example.com/a.mov/song.flac').type).toBe('audio/flac');
+  });
+
+  it('a type picked by hand drops the height unless it is a video type', () => {
+    const video = version({ type: 'video/mp4', height: '1080' });
+    expect(typeChange(video, 'audio/flac')).toMatchObject({ type: 'audio/flac', height: undefined });
+    expect(typeChange(video, 'audio/flac')).toHaveProperty('height');
+    expect(typeChange(video, 'video/webm')).not.toHaveProperty('height');
+  });
+
   it('a type picked by hand drops codecs from another type', () => {
     expect(typeChange(version({ codecs: 'mp4a.40.2' }), 'audio/flac')).toEqual({ type: 'audio/flac', typeSetByHand: true, codecs: undefined });
     expect(typeChange(version({ codecs: 'mp4a.40.2' }), 'audio/mpeg')).toEqual({ type: 'audio/mpeg', typeSetByHand: true });

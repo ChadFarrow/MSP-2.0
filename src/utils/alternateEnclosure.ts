@@ -3,7 +3,7 @@
 import type { Album, AlternateEnclosure, AlternateEnclosureFile } from '../types/feed';
 import { isVideoMedium } from '../types/feed';
 import { detectMediaSize, getAudioMimeType, isKnownAudioFormat } from './audioUtils';
-import { getVideoMimeType, isVideoUrl } from './videoUtils';
+import { matchVideoExtension } from './videoUtils';
 
 /**
  * True when the editor shows Alternate Versions for this feed: album tracks
@@ -89,8 +89,9 @@ export function urlChange(enc: AlternateEnclosure, url: string): Partial<Alterna
     originalFile: original
   };
   if (url.trim() && !enc.typeSetByHand) {
-    if (isKnownAudioFormat(url)) patch.type = getAudioMimeType(url);
-    else if (enc.type.startsWith('video/') && isVideoUrl(url)) patch.type = getVideoMimeType(url);
+    // An audio or a video extension: a version can be a music video.
+    const type = isKnownAudioFormat(url) ? getAudioMimeType(url) : matchVideoExtension(url);
+    if (type) patch.type = type;
   }
   return patch;
 }
@@ -98,10 +99,20 @@ export function urlChange(enc: AlternateEnclosure, url: string): Partial<Alterna
 /**
  * What changes when the user picks a type in the File Type list. It sticks: a
  * later URL edit no longer sets the type. Codecs (RFC 6381) belong to a type,
- * so they go when the type changes.
+ * so they go when the type changes, and a height only describes a video.
  */
 export function typeChange(enc: AlternateEnclosure, type: string): Partial<AlternateEnclosure> {
-  return { type, typeSetByHand: true, ...(type !== enc.type ? { codecs: undefined } : {}) };
+  return {
+    type,
+    typeSetByHand: true,
+    ...(type !== enc.type ? { codecs: undefined } : {}),
+    ...(isVideoType(type) ? {} : { height: undefined })
+  };
+}
+
+/** True for a video MIME type: the version is a video (a music video). */
+export function isVideoType(type: string): boolean {
+  return type.startsWith('video/');
 }
 
 /**

@@ -18,6 +18,7 @@ import {
 import { hasSigner } from './nostrSigner';
 import { fetchFeedFromUrl, parseRssFeed } from './xmlParser';
 import { generateRssFeed } from './xmlGenerator';
+import { isMspHosted, extractFeedIdFromUrl } from './publisherControl';
 
 // Types for publish flow
 export type PublishStep = 'idle' | 'hosting-catalog' | 'hosting' | 'notifying' | 'updating-catalog' | 'complete' | 'error';
@@ -59,23 +60,6 @@ export interface PublishOptions {
   nostrPubkey?: string;
   onProgress: (progress: PublishProgress) => void;
 }
-
-// Helper to check if a feed URL is MSP-hosted
-const isMspHosted = (url: string): boolean => {
-  if (!url) return false;
-  return (
-    url.includes('/api/hosted/') ||
-    url.includes('musicsideproject.com') ||
-    url.includes('msp.podtards.com') ||
-    url.includes('msp-2-0')
-  );
-};
-
-// Helper to extract feedId from MSP hosted URL
-const extractFeedIdFromUrl = (url: string): string | null => {
-  const match = url.match(/\/api\/hosted\/([a-zA-Z0-9-]+)(?:\.xml)?/);
-  return match ? match[1] : null;
-};
 
 // Helper to check if an error is a CORS or network error
 const isCorsOrNetworkError = (errMsg: string): boolean => {

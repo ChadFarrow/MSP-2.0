@@ -73,6 +73,16 @@ describe('regenerateAlbumGuids', () => {
     expect(src.unknownChannelElements['podcast:txt']).toBeDefined();
   });
 
+  it('starts the new feed Listed, whatever the source asked for', () => {
+    const src = sourceAlbum();
+    src.itunesBlock = true;
+    src.podcastBlock = true;
+    src.serviceBlocks = [{ id: 'spotify', value: 'yes' }];
+    const out = regenerateAlbumGuids(src);
+    expect(out).toMatchObject({ itunesBlock: false, podcastBlock: false, serviceBlocks: [] });
+    expect(src.itunesBlock).toBe(true);
+  });
+
   it('returns undefined when only identity passthrough was there', () => {
     expect(withoutIdentityPassthrough({ 'podcast:txt': { '#text': 'x' } })).toBeUndefined();
     expect(withoutIdentityPassthrough(undefined)).toBeUndefined();

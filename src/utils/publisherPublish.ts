@@ -11,11 +11,14 @@ import {
   createHostedFeedWithNostr,
   updateHostedFeed,
   updateHostedFeedWithNostr,
+  updateHostedFeedWithEmail,
   buildHostedUrl,
   generateEditToken,
   type HostedFeedInfo
 } from './hostedFeed';
 import { hasSigner } from './nostrSigner';
+import { isEmailLoggedIn } from './emailSession';
+import { isRefusal, type HostedOwner } from './claimHostedFeed';
 import { fetchFeedFromUrl, parseRssFeed } from './xmlParser';
 import { generateRssFeed } from './xmlGenerator';
 import { isMspHosted, extractFeedIdFromUrl, fetchCatalogFeedXml, getPlatformHost, sameGuid } from './publisherControl';
@@ -322,38 +325,50 @@ export async function processCatalogFeed(
     const updatedXml = generateRssFeed(album);
     const feedTitle = album.title || title;
 
-    // Check if MSP-hosted and has credentials
-    if (isMspHosted(feedUrl)) {
-      const feedId = extractFeedIdFromUrl(feedUrl);
-      if (feedId) {
-        const hostedInfo = getHostedFeedInfo(album.podcastGuid);
-        if (hostedInfo && hostedInfo.feedId === feedId) {
-          // Check if we can use Nostr auth
-          const isNostrLinked = hostedInfo.ownerPubkey && hasSigner();
+    const feedId = extractFeedIdFromUrl(feedUrl);
+    if (feedId) {
+      const hostedInfo = getHostedFeedInfo(album.podcastGuid);
+      const record = hostedInfo && hostedInfo.feedId === feedId ? hostedInfo : null;
+      let updated = false;
 
-          if (isNostrLinked) {
-            await updateHostedFeedWithNostr(feedId, updatedXml, feedTitle);
-          } else if (hostedInfo.editToken) {
-            await updateHostedFeed(feedId, hostedInfo.editToken, updatedXml, feedTitle);
-          } else {
-            // No valid auth method
-            return {
-              title: feedTitle,
-              feedGuid: item.feedGuid,
-              status: 'skipped',
-              message: 'No credentials'
-            };
+      if (record?.ownerPubkey && hasSigner()) {
+        await updateHostedFeedWithNostr(feedId, updatedXml, feedTitle);
+        updated = true;
+      } else if (record?.editToken) {
+        await updateHostedFeed(feedId, record.editToken, updatedXml, feedTitle);
+        updated = true;
+      } else {
+        // No usable record. That record lives in one site address's localStorage,
+        // so an album saved on another address (or in another browser) arrives here
+        // with none — but the server accepts its Nostr or email owner without one.
+        const owners: HostedOwner[] = [
+          ...(hasSigner() ? ['nostr' as const] : []),
+          ...(isEmailLoggedIn() ? ['email' as const] : [])
+        ];
+        for (const owner of owners) {
+          try {
+            if (owner === 'nostr') await updateHostedFeedWithNostr(feedId, updatedXml, feedTitle);
+            else await updateHostedFeedWithEmail(feedId, updatedXml, feedTitle);
+            updated = true;
+            break;
+          } catch (ownerErr) {
+            if (!isRefusal(ownerErr)) throw ownerErr;
           }
-
-          // Notify PI in background (don't wait)
-          notifyPodcastIndex(feedUrl, album.medium).catch(err => console.warn('PI notification failed:', err));
-          return {
-            title: feedTitle,
-            feedGuid: item.feedGuid,
-            status: 'updated',
-            message: 'Updated on MSP'
-          };
         }
+        if (!updated && owners.length > 0) {
+          return { title: feedTitle, feedGuid: item.feedGuid, status: 'skipped', message: 'Not owned by your signed-in account' };
+        }
+      }
+
+      if (updated) {
+        // Notify PI in background (don't wait)
+        notifyPodcastIndex(feedUrl, album.medium).catch(err => console.warn('PI notification failed:', err));
+        return {
+          title: feedTitle,
+          feedGuid: item.feedGuid,
+          status: 'updated',
+          message: 'Updated on MSP'
+        };
       }
     }
 

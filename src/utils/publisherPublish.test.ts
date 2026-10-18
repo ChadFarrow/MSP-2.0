@@ -2,11 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { RemoteItem } from '../types/feed';
 
 vi.mock('./nostrSigner', () => ({ hasSigner: vi.fn(() => false) }));
+vi.mock('./emailSession', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./emailSession')>()),
+  isEmailLoggedIn: vi.fn(() => false),
+}));
 vi.mock('./hostedFeed', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./hostedFeed')>()),
   getHostedFeedInfo: vi.fn(() => null),
   updateHostedFeed: vi.fn(async () => ({})),
   updateHostedFeedWithNostr: vi.fn(async () => ({})),
+  updateHostedFeedWithEmail: vi.fn(async () => ({})),
 }));
 vi.mock('./publisherControl', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./publisherControl')>()),
@@ -15,7 +20,15 @@ vi.mock('./publisherControl', async (importOriginal) => ({
 
 import { processCatalogFeed, shouldShowPublishSection } from './publisherPublish';
 import { fetchCatalogFeedXml } from './publisherControl';
-import { getHostedFeedInfo, updateHostedFeed, updateHostedFeedWithNostr } from './hostedFeed';
+import {
+  HostedFeedError,
+  getHostedFeedInfo,
+  updateHostedFeed,
+  updateHostedFeedWithEmail,
+  updateHostedFeedWithNostr
+} from './hostedFeed';
+import { hasSigner } from './nostrSigner';
+import { isEmailLoggedIn } from './emailSession';
 
 const PUBLISHER = 'e3e2e758-6c83-41e3-87f2-d3c64d3011f8';
 const PUBLISHER_URL = `https://musicsideproject.com/api/hosted/${PUBLISHER}.xml`;
@@ -39,6 +52,11 @@ const item = (feedUrl: string, feedGuid = ALBUM): RemoteItem => ({ feedGuid, fee
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(getHostedFeedInfo).mockReturnValue(null);
+  vi.mocked(hasSigner).mockReturnValue(false);
+  vi.mocked(isEmailLoggedIn).mockReturnValue(false);
+  vi.mocked(updateHostedFeedWithNostr).mockResolvedValue({} as never);
+  vi.mocked(updateHostedFeedWithEmail).mockResolvedValue({} as never);
   // processCatalogFeed fires a background /api/pubnotify after an update.
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, json: async () => ({}), text: async () => '' })));
 });
@@ -95,5 +113,62 @@ describe('processCatalogFeed', () => {
     expect(feedId).toBe(ALBUM);
     expect(token).toBe('t');
     expect(xml).toContain(`feedGuid="${PUBLISHER}"`);
+  });
+});
+
+// A browser record is per site address, so publishing from a different address
+// (or a different browser) has none. The server accepts the signed-in owner.
+describe('processCatalogFeed without a browser record', () => {
+  beforeEach(() => {
+    vi.mocked(fetchCatalogFeedXml).mockResolvedValue(albumXml());
+  });
+
+  it('updates an MSP album with no record as the Nostr owner', async () => {
+    vi.mocked(hasSigner).mockReturnValue(true);
+    const result = await processCatalogFeed(item(MSP_URL), PUBLISHER, PUBLISHER_URL);
+    expect(result.status).toBe('updated');
+    expect(vi.mocked(updateHostedFeedWithNostr).mock.calls[0][0]).toBe(ALBUM);
+  });
+
+  it('falls back to the email owner when Nostr is refused', async () => {
+    vi.mocked(hasSigner).mockReturnValue(true);
+    vi.mocked(isEmailLoggedIn).mockReturnValue(true);
+    vi.mocked(updateHostedFeedWithNostr).mockRejectedValue(new HostedFeedError('Invalid credentials', 403));
+    const result = await processCatalogFeed(item(MSP_URL), PUBLISHER, PUBLISHER_URL);
+    expect(result.status).toBe('updated');
+    expect(vi.mocked(updateHostedFeedWithEmail).mock.calls[0][0]).toBe(ALBUM);
+  });
+
+  it("skips an album the signed-in account doesn't own", async () => {
+    vi.mocked(hasSigner).mockReturnValue(true);
+    vi.mocked(isEmailLoggedIn).mockReturnValue(true);
+    vi.mocked(updateHostedFeedWithNostr).mockRejectedValue(new HostedFeedError('Invalid credentials', 403));
+    vi.mocked(updateHostedFeedWithEmail).mockRejectedValue(new HostedFeedError('Invalid credentials', 403));
+    const result = await processCatalogFeed(item(MSP_URL), PUBLISHER, PUBLISHER_URL);
+    expect(result.status).toBe('skipped');
+    expect(result.message).toBe('Not owned by your signed-in account');
+  });
+
+  it('keeps "No credentials" when nobody is signed in', async () => {
+    const result = await processCatalogFeed(item(MSP_URL), PUBLISHER, PUBLISHER_URL);
+    expect(result.status).toBe('skipped');
+    expect(result.message).toBe('No credentials');
+    expect(updateHostedFeedWithNostr).not.toHaveBeenCalled();
+    expect(updateHostedFeedWithEmail).not.toHaveBeenCalled();
+  });
+
+  it('reports a non-refusal failure as an error', async () => {
+    vi.mocked(hasSigner).mockReturnValue(true);
+    vi.mocked(updateHostedFeedWithNostr).mockRejectedValue(new HostedFeedError('Server error', 500));
+    const result = await processCatalogFeed(item(MSP_URL), PUBLISHER, PUBLISHER_URL);
+    expect(result.status).toBe('error');
+  });
+
+  it('uses the owner when the record has no usable credential', async () => {
+    vi.mocked(getHostedFeedInfo).mockReturnValue({ feedId: ALBUM, editToken: '', createdAt: 0, lastUpdated: 0 });
+    vi.mocked(hasSigner).mockReturnValue(true);
+    const result = await processCatalogFeed(item(MSP_URL), PUBLISHER, PUBLISHER_URL);
+    expect(result.status).toBe('updated');
+    expect(updateHostedFeedWithNostr).toHaveBeenCalledTimes(1);
   });
 });

@@ -11,6 +11,7 @@ import type { Album, FeedType, PublisherFeed, Track } from '../types/feed';
 import { getValueRecipientErrors } from './valueValidation';
 import { hhmmssToSeconds } from './audioUtils';
 import { trackOrderIssue } from './trackOrder';
+import { getPlatformHost } from './publisherControl';
 import { collectLinkTargets, summarizeLinks, type LinkResult, type LinkSummary, type LinkTarget } from './linkCheck';
 
 export type IssueLevel = 'must' | 'should' | 'outdated';
@@ -42,6 +43,7 @@ export type IssueCode =
   | 'transcript-type'
   | 'channel-link-missing'
   | 'track-order'
+  | 'publisher-item-platform'
   // Should fix — link check
   | 'link-broken'
   | 'artwork-not-square'
@@ -225,6 +227,17 @@ export function getShouldFixIssues(feed: FeedSnapshot): FeedIssue[] {
       should('channel-link-missing', 'feed', 'Website is empty. RSS 2.0 requires a channel <link>, so validators report the feed as invalid without one.');
     }
     issues.push(...urlIssues(publisher.imageUrl, 'Publisher artwork URL', 'artwork'));
+    // One item for all of them: RemoteItem has no stable id, so per-album items
+    // couldn't follow a reorder. Each row in Catalog Feeds carries the detail.
+    const onPlatform = publisher.remoteItems.filter(item => getPlatformHost(item.feedUrl));
+    if (onPlatform.length > 0) {
+      const titles = onPlatform.map(item => item.title || item.feedUrl);
+      const named = titles.length > 3 ? `${titles.slice(0, 3).join(', ')} and ${titles.length - 3} more` : titles.join(', ');
+      const count = onPlatform.length === 1 ? '1 catalog album is' : `${onPlatform.length} catalog albums are`;
+      should('publisher-item-platform', 'catalog',
+        `${count} hosted on Wavlake or Fountain (${named}). You can't edit those feeds, so they can't reliably point back to this publisher feed. ` +
+        "Each one's row in Catalog Feeds says how to move it; keep its GUID when you do.");
+    }
     return issues;
   }
 

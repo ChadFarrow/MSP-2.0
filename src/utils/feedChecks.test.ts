@@ -273,6 +273,46 @@ describe('getShouldFixIssues', () => {
     const should = getShouldFixIssues(feed);
     expect(should).toEqual([]);
   });
+
+  describe('catalog albums on Wavlake or Fountain', () => {
+    const remote = (title: string, feedUrl: string) => ({ feedGuid: `${title}-guid`, feedUrl, title, medium: 'music' });
+    const MSP = remote('On MSP', 'https://musicsideproject.com/api/hosted/27735a10-3775-503d-b038-70b4b7d536ab.xml');
+    const SELF = remote('Self-hosted', 'https://headstarts.uk/msp/longy/Lady/Lady-You-Shot-Me.xml');
+
+    it('flags Wavlake and Fountain catalog albums in one item', () => {
+      const publisher = {
+        ...goodPublisher(),
+        remoteItems: [
+          remote('iMerica', 'https://wavlake.com/feed/music/ac9d7848-0cd0-4f3e-bc51-37d76ecc79cf'),
+          remote('Potential', 'https://www.wavlake.com/feed/139015e5-9123-48bd-9b5b-0a085915d8ac'),
+          remote('NMNU', 'https://feeds.fountain.fm/WmsWR5Ohttd6cuxfRdHt'),
+          MSP,
+          SELF
+        ]
+      };
+      const issues = getShouldFixIssues(publisherFeedSnapshot(publisher)).filter(i => i.code === 'publisher-item-platform');
+      expect(issues).toHaveLength(1);
+      expect(issues[0].area).toBe('catalog');
+      expect(issues[0].level).toBe('should');
+      expect(issues[0].message).toContain('3 catalog albums');
+      for (const title of ['iMerica', 'Potential', 'NMNU']) expect(issues[0].message).toContain(title);
+    });
+
+    it('lists at most three titles', () => {
+      const titles = 'ABCDEFGHIJK'.split('');
+      const publisher = {
+        ...goodPublisher(),
+        remoteItems: titles.map(t => remote(t, `https://wavlake.com/feed/music/${t}`))
+      };
+      const [issue] = getShouldFixIssues(publisherFeedSnapshot(publisher)).filter(i => i.code === 'publisher-item-platform');
+      expect(issue.message).toContain('A, B, C and 8 more');
+    });
+
+    it('does not flag MSP or self-hosted albums', () => {
+      const publisher = { ...goodPublisher(), remoteItems: [MSP, SELF] };
+      expect(codes(getShouldFixIssues(publisherFeedSnapshot(publisher)))).not.toContain('publisher-item-platform');
+    });
+  });
 });
 
 describe('issueLocationLabel', () => {

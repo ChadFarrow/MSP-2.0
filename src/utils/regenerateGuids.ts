@@ -1,4 +1,5 @@
 import type { Album } from '../types/feed';
+import { listingFlags } from './listing';
 
 /**
  * Drop the passthrough elements that claim a feed's identity: every
@@ -34,7 +35,9 @@ export function withoutIdentityPassthrough(
  * inherits another feed's track identities. Reusing a track's `<guid>` across two
  * different feeds makes podcast apps and Podcast Index treat unrelated tracks as
  * the same episode (the bug that produced the Live at Rockpile / Amnesia collision).
- * The source's identity passthrough (verification txt tags, self link) goes too.
+ * The source's identity passthrough (verification txt tags, self link) goes too,
+ * and so does its listing: a new feed starts Listed, or a template made from a
+ * delisted album would be hidden from every directory before anyone noticed.
  *
  * Does not mutate the input. Publisher feeds are handled separately — their
  * `remoteItems` reference real external feeds, so only the feed GUID is renewed.
@@ -43,6 +46,7 @@ export function regenerateAlbumGuids(album: Album): Album {
   return {
     ...album,
     podcastGuid: crypto.randomUUID(),
+    ...listingFlags('listed'),
     unknownChannelElements: withoutIdentityPassthrough(album.unknownChannelElements),
     tracks: album.tracks.map((track) => ({ ...track, guid: crypto.randomUUID() })),
   };

@@ -31,7 +31,8 @@ function isAlreadyExists(err: unknown): boolean {
   return err instanceof Error && err.message.includes('already exists');
 }
 
-function isRefusal(err: unknown): boolean {
+/** A 401/403: this identity doesn't own the feed. Exported for the publish step's album updates. */
+export function isRefusal(err: unknown): boolean {
   const status = statusOf(err);
   return status === 401 || status === 403;
 }

@@ -74,6 +74,13 @@ export interface RemoteItem {
   rel?: string;
 }
 
+// A <podcast:block id="..."> that addresses one named service. Kept verbatim:
+// value is the element text as imported ("yes", "no").
+export interface ServiceBlock {
+  id: string;
+  value: string;
+}
+
 // Podcasting 2.0 additional images (<podcast:image>). These are EXTRA images
 // (banner/canvas/social/etc.) — the primary cover stays in imageUrl/trackArtUrl.
 export interface PodcastImage {
@@ -137,10 +144,12 @@ export interface BaseChannelData {
   subcategories?: Record<string, string[]>;
   keywords: string;
   explicit: boolean;
-  // <itunes:block>Yes</itunes:block> and a plain <podcast:block>yes</podcast:block>.
-  // See utils/listing.ts. Optional so feeds saved before these existed still load.
+  // <itunes:block>Yes</itunes:block>, a plain <podcast:block>yes</podcast:block>, and
+  // every <podcast:block id="..."> that names one service. See utils/listing.ts.
+  // Optional so feeds saved before these existed still load.
   itunesBlock?: boolean;
   podcastBlock?: boolean;
+  serviceBlocks?: ServiceBlock[];
   ownerName: string;
   ownerEmail: string;
   imageUrl: string;
@@ -217,10 +226,12 @@ export interface Album {
   subcategories?: Record<string, string[]>;
   keywords: string;
   explicit: boolean;
-  // <itunes:block>Yes</itunes:block> and a plain <podcast:block>yes</podcast:block>.
-  // See utils/listing.ts. Optional so feeds saved before these existed still load.
+  // <itunes:block>Yes</itunes:block>, a plain <podcast:block>yes</podcast:block>, and
+  // every <podcast:block id="..."> that names one service. See utils/listing.ts.
+  // Optional so feeds saved before these existed still load.
   itunesBlock?: boolean;
   podcastBlock?: boolean;
+  serviceBlocks?: ServiceBlock[];
   ownerName: string;
   ownerEmail: string;
 
@@ -281,10 +292,12 @@ export interface PublisherFeed {
   subcategories?: Record<string, string[]>;
   keywords: string;
   explicit: boolean;
-  // <itunes:block>Yes</itunes:block> and a plain <podcast:block>yes</podcast:block>.
-  // See utils/listing.ts. Optional so feeds saved before these existed still load.
+  // <itunes:block>Yes</itunes:block>, a plain <podcast:block>yes</podcast:block>, and
+  // every <podcast:block id="..."> that names one service. See utils/listing.ts.
+  // Optional so feeds saved before these existed still load.
   itunesBlock?: boolean;
   podcastBlock?: boolean;
+  serviceBlocks?: ServiceBlock[];
   ownerName: string;
   ownerEmail: string;
 
@@ -451,6 +464,9 @@ export const createEmptyAlbum = (): Album => ({
   categories: [],
   keywords: '',
   explicit: false,
+  itunesBlock: false,
+  podcastBlock: false,
+  serviceBlocks: [],
   ownerName: '',
   ownerEmail: '',
   imageUrl: '',
@@ -491,6 +507,9 @@ export const createEmptyVideoAlbum = (): Album => ({
   categories: [],
   keywords: '',
   explicit: false,
+  itunesBlock: false,
+  podcastBlock: false,
+  serviceBlocks: [],
   ownerName: '',
   ownerEmail: '',
   imageUrl: '',
@@ -565,6 +584,9 @@ export const createEmptyPublisherFeed = (): PublisherFeed => ({
   categories: [],
   keywords: '',
   explicit: false,
+  itunesBlock: false,
+  podcastBlock: false,
+  serviceBlocks: [],
   ownerName: '',
   ownerEmail: '',
   imageUrl: '',

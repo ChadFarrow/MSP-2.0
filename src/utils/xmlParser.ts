@@ -1,6 +1,6 @@
 // MSP 2.0 - XML Parser for importing Demu RSS Feeds
 import { XMLParser } from 'fast-xml-parser';
-import type { Album, Track, Person, PersonGroup, ValueRecipient, ValueBlock, Funding, PublisherFeed, RemoteItem, PublisherReference, BaseChannelData, PodcastImage } from '../types/feed';
+import type { Album, Track, Person, PersonGroup, ValueRecipient, ValueBlock, Funding, PublisherFeed, RemoteItem, PublisherReference, BaseChannelData, PodcastImage, ServiceBlock } from '../types/feed';
 import { createEmptyTrack, LEGACY_MSP_NODE_PUBKEY, MSP_SUPPORT_RECIPIENT, DEFAULT_TRANSCRIPT_TYPE } from '../types/feed';
 import { areValueBlocksStrictEqual, arePersonsEqual } from './comparison';
 import { detectAddressType } from './addressUtils';
@@ -36,7 +36,10 @@ const KNOWN_CHANNEL_KEYS = new Set([
   'itunes:category',
   'itunes:keywords',
   'itunes:explicit',
+  // Both block tags are modelled in full (parseBlockTags), the service-named
+  // podcast:block entries included, so none of them may also pass through.
   'itunes:block',
+  'podcast:block',
   'itunes:owner',
   'itunes:image',
   'podcast:guid',
@@ -238,9 +241,7 @@ export const parseRssFeed = (xmlString: string): Album => {
   }
 
   // Capture unknown channel elements
-  album.unknownChannelElements = keepNamedPodcastBlocks(
-    captureUnknownElements(channel, ALBUM_CHANNEL_KEYS)
-  );
+  album.unknownChannelElements = captureUnknownElements(channel, ALBUM_CHANNEL_KEYS);
 
   // Keep only the podroll entries in the passthrough. Any publisher-medium one
   // was consumed into album.publisher just above, and the generator writes that
@@ -575,10 +576,8 @@ function parseCommonChannelElements(channel: Record<string, unknown>): Omit<Base
   // Explicit
   const explicit = parseExplicit(channel['itunes:explicit']);
 
-  // Block tags (utils/listing.ts). itunes:block is in KNOWN_CHANNEL_KEYS. A plain
-  // podcast:block is removed from the passthrough by keepNamedPodcastBlocks().
-  const itunesBlock = isItunesBlock(channel['itunes:block']);
-  const podcastBlock = isPlainPodcastBlock(channel['podcast:block']);
+  // Block tags (utils/listing.ts)
+  const { itunesBlock, podcastBlock, serviceBlocks } = parseBlockTags(channel);
 
   // Owner
   const owner = channel['itunes:owner'];
@@ -637,6 +636,7 @@ function parseCommonChannelElements(channel: Record<string, unknown>): Omit<Base
     explicit,
     itunesBlock,
     podcastBlock,
+    serviceBlocks,
     ownerName,
     ownerEmail,
     imageUrl,
@@ -652,39 +652,32 @@ function parseCommonChannelElements(channel: Record<string, unknown>): Omit<Base
   };
 }
 
-// Apple honours only "Yes" (any case); every other value means "not blocked".
-// Reading the other values as false and writing nothing for them changes the
-// file but not what any directory does with it.
-function isItunesBlock(node: unknown): boolean {
-  return (getText(node) || '').trim().toLowerCase() === 'yes';
-}
-
-const asArray = (node: unknown): unknown[] =>
-  node === undefined || node === null ? [] : Array.isArray(node) ? node : [node];
-
-// A plain <podcast:block> (no id) addresses every service, and is modelled as
-// podcastBlock. "yes" in any case is a block; anything else is not.
-function isPlainPodcastBlock(node: unknown): boolean {
-  return asArray(node).some(
-    block => !getAttr(block, 'id') && getText(block).trim().toLowerCase() === 'yes'
-  );
-}
-
-// podcast:block can repeat, one per service. The plain entries are modelled
-// (podcastBlock) and written by the generator, so they must leave the
-// passthrough or they come out twice. Blocks that name a service stay, untouched.
-function keepNamedPodcastBlocks(
-  unknown: Record<string, unknown> | undefined
-): Record<string, unknown> | undefined {
-  if (!unknown?.['podcast:block']) return unknown;
-  const named = asArray(unknown['podcast:block']).filter(block => getAttr(block, 'id'));
-  const next = { ...unknown };
-  if (named.length === 0) {
-    delete next['podcast:block'];
-  } else {
-    next['podcast:block'] = named.length === 1 ? named[0] : named;
-  }
-  return Object.keys(next).length > 0 ? next : undefined;
+// Read both block tags in full. Apple honours only "Yes" (any case) and every
+// other value means "not blocked", so the plain tags are read as yes-or-nothing:
+// dropping a "No" changes the file but not what any directory does with it.
+// - itunesBlock: any <itunes:block> saying yes. A repeated tag arrives as an
+//   array, and getText reads an array as '' — so a direct read lost the block.
+// - podcastBlock: any <podcast:block> with no id saying yes.
+// - serviceBlocks: every <podcast:block> that names a service, verbatim. The
+//   Listing control shows these as Custom and replaces them when a choice is
+//   picked; until then they are written back as they came in.
+function parseBlockTags(channel: Record<string, unknown>): {
+  itunesBlock: boolean;
+  podcastBlock: boolean;
+  serviceBlocks: ServiceBlock[];
+} {
+  const says = (node: unknown) => getText(node).trim().toLowerCase() === 'yes';
+  const itunesNode = channel['itunes:block'];
+  const itunesArray: unknown[] = itunesNode ? (Array.isArray(itunesNode) ? itunesNode : [itunesNode]) : [];
+  const blockNode = channel['podcast:block'];
+  const blockArray: unknown[] = blockNode ? (Array.isArray(blockNode) ? blockNode : [blockNode]) : [];
+  return {
+    itunesBlock: itunesArray.some(says),
+    podcastBlock: blockArray.some(block => !getAttr(block, 'id') && says(block)),
+    serviceBlocks: blockArray
+      .filter(block => getAttr(block, 'id'))
+      .map(block => ({ id: getAttr(block, 'id'), value: getText(block).trim() })),
+  };
 }
 
 // Parse remote item (for publisher feeds and podroll)
@@ -1015,7 +1008,7 @@ export const parsePublisherRssFeed = (xmlString: string): PublisherFeed => {
   const feed: PublisherFeed = {
     ...common,
     medium: 'publisher',
-    unknownChannelElements: keepNamedPodcastBlocks(captureUnknownElements(channel, KNOWN_CHANNEL_KEYS)),
+    unknownChannelElements: captureUnknownElements(channel, KNOWN_CHANNEL_KEYS),
     remoteItems: []
   };
 

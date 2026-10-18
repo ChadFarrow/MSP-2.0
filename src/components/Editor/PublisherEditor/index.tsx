@@ -7,7 +7,7 @@ import { PublisherFundingSection } from './PublisherFundingSection';
 import { PublisherFeedReminderSection } from './PublisherFeedReminderSection';
 import { DownloadCatalogSection } from './DownloadCatalogSection';
 import { PublishSection } from './PublishSection';
-import { getCatalogFeedsStatus } from '../../../utils/publisherPublish';
+import { shouldShowPublishSection } from '../../../utils/publisherPublish';
 import { FeedCheckPanel } from '../../FeedCheckPanel';
 
 export function PublisherEditor() {
@@ -26,9 +26,10 @@ export function PublisherEditor() {
     );
   }
 
-  // Only show PublishSection if there are catalog feeds and all are MSP-hosted
-  const catalogStatus = getCatalogFeedsStatus(publisherFeed.remoteItems);
-  const allFeedsHosted = catalogStatus.items.length > 0 && catalogStatus.items.every(item => item.isHosted);
+  // Show PublishSection whenever the catalog has an MSP-hosted album: it writes the
+  // link back into those, and skips the rest. It used to need every album on MSP,
+  // so one Wavlake or self-hosted album hid it and no MSP album got its link.
+  const showPublishSection = shouldShowPublishSection(publisherFeed.remoteItems);
 
   return (
     <div className="main-content">
@@ -41,7 +42,7 @@ export function PublisherEditor() {
         <PublisherFundingSection publisherFeed={publisherFeed} dispatch={dispatch} />
         <PublisherFeedReminderSection publisherFeed={publisherFeed} feedInstance={publisherFeedInstance} />
         <DownloadCatalogSection publisherFeed={publisherFeed} feedInstance={publisherFeedInstance} />
-        {allFeedsHosted && <PublishSection publisherFeed={publisherFeed} />}
+        {showPublishSection && <PublishSection publisherFeed={publisherFeed} />}
       </div>
     </div>
   );

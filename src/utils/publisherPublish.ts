@@ -18,7 +18,7 @@ import {
 import { hasSigner } from './nostrSigner';
 import { fetchFeedFromUrl, parseRssFeed } from './xmlParser';
 import { generateRssFeed } from './xmlGenerator';
-import { isMspHosted, extractFeedIdFromUrl } from './publisherControl';
+import { isMspHosted, extractFeedIdFromUrl, fetchCatalogFeedXml, getPlatformHost, sameGuid } from './publisherControl';
 
 // Types for publish flow
 export type PublishStep = 'idle' | 'hosting-catalog' | 'hosting' | 'notifying' | 'updating-catalog' | 'complete' | 'error';
@@ -259,7 +259,7 @@ async function hostCatalogFeed(
 }
 
 // Process a single catalog feed to add publisher reference
-async function processCatalogFeed(
+export async function processCatalogFeed(
   item: RemoteItem,
   publisherGuid: string,
   publisherFeedUrl: string
@@ -276,10 +276,36 @@ async function processCatalogFeed(
     };
   }
 
+  // Only MSP-hosted albums can be written from here, so don't spend a fetch (and,
+  // for a self-hosted album, an /api/proxy-feed request) on any other.
+  const platform = getPlatformHost(feedUrl);
+  if (platform) {
+    return { title, feedGuid: item.feedGuid, status: 'skipped', message: `Hosted on ${platform.name}: can't be updated` };
+  }
+  if (!isMspHosted(feedUrl)) {
+    return {
+      title,
+      feedGuid: item.feedGuid,
+      status: 'skipped',
+      message: 'Not on MSP: upload the new version from Download Catalog to your host'
+    };
+  }
+
   try {
     // Fetch and parse the feed
-    const xml = await fetchFeedFromUrl(feedUrl);
+    const xml = await fetchCatalogFeedXml(feedUrl);
     const album = parseRssFeed(xml);
+
+    // An album names one publisher. If it already names another, it is someone
+    // else's claim, and overwriting it here would take the album from them.
+    if (album.publisher?.feedGuid?.trim() && !sameGuid(album.publisher.feedGuid, publisherGuid)) {
+      return {
+        title: album.title || title,
+        feedGuid: item.feedGuid,
+        status: 'skipped',
+        message: 'Names a different publisher feed: left unchanged'
+      };
+    }
 
     // Add/update publisher reference
     // rel mirrors this album's entry in the publisher feed, so both sides agree.
@@ -629,6 +655,14 @@ export function getPublishStatus(podcastGuid: string): {
     feedUrl: null,
     hostedInfo: null
   };
+}
+
+/**
+ * The Publish section writes the link back into MSP albums, so it shows whenever
+ * the catalog has one, even beside albums it can't write (it skips those).
+ */
+export function shouldShowPublishSection(remoteItems: RemoteItem[]): boolean {
+  return remoteItems.some(item => isMspHosted(item.feedUrl || ''));
 }
 
 /**

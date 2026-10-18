@@ -3,7 +3,7 @@ import { parseRssFeed, migrateStoredAlternateEnclosures } from './xmlParser';
 import { albumStorage, videoStorage } from './storage';
 import { generateRssFeed } from './xmlGenerator';
 import { regenerateAlbumGuids } from './regenerateGuids';
-import { urlChange, typeChange, createSizeMeasurer } from './alternateEnclosure';
+import { urlChange, typeChange, createMeasurer } from './alternateEnclosure';
 import { createEmptyAlbum, createEmptyTrack } from '../types/feed';
 import type { AlternateEnclosure, Track } from '../types/feed';
 
@@ -362,14 +362,15 @@ describe('urlChange', () => {
   });
 });
 
-describe('createSizeMeasurer', () => {
-  // A HEAD request the test answers by hand. Whether the size still belongs to
-  // the version when it lands is the reducer's call (SET_ALTERNATE_ENCLOSURE_LENGTH).
+describe('createMeasurer', () => {
+  // A lookup (a HEAD request for the size, the video's metadata for the height)
+  // the test answers by hand. Whether the value still belongs to the version
+  // when it lands is the reducer's call (SET_ALTERNATE_ENCLOSURE_MEASURED).
   function setup() {
     const writes: [string, string, string][] = [];
     const requests: { url: string; answer: (size: number | null) => void }[] = [];
-    const measure = createSizeMeasurer({
-      write: (id, url, length) => writes.push([id, url, length]),
+    const measure = createMeasurer({
+      write: (id, url, value) => writes.push([id, url, value]),
       detect: url => new Promise(resolve => requests.push({ url, answer: resolve }))
     });
     return { writes, requests, measure };

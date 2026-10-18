@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { getVideoMimeType, isVideoUrl, matchVideoExtension, VIDEO_FILE_TYPES, VIDEO_EXTENSION_LIST } from './videoUtils';
+import { describe, it, expect, vi } from 'vitest';
+import { detectVideoHeight, getVideoMimeType, isVideoUrl, matchVideoExtension, VIDEO_FILE_TYPES, VIDEO_EXTENSION_LIST } from './videoUtils';
 
 describe('getVideoMimeType and isVideoUrl', () => {
   // The main video-feed paths use these; the table must not change them.
@@ -43,6 +43,51 @@ describe('VIDEO_FILE_TYPES', () => {
     expect(VIDEO_EXTENSION_LIST).toBe('mp4, m4v, webm, mov, avi, mkv');
     for (const ext of VIDEO_EXTENSION_LIST.split(', ')) {
       expect(isVideoUrl(`https://example.com/a.${ext}`)).toBe(true);
+    }
+  });
+});
+
+describe('detectVideoHeight', () => {
+  const VIDEO_URL = 'https://example.com/video.mp4';
+  // A stand-in for <video>: the test fires its events by hand.
+  const fakeVideo = () => ({
+    preload: '', src: '', videoHeight: 0,
+    onloadedmetadata: null as null | (() => void),
+    onerror: null as null | (() => void)
+  });
+  const detect = (el: ReturnType<typeof fakeVideo>, timeoutMs?: number) =>
+    detectVideoHeight(VIDEO_URL, { create: () => el as unknown as HTMLVideoElement, timeoutMs });
+
+  it('reads the height once the metadata loads, then lets go of the file', async () => {
+    const el = fakeVideo();
+    const done = detect(el);
+    expect(el.preload).toBe('metadata');
+    expect(el.src).toBe(VIDEO_URL);
+    el.videoHeight = 1080;
+    el.onloadedmetadata!();
+    await expect(done).resolves.toBe(1080);
+    expect(el.src).toBe('');
+  });
+
+  it('is null when the file fails to load or has no picture', async () => {
+    const broken = fakeVideo();
+    const failed = detect(broken);
+    broken.onerror!();
+    await expect(failed).resolves.toBeNull();
+    const audioOnly = fakeVideo();
+    const noPicture = detect(audioOnly);
+    audioOnly.onloadedmetadata!();
+    await expect(noPicture).resolves.toBeNull();
+  });
+
+  it('is null when the metadata takes too long', async () => {
+    vi.useFakeTimers();
+    try {
+      const done = detect(fakeVideo(), 50);
+      vi.advanceTimersByTime(50);
+      await expect(done).resolves.toBeNull();
+    } finally {
+      vi.useRealTimers();
     }
   });
 });

@@ -2,7 +2,7 @@
 // Kept out of AlternateEnclosuresList so they run under unit tests in node.
 import type { Album, AlternateEnclosure, AlternateEnclosureFile } from '../types/feed';
 import { isVideoMedium } from '../types/feed';
-import { detectMediaSize, getAudioMimeType, isKnownAudioFormat } from './audioUtils';
+import { getAudioMimeType, isKnownAudioFormat } from './audioUtils';
 import { matchVideoExtension } from './videoUtils';
 
 /**
@@ -115,19 +115,23 @@ export function isVideoType(type: string): boolean {
   return type.startsWith('video/');
 }
 
+/** A value MSP measures for a version from its file: the size, or a video's height. */
+export type MeasuredField = 'length' | 'height';
+
 /**
- * Returns `measure(id, url)`, which reads a version's file size from the host
- * and reports it with `write(id, url, length)`. The HEAD request can take ~10 s,
- * and by then the user may have edited the list, moved the track or closed it,
- * so `write` must not go through anything a render closed over: the editor
- * dispatches SET_ALTERNATE_ENCLOSURE_LENGTH, which finds the track and the
- * version by id and applies withMeasuredLength().
+ * Returns `measure(id, url)`, which reads one value from a version's file with
+ * `detect` (detectMediaSize for the size, detectVideoHeight for the height) and
+ * reports it with `write(id, url, value)`. The lookup can take ~10 s, and by
+ * then the user may have edited the list, moved the track or closed it, so
+ * `write` must not go through anything a render closed over: the editor
+ * dispatches SET_ALTERNATE_ENCLOSURE_MEASURED, which finds the track and the
+ * version by id and applies withMeasured().
  */
-export function createSizeMeasurer(options: {
-  write: (id: string, url: string, length: string) => void;
-  detect?: (url: string) => Promise<number | null>;
+export function createMeasurer(options: {
+  write: (id: string, url: string, value: string) => void;
+  detect: (url: string) => Promise<number | null>;
 }): (id: string, url: string) => Promise<void> {
-  const { write, detect = detectMediaSize } = options;
+  const { write, detect } = options;
   // Paste then blur asks twice for the same URL; send one request.
   const inFlight = new Set<string>();
 
@@ -138,8 +142,8 @@ export function createSizeMeasurer(options: {
     if (inFlight.has(key)) return;
     inFlight.add(key);
     try {
-      const size = await detect(url);
-      if (size !== null) write(id, url, String(size));
+      const value = await detect(url);
+      if (value !== null) write(id, url, String(value));
     } finally {
       inFlight.delete(key);
     }
@@ -147,17 +151,18 @@ export function createSizeMeasurer(options: {
 }
 
 /**
- * The list with a measured size written to version `id`, or null when it no
+ * The list with a measured `field` written to version `id`, or null when it no
  * longer belongs there: the version went, its URL is no longer `url`, or the
- * user typed a size meanwhile.
+ * user typed that field meanwhile.
  */
-export function withMeasuredLength(
+export function withMeasured(
   enclosures: AlternateEnclosure[],
   id: string,
   url: string,
-  length: string
+  field: MeasuredField,
+  value: string
 ): AlternateEnclosure[] | null {
   const enc = enclosures.find(e => e.id === id);
-  if (!enc || enc.length || enc.sources[0]?.uri.trim() !== url.trim()) return null;
-  return enclosures.map(e => (e.id === id ? { ...e, length } : e));
+  if (!enc || enc[field] || enc.sources[0]?.uri.trim() !== url.trim()) return null;
+  return enclosures.map(e => (e.id === id ? { ...e, [field]: value } : e));
 }

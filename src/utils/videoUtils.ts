@@ -34,6 +34,37 @@ export function getVideoDuration(url: string): Promise<number | null> {
   });
 }
 
+/**
+ * Read a video's height in pixels from its metadata, without CORS: a media
+ * element exposes its dimensions for any origin, unlike a HEAD request's
+ * Content-Length. Never rejects; null when the file fails to load, has no
+ * picture, or takes longer than `timeoutMs`. `create` is for tests.
+ */
+export function detectVideoHeight(
+  url: string,
+  { timeoutMs = 10000, create = () => document.createElement('video') }: { timeoutMs?: number; create?: () => HTMLVideoElement } = {}
+): Promise<number | null> {
+  return new Promise((resolve) => {
+    let resolved = false;
+    const video = create();
+    video.preload = 'metadata';
+
+    const done = (height: number | null) => {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(timer);
+      video.src = '';
+      resolve(height);
+    };
+
+    video.onloadedmetadata = () => done(video.videoHeight > 0 ? video.videoHeight : null);
+    video.onerror = () => done(null);
+    const timer = setTimeout(() => done(null), timeoutMs);
+
+    video.src = url;
+  });
+}
+
 const VIDEO_MIME_BY_EXTENSION: ReadonlyArray<readonly [string, string]> = [
   ['.mp4', 'video/mp4'],
   ['.m4v', 'video/x-m4v'],

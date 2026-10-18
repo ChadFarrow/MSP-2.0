@@ -94,12 +94,18 @@ export function classifyLinkBack(xml: string, publisherGuid: string): LinkBackRe
  * Fetch a catalog album's XML. MSP-hosted albums are read from this site's own
  * /api/hosted path: the canonical URL would go through /api/proxy-feed, which
  * allows 60 requests an hour per IP and is needed for the self-hosted ones.
+ *
+ * `no-store` because that path is served `public, max-age=300` and the editor
+ * reads every MSP album on open: a cached copy made a publish regenerate an
+ * album from its pre-edit XML. (The blob CDN behind it can still be up to 60 s
+ * stale after a write — see CLAUDE.md — so post-publish status comes from the
+ * publish results, not from re-reading.)
  */
 export async function fetchCatalogFeedXml(feedUrl: string): Promise<string> {
   const feedId = isMspHosted(feedUrl) ? extractFeedIdFromUrl(feedUrl) : null;
   if (!feedId) return fetchFeedFromUrl(feedUrl);
 
-  const response = await fetch(`/api/hosted/${feedId}.xml`);
+  const response = await fetch(`/api/hosted/${feedId}.xml`, { cache: 'no-store' });
   if (!response.ok) throw new Error(`Hosted feed not found (HTTP ${response.status})`);
   return response.text();
 }

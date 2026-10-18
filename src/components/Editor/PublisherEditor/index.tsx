@@ -45,7 +45,7 @@ export function PublisherEditor() {
         <PublisherFundingSection publisherFeed={publisherFeed} dispatch={dispatch} />
         <PublisherFeedReminderSection publisherFeed={publisherFeed} feedInstance={publisherFeedInstance} />
         <DownloadCatalogSection publisherFeed={publisherFeed} feedInstance={publisherFeedInstance} linkBack={linkBack} />
-        {showPublishSection && <PublishSection publisherFeed={publisherFeed} />}
+        {showPublishSection && <PublishSection publisherFeed={publisherFeed} linkBack={linkBack} />}
       </div>
     </div>
   );

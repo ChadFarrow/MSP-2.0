@@ -137,6 +137,17 @@ describe('fetchCatalogFeedXml', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('/api/hosted/27735a10-3775-503d-b038-70b4b7d536ab.xml');
   });
 
+  it('bypasses the browser cache', async () => {
+    // /api/hosted/{id}.xml is served `public, max-age=300`, and the editor reads
+    // every MSP album on open — so without this, a publish within five minutes
+    // regenerated an album from the pre-edit copy and the post-publish check
+    // reported the old status.
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => album('') });
+    vi.stubGlobal('fetch', fetchMock);
+    await fetchCatalogFeedXml('https://musicsideproject.com/api/hosted/27735a10-3775-503d-b038-70b4b7d536ab.xml');
+    expect(fetchMock.mock.calls[0][1]).toEqual({ cache: 'no-store' });
+  });
+
   it('throws when the hosted feed is missing', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404, text: async () => '' }));
     await expect(fetchCatalogFeedXml('https://musicsideproject.com/api/hosted/abc.xml')).rejects.toThrow();

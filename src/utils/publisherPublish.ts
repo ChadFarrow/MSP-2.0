@@ -16,7 +16,7 @@ import {
   generateEditToken,
   type HostedFeedInfo
 } from './hostedFeed';
-import { hasSigner } from './nostrSigner';
+import { checkSignerConnection, hasSigner } from './nostrSigner';
 import { isEmailLoggedIn } from './emailSession';
 import { isRefusal, type HostedOwner } from './claimHostedFeed';
 import { fetchFeedFromUrl, parseRssFeed } from './xmlParser';
@@ -434,6 +434,16 @@ export async function publishPublisherFeed(
     return { success: false, error: 'Publisher feed must have a GUID' };
   }
 
+  // Pre-flight, as every signing handler does (CLAUDE.md): this flow can sign the
+  // publisher feed and then once per MSP album, and a dead NIP-46 signer would
+  // otherwise cost the full timeout on each of them.
+  if (hasSigner()) {
+    const health = await checkSignerConnection();
+    if (!health.connected) {
+      return { success: false, error: health.error ?? 'Nostr signer is not connected.' };
+    }
+  }
+
   // Make a mutable copy of the publisher feed to update URLs
   const updatedPublisherFeed: PublisherFeed = {
     ...publisherFeed,
@@ -670,6 +680,36 @@ export function getPublishStatus(podcastGuid: string): {
     feedUrl: null,
     hostedInfo: null
   };
+}
+
+/**
+ * The albums a publish just linked. Status after a publish comes from here, not
+ * from re-reading the albums: the blob CDN can serve the pre-publish XML for up
+ * to 60 s after the write.
+ */
+export function linkedAfterPublish(results: FeedUpdateResult[], items: RemoteItem[]): RemoteItem[] {
+  const updated = new Set(results.filter(r => r.status === 'updated').map(r => r.feedGuid));
+  return items.filter(item => updated.has(item.feedGuid));
+}
+
+/** "2 updated, 1 failed, 21 skipped". A run that updated nothing is never just "Complete". */
+export function summarizeCatalogUpdates(results: FeedUpdateResult[]): string {
+  const count = (status: FeedUpdateResult['status']) => results.filter(r => r.status === status).length;
+  const parts: string[] = [];
+  if (count('updated') > 0) parts.push(`${count('updated')} updated`);
+  if (count('downloaded') > 0) parts.push(`${count('downloaded')} downloaded`);
+  if (count('error') > 0) parts.push(`${count('error')} failed`);
+  if (count('skipped') > 0) parts.push(`${count('skipped')} skipped`);
+  return parts.join(', ') || 'Complete';
+}
+
+/**
+ * A skipped album is normal now that mixed catalogs publish (a self-hosted album
+ * is the artist's to upload), so it must not look like a failure.
+ */
+export function catalogResultTone(status: FeedUpdateResult['status']): 'ok' | 'neutral' | 'error' {
+  if (status === 'updated' || status === 'downloaded') return 'ok';
+  return status === 'skipped' ? 'neutral' : 'error';
 }
 
 /**

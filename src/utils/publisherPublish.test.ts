@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { RemoteItem } from '../types/feed';
 
-vi.mock('./nostrSigner', () => ({ hasSigner: vi.fn(() => false) }));
+vi.mock('./nostrSigner', () => ({
+  hasSigner: vi.fn(() => false),
+  checkSignerConnection: vi.fn(async () => ({ connected: true })),
+}));
 vi.mock('./emailSession', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./emailSession')>()),
   isEmailLoggedIn: vi.fn(() => false),
@@ -18,7 +21,16 @@ vi.mock('./publisherControl', async (importOriginal) => ({
   fetchCatalogFeedXml: vi.fn(),
 }));
 
-import { processCatalogFeed, shouldShowPublishSection } from './publisherPublish';
+import {
+  catalogResultTone,
+  linkedAfterPublish,
+  processCatalogFeed,
+  publishPublisherFeed,
+  shouldShowPublishSection,
+  summarizeCatalogUpdates,
+  type FeedUpdateResult
+} from './publisherPublish';
+import { createEmptyPublisherFeed } from '../types/feed';
 import { fetchCatalogFeedXml } from './publisherControl';
 import {
   HostedFeedError,
@@ -27,7 +39,7 @@ import {
   updateHostedFeedWithEmail,
   updateHostedFeedWithNostr
 } from './hostedFeed';
-import { hasSigner } from './nostrSigner';
+import { checkSignerConnection, hasSigner } from './nostrSigner';
 import { isEmailLoggedIn } from './emailSession';
 
 const PUBLISHER = 'e3e2e758-6c83-41e3-87f2-d3c64d3011f8';
@@ -170,5 +182,46 @@ describe('processCatalogFeed without a browser record', () => {
     const result = await processCatalogFeed(item(MSP_URL), PUBLISHER, PUBLISHER_URL);
     expect(result.status).toBe('updated');
     expect(updateHostedFeedWithNostr).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('after a publish', () => {
+  const result = (feedGuid: string, status: FeedUpdateResult['status']): FeedUpdateResult => ({ title: feedGuid, feedGuid, status });
+
+  it('takes link-back status from the publish results, not from re-reading', () => {
+    // The blob CDN can serve the pre-publish XML for up to 60 s after the write.
+    const items = [item(MSP_URL, 'a'), item(MSP_URL.replace(ALBUM, 'b'), 'b'), item(SELF_URL, 'c')];
+    const linked = linkedAfterPublish([result('a', 'updated'), result('b', 'skipped'), result('c', 'skipped')], items);
+    expect(linked.map(i => i.feedGuid)).toEqual(['a']);
+  });
+
+  it('counts skipped albums in the summary', () => {
+    expect(summarizeCatalogUpdates([result('a', 'updated'), result('b', 'skipped'), result('c', 'skipped')]))
+      .toBe('1 updated, 2 skipped');
+  });
+
+  it('never calls a run that updated nothing "Complete"', () => {
+    expect(summarizeCatalogUpdates([result('a', 'skipped')])).toBe('1 skipped');
+    expect(summarizeCatalogUpdates([result('a', 'error'), result('b', 'skipped')])).toBe('1 failed, 1 skipped');
+  });
+
+  it('shows a skipped album as neutral, not as an error', () => {
+    expect(catalogResultTone('updated')).toBe('ok');
+    expect(catalogResultTone('skipped')).toBe('neutral');
+    expect(catalogResultTone('error')).toBe('error');
+  });
+});
+
+describe('publishPublisherFeed signer pre-flight', () => {
+  it('stops before any request when the Nostr signer is not connected', async () => {
+    vi.mocked(hasSigner).mockReturnValue(true);
+    vi.mocked(checkSignerConnection).mockResolvedValue({ connected: false, error: 'Open your signer app and approve.' });
+    const feed = { ...createEmptyPublisherFeed(), title: 'Strange Love', remoteItems: [item(MSP_URL)] };
+    const result = await publishPublisherFeed(feed, {
+      hostCatalogFeeds: false, updateCatalogFeeds: true, linkNostr: true, nostrPubkey: 'fd2e', onProgress: () => {}
+    });
+    expect(result).toEqual({ success: false, error: 'Open your signer app and approve.' });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(fetchCatalogFeedXml).not.toHaveBeenCalled();
   });
 });

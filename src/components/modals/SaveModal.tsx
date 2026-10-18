@@ -25,6 +25,7 @@ import {
   type HostedFeedInfo,
   type PodcastIndexAddResult
 } from '../../utils/hostedFeed';
+import { createOrClaimHostedFeed, type HostedOwner } from '../../utils/claimHostedFeed';
 import { albumStorage, videoStorage, publisherStorage, pendingHostedStorage } from '../../utils/storage';
 import { getEmailSession, isEmailLoggedIn } from '../../utils/emailSession';
 import { EmailLoginModal } from '../auth/EmailLoginModal';
@@ -729,12 +730,60 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
               throw new Error('No edit token available');
             }
 
-            let hostedResult;
             let newInfo: HostedFeedInfo;
             const shouldLinkNostr = isLoggedIn && nostrState.user?.pubkey;
             const shouldLinkEmail = !shouldLinkNostr && isEmailLoggedIn();
+            // No local record doesn't mean a new feed: the record is per site address,
+            // so a feed saved on another address arrives here and the create 409s.
+            // Then save it as its signed-in owner instead (see claimHostedFeed.ts).
+            const owners: HostedOwner[] = [
+              ...(shouldLinkNostr ? ['nostr' as const] : []),
+              ...(isEmailLoggedIn() ? ['email' as const] : [])
+            ];
+            const outcome = await createOrClaimHostedFeed({
+              create: () => shouldLinkNostr
+                ? createHostedFeedWithNostr(hostedXml, currentFeedTitle, currentFeedGuid, tokenToUse, isDraft)
+                : shouldLinkEmail
+                  ? createHostedFeedWithEmail(hostedXml, currentFeedTitle, currentFeedGuid, tokenToUse, isDraft)
+                  : createHostedFeed(hostedXml, currentFeedTitle, currentFeedGuid, tokenToUse, isDraft),
+              owners,
+              update: (owner) => owner === 'nostr'
+                ? updateHostedFeedWithNostr(currentFeedGuid, hostedXml, currentFeedTitle, isDraft)
+                : updateHostedFeedWithEmail(currentFeedGuid, hostedXml, currentFeedTitle, isDraft)
+            });
+
+            if (outcome.kind === 'claimed') {
+              const updateResult = outcome.result;
+              // No edit token: the pending one was never accepted by the server, and
+              // the owning identity is what authorizes later saves (as after an import
+              // from "My Hosted Feeds").
+              const claimedInfo: HostedFeedInfo = {
+                feedId: currentFeedGuid,
+                editToken: '',
+                createdAt: Date.now(),
+                lastUpdated: Date.now(),
+                isDraft: updateResult.isDraft || undefined,
+                ...(updateResult.podcastIndexId ? { podcastIndexId: updateResult.podcastIndexId } : {}),
+                ...(outcome.owner === 'nostr'
+                  ? { ownerPubkey: nostrState.user!.pubkey, linkedAt: Date.now() }
+                  : { ownerEmailHash: getEmailSession()?.emailHash, emailLinkedAt: Date.now() })
+              };
+              saveHostedFeedInfo(currentFeedGuid, claimedInfo);
+              setHostedInfo(claimedInfo);
+              setHostedUrl(buildHostedUrl(currentFeedGuid));
+              setPendingToken(null);
+              setLegacyHostedInfo(null);
+              recordPublished({
+                isDraft: !!isDraft,
+                podcastIndexId: updateResult.podcastIndexId,
+                addResult: updateResult.addResult
+              });
+              setMessage({ type: 'success', text: isDraft ? 'Feed updated as draft!' : 'Feed updated!' });
+              break;
+            }
+
+            const hostedResult = outcome.result;
             if (shouldLinkNostr) {
-              hostedResult = await createHostedFeedWithNostr(hostedXml, currentFeedTitle, currentFeedGuid, tokenToUse, isDraft);
               newInfo = {
                 feedId: hostedResult.feedId,
                 editToken: tokenToUse,
@@ -745,7 +794,6 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                 ...(hostedResult.isDraft && { isDraft: true })
               };
             } else if (shouldLinkEmail) {
-              hostedResult = await createHostedFeedWithEmail(hostedXml, currentFeedTitle, currentFeedGuid, tokenToUse, isDraft);
               newInfo = {
                 feedId: hostedResult.feedId,
                 editToken: tokenToUse,
@@ -756,7 +804,6 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
                 ...(hostedResult.isDraft && { isDraft: true })
               };
             } else {
-              hostedResult = await createHostedFeed(hostedXml, currentFeedTitle, currentFeedGuid, tokenToUse, isDraft);
               newInfo = {
                 feedId: hostedResult.feedId,
                 editToken: tokenToUse,

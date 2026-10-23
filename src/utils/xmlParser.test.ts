@@ -70,6 +70,12 @@ describe('OP3 prefix detection and stripping', () => {
     expect(album.tracks[0].enclosureUrl).toBe('http://example.com/track1.mp3');
   });
 
+  it('keeps an uppercase scheme after the prefix as it is', () => {
+    const xml = buildRssXml('https://op3.dev/e/HTTP://example.com/track1.mp3');
+
+    expect(parseRssFeed(xml).tracks[0].enclosureUrl).toBe('HTTP://example.com/track1.mp3');
+  });
+
   it('sets op3=false when no OP3 prefix', () => {
     const xml = buildRssXml('https://example.com/track1.mp3');
 

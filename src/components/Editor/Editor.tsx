@@ -5,7 +5,7 @@ import { LANGUAGES, PERSON_GROUPS, PERSON_ROLES, createEmptyPersonRole, createEm
 import type { PersonGroup } from '../../types/feed';
 import { FIELD_INFO } from '../../data/fieldInfo';
 import { detectAddressType } from '../../utils/addressUtils';
-import { getMediaDuration, secondsToHHMMSS, formatDuration, getAudioMimeType, isKnownAudioFormat, resolveMediaSize, hhmmssToSeconds } from '../../utils/audioUtils';
+import { getMediaDuration, secondsToHHMMSS, formatDuration, getAudioMimeType, isKnownAudioFormat, resolveMediaSize, hhmmssToSeconds, AUDIO_EXTENSION_LIST } from '../../utils/audioUtils';
 import { getVideoMimeType } from '../../utils/videoUtils';
 import { isNaddrString, resolveNostrVideo } from '../../utils/nostrVideoConverter';
 import { getFeedUrlError, normalizeFeedUrl } from '../../utils/urlValidation';
@@ -19,6 +19,8 @@ import { RecipientsList } from '../RecipientsList';
 import { FundingFields } from '../FundingFields';
 import { ArtworkFields } from '../ArtworkFields';
 import { PodcastImagesList } from '../PodcastImagesList';
+import { AlternateEnclosuresList } from '../AlternateEnclosuresList';
+import { editsAlternateVersions } from '../../utils/alternateEnclosure';
 import { FeedCheckPanel } from '../FeedCheckPanel';
 import { PubDateInput } from '../PubDateInput';
 
@@ -983,7 +985,7 @@ export function Editor() {
                       )}
                       {!isVideo && track.enclosureUrl && !isKnownAudioFormat(track.enclosureUrl) && (
                         <div style={{ color: 'var(--warning, #b8860b)', fontSize: '0.85em', marginTop: '4px' }}>
-                          URL doesn't end with a recognized audio extension (mp3, flac, wav, m4a, aac, ogg, opus, aiff). Podcast apps may not play it.
+                          URL doesn't end with a recognized audio extension ({AUDIO_EXTENSION_LIST}). Podcast apps may not play it.
                         </div>
                       )}
                       {track.enclosureUrl && (
@@ -1175,6 +1177,20 @@ export function Editor() {
                         </select>
                       </div>
                     </div>
+                    {/* Audio versions on album tracks first; video feeds come later. */}
+                    {editsAlternateVersions(album) && (
+                      <AlternateEnclosuresList
+                        enclosures={track.alternateEnclosures || []}
+                        onChange={alternateEnclosures => dispatch({
+                          type: 'UPDATE_TRACK',
+                          payload: { index, track: { alternateEnclosures: alternateEnclosures.length > 0 ? alternateEnclosures : undefined } }
+                        })}
+                        onMeasured={(versionId, url, field, value) => dispatch({
+                          type: 'SET_ALTERNATE_ENCLOSURE_MEASURED',
+                          payload: { trackId: track.id, versionId, url, field, value }
+                        })}
+                      />
+                    )}
                     <div className="form-group">
                       <Toggle
                         checked={track.explicit}

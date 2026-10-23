@@ -22,6 +22,7 @@ import { PodcastImagesList } from '../PodcastImagesList';
 import { AlternateEnclosuresList } from '../AlternateEnclosuresList';
 import { editsAlternateVersions } from '../../utils/alternateEnclosure';
 import { FeedCheckPanel } from '../FeedCheckPanel';
+import { PubDateInput } from '../PubDateInput';
 
 // Roles Reference Modal
 function RolesModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
@@ -1032,14 +1033,9 @@ export function Editor() {
                     </div>
                     <div className="form-group">
                       <label className="form-label">Pub Date<InfoIcon text={FIELD_INFO.trackPubDate} /></label>
-                      <input
-                        type="datetime-local"
-                        className="form-input"
-                        value={track.pubDate ? new Date(track.pubDate).toISOString().slice(0, 16) : ''}
-                        onChange={e => dispatch({
-                          type: 'UPDATE_TRACK',
-                          payload: { index, track: { pubDate: new Date(e.target.value).toUTCString() } }
-                        })}
+                      <PubDateInput
+                        value={track.pubDate}
+                        onChange={pubDate => dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { pubDate } } })}
                       />
                     </div>
                     <div className="form-group">

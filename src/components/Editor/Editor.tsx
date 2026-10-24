@@ -1206,6 +1206,21 @@ export function Editor() {
                         labelSuffix={<InfoIcon text={FIELD_INFO.trackExplicit} />}
                       />
                     </div>
+                    {/* Shown when the feed already has a recommendation, so turning the
+                        beta toggle off can never hide one that will be written. */}
+                    {(showBeta || track.pinned) && (
+                      <div className="form-group">
+                        <Toggle
+                          checked={!!track.pinned}
+                          onChange={val => dispatch({
+                            type: 'UPDATE_TRACK',
+                            payload: { index, track: { pinned: val } }
+                          })}
+                          label="Recommended first listen 🧪"
+                          labelSuffix={<InfoIcon text={FIELD_INFO.trackPinned} />}
+                        />
+                      </div>
+                    )}
                     <div className="form-group">
                       <Toggle
                         checked={track.overridePersons}

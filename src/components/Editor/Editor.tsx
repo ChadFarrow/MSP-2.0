@@ -148,13 +148,12 @@ export function Editor() {
   const [piBypassVerify, setPiBypassVerify] = useState(false);
   const publisherFeedUrlError = getFeedUrlError(album.publisher?.feedUrl || '');
 
-  // Auto-lookup publisher feed in Podcast Index when URL changes
-  const lookupPublisherFeed = useCallback(async (feedUrl: string) => {
-    if (!feedUrl) {
-      setPublisherLookup({ loading: false, error: null, feedTitle: null, feedImage: null });
-      return;
-    }
-
+  // Auto-lookup publisher feed in Podcast Index when URL changes. The reply can
+  // land after the user edited the field, so it is dropped once `signal` aborts,
+  // and the GUID is set on the publisher at that URL (SET_PUBLISHER_GUID), never
+  // written over the whole reference: that kept a stale URL and deleted the rel
+  // an imported feed states.
+  const lookupPublisherFeed = useCallback(async (feedUrl: string, signal: AbortSignal) => {
     // Only lookup actual URLs, not search terms
     if (!feedUrl.startsWith('http://') && !feedUrl.startsWith('https://')) {
       setPublisherLookup({ loading: false, error: null, feedTitle: null, feedImage: null });
@@ -164,8 +163,9 @@ export function Editor() {
     setPublisherLookup({ loading: true, error: null, feedTitle: null, feedImage: null });
 
     try {
-      const response = await fetch(`/api/pisearch?q=${encodeURIComponent(feedUrl)}`);
+      const response = await fetch(`/api/pisearch?q=${encodeURIComponent(feedUrl)}`, { signal });
       const data = await response.json();
+      if (signal.aborted) return;
 
       if (!response.ok) {
         setPublisherLookup({ loading: false, error: data.error || 'Feed not found', feedTitle: null, feedImage: null });
@@ -174,20 +174,13 @@ export function Editor() {
 
       const feed = data.feeds?.[0];
       if (feed?.podcastGuid) {
-        dispatch({
-          type: 'UPDATE_ALBUM',
-          payload: {
-            publisher: {
-              feedGuid: feed.podcastGuid,
-              feedUrl: feedUrl
-            }
-          }
-        });
+        dispatch({ type: 'SET_PUBLISHER_GUID', payload: { feedUrl, feedGuid: feed.podcastGuid } });
         setPublisherLookup({ loading: false, error: null, feedTitle: feed.title || null, feedImage: feed.image || null });
       } else {
         setPublisherLookup({ loading: false, error: 'Feed not found in Podcast Index', feedTitle: null, feedImage: null });
       }
     } catch {
+      if (signal.aborted) return;
       setPublisherLookup({ loading: false, error: 'Failed to lookup feed', feedTitle: null, feedImage: null });
     }
   }, [dispatch]);
@@ -200,11 +193,15 @@ export function Editor() {
       return;
     }
 
+    const controller = new AbortController();
     const timer = setTimeout(() => {
-      lookupPublisherFeed(url);
+      lookupPublisherFeed(url, controller.signal);
     }, 500);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [album.publisher?.feedUrl, lookupPublisherFeed]);
 
   // Submit feed to Podcast Index

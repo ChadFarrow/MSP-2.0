@@ -14,7 +14,8 @@
 // of Longy's Wavlake artist page; the URL in those tags still names Wavlake.
 // And "Into the Valueverse 1" names Nathan Abbott's publisher feed, which MSP
 // must never overwrite on another artist's behalf.
-import type { RemoteItem } from '../types/feed';
+import { publisherParties, sameGuid } from './publisherParties';
+import type { Album, RemoteItem } from '../types/feed';
 import { fetchFeedFromUrl, parseRssFeed } from './xmlParser';
 
 export interface PlatformHost {
@@ -56,12 +57,9 @@ export const extractFeedIdFromUrl = (url: string): string | null => {
   return match ? match[1] : null;
 };
 
-/** GUIDs compare trimmed and case-insensitively; two empty GUIDs are not the same feed. */
-export function sameGuid(a: string | undefined, b: string | undefined): boolean {
-  const x = (a ?? '').trim().toLowerCase();
-  const y = (b ?? '').trim().toLowerCase();
-  return x !== '' && x === y;
-}
+// sameGuid lives with the other publisher-identity rules; re-exported for the
+// callers that have always imported it from here.
+export { sameGuid };
 
 export type LinkBackResult =
   | { status: 'linked' }
@@ -73,20 +71,35 @@ export type LinkBackResult =
  * Does this album feed point back to the publisher? Only the GUID is compared:
  * the URL in the tag may be an older address of the same publisher feed, and the
  * one case where the URL is plainly wrong (Wavlake) is refused by host anyway.
+ * Every party counts (utils/publisherParties.ts): an album that names its artist
+ * first and this label second points back to the label too.
  */
 export function classifyLinkBack(xml: string, publisherGuid: string): LinkBackResult {
-  let reference;
+  let album;
   try {
-    reference = parseRssFeed(xml).publisher;
+    album = parseRssFeed(xml);
   } catch {
     return { status: 'unknown' };
   }
-  if (!reference || !reference.feedGuid?.trim()) return { status: 'none' };
-  if (sameGuid(reference.feedGuid, publisherGuid)) return { status: 'linked' };
+  return classifyAlbumLinkBack(album, publisherGuid);
+}
+
+/**
+ * classifyLinkBack for an album already parsed. 'other' is an album that is
+ * another publisher's claim, which the catalog flows leave unchanged.
+ */
+export function classifyAlbumLinkBack(
+  album: Pick<Album, 'publisher' | 'additionalPublishers'>,
+  publisherGuid: string
+): Exclude<LinkBackResult, { status: 'unknown' }> {
+  const parties = publisherParties(album);
+  if (parties.some(party => sameGuid(party.feedGuid, publisherGuid))) return { status: 'linked' };
+  const other = parties.find(party => party.feedGuid?.trim());
+  if (!other) return { status: 'none' };
   return {
     status: 'other',
-    publisherGuid: reference.feedGuid.trim(),
-    ...(reference.feedUrl ? { publisherUrl: reference.feedUrl } : {})
+    publisherGuid: other.feedGuid.trim(),
+    ...(other.feedUrl ? { publisherUrl: other.feedUrl } : {})
   };
 }
 

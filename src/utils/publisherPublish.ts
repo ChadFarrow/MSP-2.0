@@ -4,6 +4,7 @@
 import type { PublisherFeed, RemoteItem } from '../types/feed';
 import { generatePublisherRssFeed } from './xmlGenerator';
 import { normalizeFeedUrl } from './urlValidation';
+import { linkPublisher, publisherParties } from './publisherParties';
 import {
   getHostedFeedInfo,
   saveHostedFeedInfo,
@@ -299,9 +300,11 @@ export async function processCatalogFeed(
     const xml = await fetchCatalogFeedXml(feedUrl);
     const album = parseRssFeed(xml);
 
-    // An album names one publisher. If it already names another, it is someone
-    // else's claim, and overwriting it here would take the album from them.
-    if (album.publisher?.feedGuid?.trim() && !sameGuid(album.publisher.feedGuid, publisherGuid)) {
+    // An album can name several publishers (utils/publisherParties.ts). If it
+    // names others by GUID but not this one, it is someone else's claim, and
+    // overwriting it here would take the album from them.
+    const parties = publisherParties(album);
+    if (parties.some(party => party.feedGuid?.trim()) && !parties.some(party => sameGuid(party.feedGuid, publisherGuid))) {
       return {
         title: album.title || title,
         feedGuid: item.feedGuid,
@@ -310,13 +313,9 @@ export async function processCatalogFeed(
       };
     }
 
-    // Add/update publisher reference
+    // Add/update this publisher's reference, keeping every other publisher.
     // rel mirrors this album's entry in the publisher feed, so both sides agree.
-    album.publisher = {
-      feedGuid: publisherGuid,
-      feedUrl: publisherFeedUrl,
-      rel: item.rel
-    };
+    Object.assign(album, linkPublisher(album, { feedGuid: publisherGuid, feedUrl: publisherFeedUrl, rel: item.rel }));
 
     // Update build date to reflect the modification
     album.lastBuildDate = new Date().toUTCString();

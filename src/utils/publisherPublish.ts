@@ -62,6 +62,9 @@ export interface PublishOptions {
   updateCatalogFeeds: boolean;
   linkNostr: boolean;
   nostrPubkey?: string;
+  // Beta (podcast-namespace PR #793): an album that names another publisher
+  // gets this one added as a further party, instead of being skipped.
+  addParty?: boolean;
   onProgress: (progress: PublishProgress) => void;
 }
 
@@ -266,7 +269,8 @@ async function hostCatalogFeed(
 export async function processCatalogFeed(
   item: RemoteItem,
   publisherGuid: string,
-  publisherFeedUrl: string
+  publisherFeedUrl: string,
+  { addParty = false }: { addParty?: boolean } = {}
 ): Promise<FeedUpdateResult> {
   const feedUrl = item.feedUrl;
   const title = item.title || item.feedGuid;
@@ -302,9 +306,10 @@ export async function processCatalogFeed(
 
     // An album can name several publishers (utils/publisherParties.ts). If it
     // names others by GUID but not this one, it is someone else's claim, and
-    // overwriting it here would take the album from them.
+    // overwriting it here would take the album from them — unless `addParty`
+    // (Beta Features) adds this publisher after the others.
     const parties = publisherParties(album);
-    if (parties.some(party => party.feedGuid?.trim()) && !parties.some(party => sameGuid(party.feedGuid, publisherGuid))) {
+    if (!addParty && parties.some(party => party.feedGuid?.trim()) && !parties.some(party => sameGuid(party.feedGuid, publisherGuid))) {
       return {
         title: album.title || title,
         feedGuid: item.feedGuid,
@@ -426,7 +431,7 @@ export async function publishPublisherFeed(
   publisherFeed: PublisherFeed,
   options: PublishOptions
 ): Promise<PublishResult> {
-  const { hostCatalogFeeds, updateCatalogFeeds, linkNostr, nostrPubkey, onProgress } = options;
+  const { hostCatalogFeeds, updateCatalogFeeds, linkNostr, nostrPubkey, addParty, onProgress } = options;
 
   const podcastGuid = publisherFeed.podcastGuid;
   if (!podcastGuid) {
@@ -636,7 +641,7 @@ export async function publishPublisherFeed(
         }
       });
 
-      const result = await processCatalogFeed(item, podcastGuid, feedUrl);
+      const result = await processCatalogFeed(item, podcastGuid, feedUrl, { addParty });
       catalogUpdateResults.push(result);
     }
   }

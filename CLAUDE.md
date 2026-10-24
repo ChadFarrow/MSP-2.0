@@ -860,6 +860,7 @@ A non-Nostr, password-free way to **own and recover MSP-hosted feeds** (for self
 - Collapsible sections using `Section.tsx`
 - Editor components split between Album (`Editor.tsx`) and Publisher (`PublisherEditor/`)
 - `InfoIcon` component accepts `position` prop (`"right"` default, `"left"` for edge fields)
+- **`.form-input` sets no width**, so an input keeps its default width (about 15rem at the 16px phone font) and a box holding one can't shrink below that. A row that puts something beside a `.form-grid` therefore runs past its card on a phone unless the fields can wrap below it: the catalog feed row's artwork did (inputs ended at x=373 in a 296px card at 320px), fixed in `CatalogFeedsSection.css` with `flex-wrap` and `flex: 1 1 15rem; min-width: 0` on the fields. The `.info-icon-wrapper` overhang a layout check reports at ≤768px is its invisible 12px touch padding, not overflow
 
 ### Modal Footer Convention
 All modal footers place action buttons on the left and the Cancel button on the far right, separated by a `<div style={{ flex: 1 }} />` spacer. Footer wrapper divs need `width: '100%'` so the spacer works inside `.modal-footer`.

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useFeed } from '../../store/feedStore';
 import { useNostr } from '../../store/nostrStore';
+import { useExperimental } from '../../store/experimentalStore';
 import { LANGUAGES, PERSON_GROUPS, PERSON_ROLES, createEmptyPersonRole, createEmptyTrack, isVideoMedium, isCommunitySupport, createSupportRecipients, hasUserRecipients, TRANSCRIPT_TYPES, DEFAULT_TRANSCRIPT_TYPE } from '../../types/feed';
 import type { PersonGroup } from '../../types/feed';
 import { FIELD_INFO } from '../../data/fieldInfo';
@@ -20,7 +21,7 @@ import { FundingFields } from '../FundingFields';
 import { ArtworkFields } from '../ArtworkFields';
 import { PodcastImagesList } from '../PodcastImagesList';
 import { AlternateEnclosuresList } from '../AlternateEnclosuresList';
-import { editsAlternateVersions } from '../../utils/alternateEnclosure';
+import { showsAlternateVersions } from '../../utils/alternateEnclosure';
 import { FeedCheckPanel } from '../FeedCheckPanel';
 import { PubDateInput } from '../PubDateInput';
 
@@ -120,6 +121,7 @@ function Op3StatsLink({ podcastGuid }: { podcastGuid: string }) {
 export function Editor() {
   const { state, dispatch } = useFeed();
   const { state: nostrState } = useNostr();
+  const { showExperimental } = useExperimental();
   // Get the active album based on feedType (album or videoFeed)
   const album = state.feedType === 'video' && state.videoFeed ? state.videoFeed : state.album;
 
@@ -1177,9 +1179,11 @@ export function Editor() {
                         </select>
                       </div>
                     </div>
-                    {/* Audio versions on album tracks first; video feeds come later. */}
-                    {editsAlternateVersions(album) && (
+                    {/* Audio versions on album tracks first; video feeds come later.
+                        Adding is experimental; versions a track already has always show. */}
+                    {showsAlternateVersions(album, track, showExperimental) && (
                       <AlternateEnclosuresList
+                        canAdd={showExperimental}
                         enclosures={track.alternateEnclosures || []}
                         onChange={alternateEnclosures => dispatch({
                           type: 'UPDATE_TRACK',

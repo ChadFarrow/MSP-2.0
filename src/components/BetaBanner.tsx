@@ -3,7 +3,7 @@ import './BetaBanner.css';
 
 // Every feature behind showBeta, in editor order. Gate a new feature on showBeta
 // and it belongs here too, or the banner tells the user less than is switched on.
-// The names match the field labels, which carry the 🧪 marker in the editor.
+// The names match the field labels, which carry a <BetaTag /> in the editor.
 const BETA_FEATURES = [
   {
     name: 'Alternate Versions',
@@ -19,8 +19,8 @@ const BETA_FEATURES = [
 
 /**
  * Shown under the header while beta features are on, so the user can see that
- * they are and which ones — the only other sign is the 🧪 on the fields
- * themselves, scattered through collapsed track rows.
+ * they are and which ones without first finding a highlighted field — those are
+ * scattered through collapsed track rows.
  */
 export function BetaBanner() {
   const { showBeta, toggleBeta } = useExperimental();
@@ -31,7 +31,7 @@ export function BetaBanner() {
       <div className="beta-banner-body">
         <p className="beta-banner-title">
           <strong>🧪 Beta features are on.</strong>{' '}
-          <span className="beta-banner-hint">Look for 🧪 in the editor:</span>
+          <span className="beta-banner-hint">Look for the 🧪 BETA tag in the editor:</span>
         </p>
         <ul className="beta-banner-list">
           {BETA_FEATURES.map(feature => (

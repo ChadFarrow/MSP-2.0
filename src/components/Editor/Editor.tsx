@@ -12,6 +12,7 @@ import { isNaddrString, resolveNostrVideo } from '../../utils/nostrVideoConverte
 import { getFeedUrlError, normalizeFeedUrl } from '../../utils/urlValidation';
 import { trackOrderIssue } from '../../utils/trackOrder';
 import { verifyFeedUrl, isGuardRefusal, FORCED_SUBMIT_NOTE } from '../../utils/verifyFeedUrl';
+import { BetaTag } from '../BetaTag';
 import { InfoIcon } from '../InfoIcon';
 import { Section } from '../Section';
 import { Toggle } from '../Toggle';
@@ -1209,14 +1210,14 @@ export function Editor() {
                     {/* Shown when the feed already has a recommendation, so turning the
                         beta toggle off can never hide one that will be written. */}
                     {(showBeta || track.pinned) && (
-                      <div className="form-group">
+                      <div className="form-group beta-field">
                         <Toggle
                           checked={!!track.pinned}
                           onChange={val => dispatch({
                             type: 'UPDATE_TRACK',
                             payload: { index, track: { pinned: val } }
                           })}
-                          label="Recommended first listen 🧪"
+                          label={<>Recommended first listen <BetaTag /></>}
                           labelSuffix={<InfoIcon text={FIELD_INFO.trackPinned} />}
                         />
                       </div>

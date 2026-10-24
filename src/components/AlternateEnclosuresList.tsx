@@ -16,7 +16,7 @@ interface AlternateEnclosuresListProps {
   // (SET_ALTERNATE_ENCLOSURE_MEASURED), never through onChange, whose index
   // came from an old render.
   onMeasured: (versionId: string, url: string, field: MeasuredField, value: string) => void;
-  // False hides "+ Add Alternate Version" (adding is experimental), leaving
+  // False hides "+ Add Alternate Version" (adding is a beta feature), leaving
   // the versions a track already has to edit or remove.
   canAdd?: boolean;
 }

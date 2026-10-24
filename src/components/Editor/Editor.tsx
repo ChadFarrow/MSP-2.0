@@ -121,7 +121,7 @@ function Op3StatsLink({ podcastGuid }: { podcastGuid: string }) {
 export function Editor() {
   const { state, dispatch } = useFeed();
   const { state: nostrState } = useNostr();
-  const { showExperimental } = useExperimental();
+  const { showBeta } = useExperimental();
   // Get the active album based on feedType (album or videoFeed)
   const album = state.feedType === 'video' && state.videoFeed ? state.videoFeed : state.album;
 
@@ -1180,10 +1180,10 @@ export function Editor() {
                       </div>
                     </div>
                     {/* Audio versions on album tracks first; video feeds come later.
-                        Adding is experimental; versions a track already has always show. */}
-                    {showsAlternateVersions(album, track, showExperimental) && (
+                        Adding is a beta feature; versions a track already has always show. */}
+                    {showsAlternateVersions(album, track, showBeta) && (
                       <AlternateEnclosuresList
-                        canAdd={showExperimental}
+                        canAdd={showBeta}
                         enclosures={track.alternateEnclosures || []}
                         onChange={alternateEnclosures => dispatch({
                           type: 'UPDATE_TRACK',

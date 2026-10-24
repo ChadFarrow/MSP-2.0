@@ -19,19 +19,19 @@ export function editsAlternateVersions(album: Pick<Album, 'medium'>): boolean {
 }
 
 /**
- * Whether a track shows Alternate Versions. Adding a version is experimental,
- * so an empty section (and "+ Add") needs the flag. A track that already has
- * one (from an import) shows it whatever the flag, because the generator still
- * writes it and the Feed check and link check still report it: hiding it would
- * leave the user no field to fix or remove it in.
+ * Whether a track shows Alternate Versions. Adding a version is a beta feature,
+ * so an empty section (and "+ Add") needs the beta toggle. A track that already
+ * has one (from an import) shows it whatever the toggle, because the generator
+ * still writes it and the Feed check and link check still report it: hiding it
+ * would leave the user no field to fix or remove it in.
  */
 export function showsAlternateVersions(
   album: Pick<Album, 'medium'>,
   track: Pick<Track, 'alternateEnclosures'>,
-  showExperimental: boolean
+  showBeta: boolean
 ): boolean {
   return editsAlternateVersions(album)
-    && (showExperimental || (track.alternateEnclosures?.length ?? 0) > 0);
+    && (showBeta || (track.alternateEnclosures?.length ?? 0) > 0);
 }
 
 /**

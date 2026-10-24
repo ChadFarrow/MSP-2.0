@@ -287,18 +287,18 @@ describe('showsAlternateVersions', () => {
   const plain = createEmptyTrack(1);
   const withVersion: Track = { ...createEmptyTrack(1), alternateEnclosures: [createEmptyAlternateEnclosure()] };
 
-  it('shows the section on every album track with the experimental flag on', () => {
+  it('shows the section on every album track with the beta toggle on', () => {
     expect(showsAlternateVersions(album, plain, true)).toBe(true);
     expect(showsAlternateVersions(album, withVersion, true)).toBe(true);
   });
 
-  it('hides it with the flag off on a track that has no versions', () => {
+  it('hides it with the toggle off on a track that has no versions', () => {
     expect(showsAlternateVersions(album, plain, false)).toBe(false);
   });
 
   // An imported feed still writes its versions, and the Feed check and link
   // check still report them, so the user must still see them to fix or remove.
-  it('keeps versions a track already has visible with the flag off', () => {
+  it('keeps versions a track already has visible with the toggle off', () => {
     expect(showsAlternateVersions(album, withVersion, false)).toBe(true);
   });
 

@@ -21,7 +21,7 @@ import { FundingFields } from '../FundingFields';
 import { ArtworkFields } from '../ArtworkFields';
 import { PodcastImagesList } from '../PodcastImagesList';
 import { AlternateEnclosuresList } from '../AlternateEnclosuresList';
-import { editsAlternateVersions } from '../../utils/alternateEnclosure';
+import { showsAlternateVersions } from '../../utils/alternateEnclosure';
 import { FeedCheckPanel } from '../FeedCheckPanel';
 import { PubDateInput } from '../PubDateInput';
 
@@ -121,7 +121,7 @@ function Op3StatsLink({ podcastGuid }: { podcastGuid: string }) {
 export function Editor() {
   const { state, dispatch } = useFeed();
   const { state: nostrState } = useNostr();
-  const { showExperimental } = useExperimental();
+  const { showBeta } = useExperimental();
   // Get the active album based on feedType (album or videoFeed)
   const album = state.feedType === 'video' && state.videoFeed ? state.videoFeed : state.album;
 
@@ -1179,9 +1179,11 @@ export function Editor() {
                         </select>
                       </div>
                     </div>
-                    {/* Audio versions on album tracks first; video feeds come later. */}
-                    {editsAlternateVersions(album) && (
+                    {/* Audio versions on album tracks first; video feeds come later.
+                        Adding is a beta feature; versions a track already has always show. */}
+                    {showsAlternateVersions(album, track, showBeta) && (
                       <AlternateEnclosuresList
+                        canAdd={showBeta}
                         enclosures={track.alternateEnclosures || []}
                         onChange={alternateEnclosures => dispatch({
                           type: 'UPDATE_TRACK',
@@ -1205,8 +1207,8 @@ export function Editor() {
                       />
                     </div>
                     {/* Shown when the feed already has a recommendation, so turning the
-                        experimental toggle off can never hide one that will be written. */}
-                    {(showExperimental || track.pinned) && (
+                        beta toggle off can never hide one that will be written. */}
+                    {(showBeta || track.pinned) && (
                       <div className="form-group">
                         <Toggle
                           checked={!!track.pinned}

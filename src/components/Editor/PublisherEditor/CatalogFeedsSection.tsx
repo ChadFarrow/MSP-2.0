@@ -49,7 +49,7 @@ interface CatalogFeedsSectionProps {
 
 export function CatalogFeedsSection({ publisherFeed, dispatch, linkBack }: CatalogFeedsSectionProps) {
   const { state: nostrState } = useNostr();
-  const { showExperimental } = useExperimental();
+  const { showBeta } = useExperimental();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -708,8 +708,8 @@ export function CatalogFeedsSection({ publisherFeed, dispatch, linkBack }: Catal
                     )}
                   </div>
                   {/* Shown when the catalog already has a recommendation, so turning the
-                      experimental toggle off can never hide one that will be written. */}
-                  {(showExperimental || item.pinned) && (
+                      beta toggle off can never hide one that will be written. */}
+                  {(showBeta || item.pinned) && (
                     <div className="form-group">
                       <Toggle
                         checked={!!item.pinned}

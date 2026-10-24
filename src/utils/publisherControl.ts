@@ -151,7 +151,12 @@ export function platformWarning({ name }: PlatformHost): string {
     `remove the ${name} copy, or ask ${name} to remove it, then delete this row and add the new copy from Search Directory.`;
 }
 
-export function linkBackMessage(result: LinkBackResult, onMsp: boolean): string {
+/**
+ * `addsParty`: the beta multi-publisher feature is on, so publish and Download
+ * Catalog add this publisher to an album that names another one instead of
+ * leaving it alone (utils/publisherParties.ts, linkPublisher).
+ */
+export function linkBackMessage(result: LinkBackResult, onMsp: boolean, addsParty = false): string {
   switch (result.status) {
     case 'linked':
       return 'Points back to this publisher feed.';
@@ -160,6 +165,11 @@ export function linkBackMessage(result: LinkBackResult, onMsp: boolean): string 
         ? 'Not linked yet. MSP adds the link back when you publish.'
         : "Not linked yet. Download this album's new version in Download Catalog and upload it to your host.";
     case 'other':
+      if (addsParty) {
+        return `This album names a different publisher feed (${result.publisherGuid}). With Beta Features on, ` + (onMsp
+          ? 'MSP adds this publisher as another publisher of the album when you publish, and keeps that one.'
+          : "the album's new version in Download Catalog names both publishers. Upload it only if you control this album.");
+      }
       return `This album names a different publisher feed (${result.publisherGuid}). An album can name only one publisher, ` +
         'so MSP leaves it alone. Ask the owner of that publisher feed if it should move.';
     case 'unknown':

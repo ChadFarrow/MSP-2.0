@@ -22,8 +22,8 @@ export function sameGuid(a: string | undefined, b: string | undefined): boolean 
   return x !== '' && x === y;
 }
 
-/** A URL in the form compared for identity: edges trimmed, case folded. */
-function urlKey(url: string | undefined): string {
+/** A feed URL in the form compared for identity: edges trimmed, case folded. */
+export function urlKey(url: string | undefined): string {
   return normalizeFeedUrl(url ?? '').toLowerCase();
 }
 

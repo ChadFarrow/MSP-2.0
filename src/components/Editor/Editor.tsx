@@ -12,6 +12,9 @@ import { isNaddrString, resolveNostrVideo } from '../../utils/nostrVideoConverte
 import { getFeedUrlError, normalizeFeedUrl } from '../../utils/urlValidation';
 import { trackOrderIssue } from '../../utils/trackOrder';
 import { verifyFeedUrl, isGuardRefusal, FORCED_SUBMIT_NOTE } from '../../utils/verifyFeedUrl';
+import { lookupPublisherFeed, PUBLISHER_NOT_FOUND } from '../../utils/publisherLookup';
+import { isUsableParty } from '../../utils/publisherParties';
+import { withRole } from '../../utils/publisherRole';
 import { BetaTag } from '../BetaTag';
 import { InfoIcon } from '../InfoIcon';
 import { Section } from '../Section';
@@ -22,6 +25,8 @@ import { FundingFields } from '../FundingFields';
 import { ArtworkFields } from '../ArtworkFields';
 import { PodcastImagesList } from '../PodcastImagesList';
 import { AlternateEnclosuresList } from '../AlternateEnclosuresList';
+import { AdditionalPublishers } from './AdditionalPublishers';
+import { RolePicker } from '../RolePicker';
 import { showsAlternateVersions } from '../../utils/alternateEnclosure';
 import { FeedCheckPanel } from '../FeedCheckPanel';
 import { PubDateInput } from '../PubDateInput';
@@ -153,7 +158,9 @@ export function Editor() {
   // and the GUID is set on the publisher at that URL (SET_PUBLISHER_GUID), never
   // written over the whole reference: that kept a stale URL and deleted the rel
   // an imported feed states.
-  const lookupPublisherFeed = useCallback(async (feedUrl: string, signal: AbortSignal) => {
+  // The lookup itself is shared with the other publishers (utils/publisherLookup.ts),
+  // and takes a result only when it is the feed at this URL.
+  const lookupPublisher = useCallback(async (feedUrl: string, signal: AbortSignal) => {
     // Only lookup actual URLs, not search terms
     if (!feedUrl.startsWith('http://') && !feedUrl.startsWith('https://')) {
       setPublisherLookup({ loading: false, error: null, feedTitle: null, feedImage: null });
@@ -162,26 +169,13 @@ export function Editor() {
 
     setPublisherLookup({ loading: true, error: null, feedTitle: null, feedImage: null });
 
-    try {
-      const response = await fetch(`/api/pisearch?q=${encodeURIComponent(feedUrl)}`, { signal });
-      const data = await response.json();
-      if (signal.aborted) return;
-
-      if (!response.ok) {
-        setPublisherLookup({ loading: false, error: data.error || 'Feed not found', feedTitle: null, feedImage: null });
-        return;
-      }
-
-      const feed = data.feeds?.[0];
-      if (feed?.podcastGuid) {
-        dispatch({ type: 'SET_PUBLISHER_GUID', payload: { feedUrl, feedGuid: feed.podcastGuid } });
-        setPublisherLookup({ loading: false, error: null, feedTitle: feed.title || null, feedImage: feed.image || null });
-      } else {
-        setPublisherLookup({ loading: false, error: 'Feed not found in Podcast Index', feedTitle: null, feedImage: null });
-      }
-    } catch {
-      if (signal.aborted) return;
-      setPublisherLookup({ loading: false, error: 'Failed to lookup feed', feedTitle: null, feedImage: null });
+    const result = await lookupPublisherFeed(feedUrl, signal);
+    if (signal.aborted) return;
+    if (result.ok) {
+      dispatch({ type: 'SET_PUBLISHER_GUID', payload: { feedUrl, feedGuid: result.feed.feedGuid } });
+      setPublisherLookup({ loading: false, error: null, feedTitle: result.feed.title, feedImage: result.feed.image });
+    } else {
+      setPublisherLookup({ loading: false, error: result.error, feedTitle: null, feedImage: null });
     }
   }, [dispatch]);
 
@@ -195,14 +189,14 @@ export function Editor() {
 
     const controller = new AbortController();
     const timer = setTimeout(() => {
-      lookupPublisherFeed(url, controller.signal);
+      lookupPublisher(url, controller.signal);
     }, 500);
 
     return () => {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [album.publisher?.feedUrl, lookupPublisherFeed]);
+  }, [album.publisher?.feedUrl, lookupPublisher]);
 
   // Submit feed to Podcast Index
   const handleSubmitToPI = async () => {
@@ -746,7 +740,7 @@ export function Editor() {
                   <p style={{ color: 'var(--warning-color, #f59e0b)', fontSize: '12px', marginBottom: '8px' }}>
                     ⚠ {publisherLookup.error}
                   </p>
-                  {publisherLookup.error === 'Feed not found in Podcast Index' && (
+                  {publisherLookup.error === PUBLISHER_NOT_FOUND && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                       <button
                         className="btn btn-secondary"
@@ -785,6 +779,49 @@ export function Editor() {
                 </div>
               )}
             </div>
+            {/* Beta (podcast-namespace PR #793): the role of the publisher, and
+                further publishers. Shown with Show Beta Features on, or when the
+                album already states one, so the toggle never hides what MSP writes. */}
+            {isUsableParty(album.publisher) && (showBeta || album.publisher.rel) && (
+              <div style={{ marginTop: '20px' }}>
+                <RolePicker
+                  rel={album.publisher.rel}
+                  info={FIELD_INFO.publisherRole}
+                  onChange={rel => album.publisher && dispatch({
+                    type: 'UPDATE_ALBUM',
+                    payload: { publisher: withRole(album.publisher, rel) }
+                  })}
+                />
+              </div>
+            )}
+            {(showBeta || (album.additionalPublishers?.length ?? 0) > 0) && (
+              <AdditionalPublishers
+                primary={album.publisher}
+                parties={album.additionalPublishers ?? []}
+                canAdd={showBeta}
+                showRoles={showBeta}
+                onChange={parties => dispatch({
+                  type: 'UPDATE_ALBUM',
+                  payload: { additionalPublishers: parties.length > 0 ? parties : undefined }
+                })}
+                onMakePrimary={index => {
+                  const others = album.additionalPublishers ?? [];
+                  const chosen = others[index];
+                  if (!isUsableParty(chosen)) return;
+                  // Swap: the chosen party is written first, and the old primary
+                  // takes its place (or leaves the list, when the field was empty).
+                  const primary = album.publisher;
+                  const rest = isUsableParty(primary)
+                    ? others.map((party, i) => (i === index ? primary : party))
+                    : others.filter((_, i) => i !== index);
+                  dispatch({
+                    type: 'UPDATE_ALBUM',
+                    payload: { publisher: chosen, additionalPublishers: rest.length > 0 ? rest : undefined }
+                  });
+                }}
+                onGuidFound={(feedUrl, feedGuid) => dispatch({ type: 'SET_PUBLISHER_GUID', payload: { feedUrl, feedGuid } })}
+              />
+            )}
           </Section>
 
           {/* Tracks/Videos Section */}

@@ -134,6 +134,19 @@ describe('classifyAlbumLinkBack', () => {
   });
 });
 
+describe('linkBackMessage with the beta multi-publisher feature', () => {
+  const other = { status: 'other' as const, publisherGuid: NATHAN_PUBLISHER };
+
+  it('says MSP leaves the album alone without it', () => {
+    expect(linkBackMessage(other, true)).toContain('MSP leaves it alone');
+  });
+
+  it('says publish adds this publisher, or that the new version names both', () => {
+    expect(linkBackMessage(other, true, true)).toContain('adds this publisher as another publisher');
+    expect(linkBackMessage(other, false, true)).toContain('names both publishers');
+  });
+});
+
 describe('checkAlbumLinkBack', () => {
   it('never fetches a row with no URL', async () => {
     const fetchXml = vi.fn();

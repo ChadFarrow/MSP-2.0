@@ -39,14 +39,14 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   headers.set('X-WP-Nonce', cfg.nonce);
   if (init.body) headers.set('Content-Type', 'application/json');
   const res = await fetch(`${cfg.restUrl}msp/v1/${path}`, { ...init, headers, credentials: 'same-origin' });
-  const data = await res.json().catch(() => null) as (T & { message?: string }) | null;
+  const data = await res.json().catch(() => null) as (T & { message?: string; code?: string }) | null;
   if (!res.ok) {
-    // WP_Error responses carry a human-readable `message`.
-    const detail = data && typeof data.message === 'string' ? data.message : `HTTP ${res.status}`;
-    if (res.status === 403 && /nonce/i.test(detail)) {
+    // The code, not the message: WordPress words this one "Cookie check failed".
+    if (data?.code === 'rest_cookie_invalid_nonce') {
       throw new Error('Your WordPress login has expired. Reload the page and try again.');
     }
-    throw new Error(detail);
+    // WP_Error responses carry a human-readable `message`.
+    throw new Error(data && typeof data.message === 'string' ? data.message : `HTTP ${res.status}`);
   }
   return data as T;
 }

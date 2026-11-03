@@ -11,6 +11,14 @@ const cfg: WordPressConfig = {
 };
 
 describe('rewriteApiUrl', () => {
+  it('keeps the proxy query intact on a plain-permalink site, whose REST address already has a query', () => {
+    const plain = { ...cfg, restUrl: 'https://artist.example/index.php?rest_route=/' };
+    expect(rewriteApiUrl('/api/proxy-feed?url=https%3A%2F%2Fa.example%2Ff.xml', plain)).toEqual({
+      url: 'https://artist.example/index.php?rest_route=/msp/v1/proxy-feed&url=https%3A%2F%2Fa.example%2Ff.xml',
+      wordpress: true,
+    });
+  });
+
   it('sends MSP API calls to the MSP origin, query intact', () => {
     expect(rewriteApiUrl('/api/pisearch?q=a%20b', cfg)).toEqual({
       url: 'https://musicsideproject.com/api/pisearch?q=a%20b',

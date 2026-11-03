@@ -63,6 +63,7 @@ register_activation_hook(
 register_deactivation_hook(
 	__FILE__,
 	static function () {
+		MSP_Studio_Public_Feed::remove_rewrite_rule();
 		flush_rewrite_rules();
 	}
 );

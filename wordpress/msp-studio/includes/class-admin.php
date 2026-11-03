@@ -26,6 +26,18 @@ class MSP_Studio_Admin {
 	public static function init() {
 		add_action( 'admin_menu', array( __CLASS__, 'add_menu' ) );
 		add_action( 'admin_post_' . self::ACTION, array( __CLASS__, 'render_app' ) );
+		add_filter( 'wp_prepare_attachment_for_js', array( __CLASS__, 'add_track_number' ), 10, 3 );
+	}
+
+	/**
+	 * WordPress stores a file's track number but does not send it to the media
+	 * window, and "Add tracks from files" orders an album by it.
+	 */
+	public static function add_track_number( $response, $attachment, $meta ) {
+		if ( isset( $response['meta'] ) && is_array( $response['meta'] ) && ! empty( $meta['track_number'] ) ) {
+			$response['meta']['track_number'] = (string) $meta['track_number'];
+		}
+		return $response;
 	}
 
 	public static function add_menu() {

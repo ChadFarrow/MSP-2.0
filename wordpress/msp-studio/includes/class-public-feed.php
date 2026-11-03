@@ -5,7 +5,8 @@
  *   https://example.com/?msp_feed=<guid>.xml   (plain permalinks)
  *
  * This address goes into podcast apps and Podcast Index, so it must never
- * change for a feed. Both forms are always answered.
+ * change for a feed. The second form always answers. The first needs rewrite
+ * rules, so it stops answering if the site later switches to plain permalinks.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -14,7 +15,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class MSP_Studio_Public_Feed {
 
-	const QUERY_VAR = 'msp_feed';
+	const QUERY_VAR     = 'msp_feed';
+	const REWRITE_REGEX = '^msp-feeds/([0-9a-fA-F-]{36})\.xml$';
 
 	public static function init() {
 		add_action( 'init', array( __CLASS__, 'add_rewrite_rule' ) );
@@ -23,7 +25,17 @@ class MSP_Studio_Public_Feed {
 	}
 
 	public static function add_rewrite_rule() {
-		add_rewrite_rule( '^msp-feeds/([0-9a-fA-F-]{36})\.xml$', 'index.php?' . self::QUERY_VAR . '=$matches[1]', 'top' );
+		add_rewrite_rule( self::REWRITE_REGEX, 'index.php?' . self::QUERY_VAR . '=$matches[1]', 'top' );
+	}
+
+	/**
+	 * `init` has already added the rule for this request, so a flush on
+	 * deactivation would save it again, and every feed address would then show
+	 * the home page with a 200 instead of a 404.
+	 */
+	public static function remove_rewrite_rule() {
+		global $wp_rewrite;
+		unset( $wp_rewrite->extra_rules_top[ self::REWRITE_REGEX ] );
 	}
 
 	public static function query_vars( $vars ) {
@@ -36,7 +48,9 @@ class MSP_Studio_Public_Feed {
 		if ( get_option( 'permalink_structure' ) ) {
 			return home_url( '/msp-feeds/' );
 		}
-		return add_query_arg( self::QUERY_VAR, '', home_url( '/' ) );
+		// Not add_query_arg(): with an empty value it leaves out the "=".
+		$home = home_url( '/' );
+		return $home . ( false === strpos( $home, '?' ) ? '?' : '&' ) . self::QUERY_VAR . '=';
 	}
 
 	public static function url_for( $guid ) {

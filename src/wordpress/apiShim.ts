@@ -28,7 +28,8 @@ export function rewriteApiUrl(url: string, cfg: WordPressConfig): ApiRoute | nul
   if (url === '/api/proxy-feed' || url.startsWith('/api/proxy-feed?')) {
     const query = url.slice('/api/proxy-feed'.length).replace(/^\?/, '');
     const route = `${cfg.restUrl}msp/v1/proxy-feed`;
-    return { url: query ? `${route}?${query}` : route, wordpress: true };
+    // A plain-permalink site's REST address already has a query (?rest_route=/).
+    return { url: query ? `${route}${route.includes('?') ? '&' : '?'}${query}` : route, wordpress: true };
   }
   return { url: `${cfg.mspApi}${url}`, wordpress: false };
 }

@@ -1041,6 +1041,8 @@ const PASTE_HINT = ' You can also paste the XML content directly.';
  * usable message rather than a wrong one.
  */
 const CODE_MESSAGES: Record<string, string> = {
+  // From WordPress, not proxy-feed: the plugin's route refused an expired sign-in.
+  rest_cookie_invalid_nonce: 'Your WordPress login has expired. Reload the page and try again.',
   'not-found': "That URL didn't load — the host returned 404 Not Found.",
   blocked:
     'The host refused our request. Bot protection (on Cloudflare: Security → Bots) may be blocking it — Podcast Index would be blocked the same way.',

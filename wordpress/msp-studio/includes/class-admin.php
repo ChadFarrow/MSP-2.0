@@ -39,6 +39,17 @@ class MSP_Studio_Admin {
 			26
 		);
 		add_action( 'admin_head-' . self::$hook, array( __CLASS__, 'page_styles' ) );
+		add_action( 'admin_enqueue_scripts', array( __CLASS__, 'enqueue_media' ) );
+	}
+
+	/**
+	 * The editor's "Media Library" buttons open wp.media in this page, the
+	 * frame's parent (src/wordpress/mediaLibrary.ts).
+	 */
+	public static function enqueue_media( $hook ) {
+		if ( $hook === self::$hook ) {
+			wp_enqueue_media();
+		}
 	}
 
 	public static function page_styles() {

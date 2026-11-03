@@ -17,6 +17,7 @@ import { isUsableParty } from '../../utils/publisherParties';
 import { withRole } from '../../utils/publisherRole';
 import { BetaTag } from '../BetaTag';
 import { InfoIcon } from '../InfoIcon';
+import { MediaLibraryButton } from '../MediaLibraryButton';
 import { Section } from '../Section';
 import { Toggle } from '../Toggle';
 import { AddRecipientSelect } from '../AddRecipientSelect';
@@ -1005,6 +1006,35 @@ export function Editor() {
                           }
                         }}
                       />
+                      <MediaLibraryButton
+                        kind={isVideo ? 'video' : 'audio'}
+                        onPick={async media => {
+                          // The picker covers the whole admin while open, so the
+                          // track can't move under this index meanwhile; the
+                          // measurements below are the only await.
+                          dispatch({
+                            type: 'UPDATE_TRACK',
+                            payload: {
+                              index,
+                              track: {
+                                enclosureUrl: media.url,
+                                enclosureType: media.mime || (isVideo ? getVideoMimeType(media.url) : getAudioMimeType(media.url)),
+                                ...(media.bytes && { enclosureLength: String(media.bytes) }),
+                                ...(media.durationSeconds && { duration: secondsToHHMMSS(media.durationSeconds) }),
+                              }
+                            }
+                          });
+                          // WordPress usually knows both; measure only what it didn't say.
+                          const seconds = media.durationSeconds ?? await getMediaDuration(media.url);
+                          if (!media.durationSeconds && seconds !== null) {
+                            dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { duration: secondsToHHMMSS(seconds) } } });
+                          }
+                          if (!media.bytes) {
+                            const bytes = await resolveMediaSize(media.url, seconds);
+                            dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { enclosureLength: String(bytes) } } });
+                          }
+                        }}
+                      />
                       {isVideo && resolvingNaddr[index] && (
                         <div style={{ color: 'var(--text-secondary)', fontSize: '0.85em', marginTop: '4px' }}>
                           Resolving Nostr video...
@@ -1170,6 +1200,10 @@ export function Editor() {
                           type: 'UPDATE_TRACK',
                           payload: { index, track: { trackArtUrl: e.target.value } }
                         })}
+                      />
+                      <MediaLibraryButton
+                        kind="image"
+                        onPick={media => dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { trackArtUrl: media.url } } })}
                       />
                     </div>
                     <PodcastImagesList

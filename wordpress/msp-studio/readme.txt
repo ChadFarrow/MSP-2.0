@@ -16,6 +16,8 @@ MSP Studio puts the Music Side Project editor (https://musicsideproject.com) in 
 
     https://your-site.example/msp-feeds/<podcast-guid>.xml
 
+Upload your songs and artwork from inside the editor: "Add tracks from files" turns a whole album of uploads into tracks, with titles, file sizes and lengths filled in. The files go to your own Media Library.
+
 Each save can notify Podcast Index and send a podping, so podcast apps pick up your changes.
 
 == External services ==

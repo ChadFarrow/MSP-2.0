@@ -20,6 +20,10 @@ export interface PickedMedia {
   durationSeconds?: number;
   width?: number;
   height?: number;
+  /** WordPress's title for the file — for audio, the song title from its tags when it has one. */
+  title?: string;
+  /** Track number from the file's tags ("3" or "3/10"), when present. */
+  trackNumber?: number;
 }
 
 /** The parts of a wp.media attachment's toJSON() this reads. All optional: WordPress omits what it doesn't know. */
@@ -30,7 +34,8 @@ export interface WpAttachmentJson {
   fileLength?: unknown;
   width?: unknown;
   height?: unknown;
-  meta?: { length?: unknown } | null;
+  title?: unknown;
+  meta?: { length?: unknown; track_number?: unknown } | null;
 }
 
 function positiveInt(value: unknown): number | undefined {
@@ -58,20 +63,22 @@ export function parseAttachment(json: WpAttachmentJson): PickedMedia | null {
     durationSeconds: parseLength(json.meta?.length) ?? parseLength(json.fileLength),
     width: positiveInt(json.width),
     height: positiveInt(json.height),
+    title: typeof json.title === 'string' && json.title.trim() ? json.title.trim() : undefined,
+    trackNumber: positiveInt(typeof json.meta?.track_number === 'string' ? json.meta.track_number.split('/')[0] : json.meta?.track_number),
   };
 }
 
 interface WpMediaFrame {
   on(event: 'select', handler: () => void): void;
   open(): void;
-  state(): { get(name: 'selection'): { first(): { toJSON(): WpAttachmentJson } | undefined } };
+  state(): { get(name: 'selection'): { first(): { toJSON(): WpAttachmentJson } | undefined; toJSON(): WpAttachmentJson[] } };
 }
 
 type WpMedia = (options: {
   title: string;
   button: { text: string };
-  library: { type: MediaKind };
-  multiple: boolean;
+  library: { type: MediaKind | MediaKind[] };
+  multiple: boolean | 'add';
 }) => WpMediaFrame;
 
 function wpMedia(): WpMedia | null {
@@ -90,9 +97,9 @@ export function isMediaLibraryAvailable(): boolean {
 }
 
 const TITLES: Record<MediaKind, string> = {
-  audio: 'Choose an audio file',
-  video: 'Choose a video file',
-  image: 'Choose an image',
+  audio: 'Upload or choose an audio file',
+  video: 'Upload or choose a video file',
+  image: 'Upload or choose an image',
 };
 
 /** Opens the picker; calls back once with the chosen file. */
@@ -111,4 +118,35 @@ export function openMediaLibrary(kind: MediaKind, onPick: (media: PickedMedia) =
     if (parsed) onPick(parsed);
   });
   frame.open();
+}
+
+/**
+ * Opens the picker for several files at once — "Add tracks from files".
+ * `multiple: 'add'` lets a click add to the selection without Ctrl/Cmd, which
+ * is what an artist uploading a whole album expects. Calls back once with the
+ * files in the order they were selected.
+ */
+export function openMediaLibraryForTracks(kind: 'audio' | 'video', onPick: (media: PickedMedia[]) => void): void {
+  const media = wpMedia();
+  if (!media) return;
+  const frame = media({
+    title: kind === 'video' ? 'Upload or choose videos' : 'Upload or choose songs',
+    button: { text: 'Add as tracks' },
+    library: { type: kind },
+    multiple: 'add',
+  });
+  frame.on('select', () => {
+    const picked = frame.state().get('selection').toJSON()
+      .map(parseAttachment)
+      .filter((m): m is PickedMedia => m !== null);
+    if (picked.length) onPick(picked);
+  });
+  frame.open();
+}
+
+/** "64 MB" — the site's upload limit as WordPress counts it (1 MB = 1024² bytes). */
+export function formatUploadLimit(bytes: number): string {
+  const mb = bytes / 1048576;
+  if (mb >= 1024) return `${Math.round((mb / 1024) * 10) / 10} GB`;
+  return `${mb >= 10 ? Math.round(mb) : Math.round(mb * 10) / 10} MB`;
 }

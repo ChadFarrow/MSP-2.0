@@ -25,6 +25,8 @@ export interface WordPressConfig {
   feedBaseUrl: string;
   /** The MSP API origin, e.g. https://musicsideproject.com */
   mspApi: string;
+  /** The site's largest allowed upload in bytes (wp_max_upload_size()), when known. */
+  maxUploadBytes?: number;
 }
 
 declare global {
@@ -57,5 +59,6 @@ export function wpConfig(): WordPressConfig | null {
     siteUrl: raw.siteUrl ?? '',
     feedBaseUrl: raw.feedBaseUrl,
     mspApi: (raw.mspApi || DEFAULT_MSP_API).replace(/\/+$/, ''),
+    maxUploadBytes: typeof raw.maxUploadBytes === 'number' && raw.maxUploadBytes > 0 ? raw.maxUploadBytes : undefined,
   };
 }

@@ -17,7 +17,8 @@ import { isUsableParty } from '../../utils/publisherParties';
 import { withRole } from '../../utils/publisherRole';
 import { BetaTag } from '../BetaTag';
 import { InfoIcon } from '../InfoIcon';
-import { MediaLibraryButton } from '../MediaLibraryButton';
+import { MediaLibraryButton, AddTracksFromFiles } from '../MediaLibraryButton';
+import { planTracksFromFiles, trackFieldsFromFile } from '../../wordpress/bulkTracks';
 import { Section } from '../Section';
 import { Toggle } from '../Toggle';
 import { AddRecipientSelect } from '../AddRecipientSelect';
@@ -1008,32 +1009,14 @@ export function Editor() {
                       />
                       <MediaLibraryButton
                         kind={isVideo ? 'video' : 'audio'}
-                        onPick={async media => {
-                          // The picker covers the whole admin while open, so the
-                          // track can't move under this index meanwhile; the
-                          // measurements below are the only await.
-                          dispatch({
-                            type: 'UPDATE_TRACK',
-                            payload: {
-                              index,
-                              track: {
-                                enclosureUrl: media.url,
-                                enclosureType: media.mime || (isVideo ? getVideoMimeType(media.url) : getAudioMimeType(media.url)),
-                                ...(media.bytes && { enclosureLength: String(media.bytes) }),
-                                ...(media.durationSeconds && { duration: secondsToHHMMSS(media.durationSeconds) }),
-                              }
-                            }
-                          });
-                          // WordPress usually knows both; measure only what it didn't say.
-                          const seconds = media.durationSeconds ?? await getMediaDuration(media.url);
-                          if (!media.durationSeconds && seconds !== null) {
-                            dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { duration: secondsToHHMMSS(seconds) } } });
-                          }
-                          if (!media.bytes) {
-                            const bytes = await resolveMediaSize(media.url, seconds);
-                            dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { enclosureLength: String(bytes) } } });
-                          }
-                        }}
+                        // Synchronous on purpose: no await, so the index can't go
+                        // stale. WordPress reads size and length when it accepts a
+                        // file; one it couldn't read stays empty and the Feed
+                        // check names the track.
+                        onPick={media => dispatch({
+                          type: 'UPDATE_TRACK',
+                          payload: { index, track: trackFieldsFromFile(media, isVideo, track) }
+                        })}
                       />
                       {isVideo && resolvingNaddr[index] && (
                         <div style={{ color: 'var(--text-secondary)', fontSize: '0.85em', marginTop: '4px' }}>
@@ -1698,6 +1681,16 @@ export function Editor() {
               }}>
                 + Add {isVideo ? 'Video' : 'Track'}
               </button>
+              <AddTracksFromFiles
+                isVideo={isVideo}
+                onPick={files => {
+                  // Planned against this render's tracks and dispatched at once,
+                  // with nothing awaited in between.
+                  const plan = planTracksFromFiles(album.tracks, files, isVideo);
+                  plan.fill.forEach(({ index, track }) => dispatch({ type: 'UPDATE_TRACK', payload: { index, track } }));
+                  plan.add.forEach(track => dispatch({ type: 'ADD_TRACK', payload: track }));
+                }}
+              />
             </div>
           </Section>
         </div>

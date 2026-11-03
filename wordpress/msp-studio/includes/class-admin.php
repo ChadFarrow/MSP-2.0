@@ -98,7 +98,10 @@ class MSP_Studio_Admin {
 			'nonce'       => wp_create_nonce( 'wp_rest' ),
 			'siteUrl'     => home_url( '/' ),
 			'feedBaseUrl' => MSP_Studio_Public_Feed::base_url(),
-			'mspApi'      => MSP_STUDIO_API,
+			'mspApi'         => MSP_STUDIO_API,
+			// Shown beside the upload buttons, so a WAV that is too big for this
+			// host is explained before the upload starts, not after it fails.
+			'maxUploadBytes' => (int) wp_max_upload_size(),
 		);
 		$inject = sprintf(
 			"<base href=\"%s\">\n<script>window.MSP_WP = %s;</script>\n",

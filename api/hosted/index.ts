@@ -10,10 +10,10 @@ import {
   timingSafeEqualString
 } from '../_utils/feedUtils.js';
 import { extractPodcastMedium } from '../_utils/xmlUtils.js';
+import { applyCors } from '../_utils/cors.js';
 import { hydrateFeed } from '../_utils/feedHydrate.js';
 import { parseEmailAuthHeader } from '../_utils/emailAuth.js';
 import { addFeedToAccount } from '../_utils/accountStore.js';
-import { applyCors } from '../_utils/cors.js';
 
 // Generate a secure edit token
 function generateEditToken(): string {

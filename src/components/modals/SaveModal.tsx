@@ -38,10 +38,12 @@ import { getFeedUrlError, normalizeFeedUrl } from '../../utils/urlValidation';
 import { verifyFeedUrl, isGuardRefusal, FORCED_SUBMIT_NOTE } from '../../utils/verifyFeedUrl';
 import { getSaveBlockers, formatSaveBlockers, type SaveTarget } from '../../utils/feedChecks';
 import { ModalWrapper } from './ModalWrapper';
+import { isWordPress } from '../../utils/runtimeTarget';
+import { saveToWordPress } from '../../utils/wordpressFeeds';
 
 const DEFAULT_BLOSSOM_SERVER = 'https://blossom.primal.net/';
 
-type SaveMode = 'local' | 'download' | 'clipboard' | 'nostr' | 'nostrMusic' | 'blossom' | 'nsite' | 'hosted' | 'podcastIndex';
+type SaveMode = 'wordpress' | 'local' | 'download' | 'clipboard' | 'nostr' | 'nostrMusic' | 'blossom' | 'nsite' | 'hosted' | 'podcastIndex';
 
 interface SaveDestination {
   value: SaveMode;
@@ -53,6 +55,8 @@ interface SaveDestination {
 // Single source of truth for the destination dropdown. `blurb` is the short
 // inline description; the richer wording lives in the ℹ️ help popup below.
 const SAVE_DESTINATIONS: SaveDestination[] = [
+  // Shown only in the WordPress plugin build, where it is also the default.
+  { value: 'wordpress', label: 'Host on this WordPress site', blurb: 'Your own site serves the feed — use its URL in any podcast app' },
   { value: 'local', label: 'Local Storage', blurb: 'Save in this browser only' },
   { value: 'download', label: 'Download XML', blurb: 'Download the RSS feed as an XML file' },
   { value: 'clipboard', label: 'Copy to Clipboard', blurb: 'Copy the RSS XML to your clipboard' },
@@ -89,7 +93,7 @@ interface SaveModalProps {
 export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', isDirty, isLoggedIn, onImport, onPodcastIndexId, onPodcastIndexPending }: SaveModalProps) {
   const { state: nostrState } = useNostr();
   const { showExperimental } = useExperimental();
-  const [mode, setMode] = useState<SaveMode>('local');
+  const [mode, setMode] = useState<SaveMode>(isWordPress() ? 'wordpress' : 'local');
   const [destOpen, setDestOpen] = useState(false);
   const [destMenuPos, setDestMenuPos] = useState<{ left: number; width: number; top?: number; bottom?: number; maxHeight: number } | null>(null);
   const destRef = useRef<HTMLDivElement>(null);
@@ -146,6 +150,14 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
   const [podcastIndexVerifyWarning, setPodcastIndexVerifyWarning] = useState<string | null>(null);
   const [podcastIndexBypassVerify, setPodcastIndexBypassVerify] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  // "Host on this WordPress site": the address WordPress serves the feed at, and
+  // the Podcast Index outcome of the save. The latch is the same "anyway"
+  // override the PI mode uses — armed by a guard refusal, cleared on mode change.
+  const [wpFeedUrl, setWpFeedUrl] = useState<string | null>(null);
+  const [wpNotifyIndex, setWpNotifyIndex] = useState(true);
+  const [wpPiWarning, setWpPiWarning] = useState<string | null>(null);
+  const [wpBypassGuard, setWpBypassGuard] = useState(false);
+  const [wpPiUrl, setWpPiUrl] = useState<string | null>(null);
 
   const handlePodcastIndexUrlChange = (value: string) => {
     setPodcastIndexSubmitUrl(normalizeFeedUrl(value));
@@ -168,12 +180,14 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
       if (mode === 'download') return 'Downloading...';
       if (mode === 'clipboard') return 'Copying...';
       if (mode === 'podcastIndex') return verifying ? 'Checking URL…' : 'Submitting...';
+      if (mode === 'wordpress') return 'Saving...';
       return 'Saving...';
     }
     if (mode === 'nostrMusic') return 'Publish';
     if (mode === 'blossom' || mode === 'hosted' || mode === 'nsite') return 'Upload';
     if (mode === 'download') return 'Download';
     if (mode === 'clipboard') return 'Copy to Clipboard';
+    if (mode === 'wordpress') return wpBypassGuard ? 'Save and submit anyway' : 'Save to WordPress';
     if (mode === 'podcastIndex') {
       return podcastIndexBypassVerify ? 'Submit anyway' : 'Submit to PodcastIndex';
     }
@@ -214,6 +228,8 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
   const selectMode = (next: SaveMode) => {
     setMode(next);
     setPublished(null);
+    setWpPiWarning(null);
+    setWpBypassGuard(false);
   };
 
   // Podcast Index registers a feed asynchronously. add/byfeedurl queues the URL and
@@ -468,7 +484,8 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
     const saveTarget: SaveTarget | null =
       ['local', 'download', 'clipboard', 'podcastIndex'].includes(mode) ? null
         : mode === 'nostrMusic' ? 'nostrMusic'
-          : mode === 'hosted' && !hostedInfo ? 'hostedCreate'
+          // The plugin keys a feed by its GUID and, like Host on MSP, requires a UUID.
+          : (mode === 'hosted' && !hostedInfo) || mode === 'wordpress' ? 'hostedCreate'
             : 'publish';
     if (saveTarget) {
       const blockers = getSaveBlockers({ feedType, album, publisherFeed: publisherFeed ?? null }, saveTarget);
@@ -840,6 +857,54 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
           }
           break;
         }
+        case 'wordpress': {
+          const forceSubmit = wpBypassGuard;
+          const wpResult = await saveToWordPress(currentFeedGuid, generateCurrentFeedXml(), currentFeedTitle);
+          setWpFeedUrl(wpResult.url);
+          setWpPiWarning(null);
+          setWpBypassGuard(false);
+          const savedText = wpResult.created ? 'Feed saved to WordPress.' : 'Feed updated on WordPress.';
+          if (!wpNotifyIndex) {
+            setMessage({ type: 'success', text: `${savedText} Podcast Index was not notified.` });
+            break;
+          }
+          // Same call the Submit to PodcastIndex mode makes: pubnotify pings PI,
+          // registers a new feed and sends a podping. Its server-side guard probes
+          // the WordPress URL, so a site whose firewall blocks crawlers (Cloudflare
+          // Bot Fight Mode is common on WordPress) is caught here, not in PI.
+          const params = new URLSearchParams({ url: wpResult.url, guid: currentFeedGuid });
+          const piMedium = isPublisherMode ? publisherFeed?.medium : album.medium;
+          if (piMedium) params.set('medium', piMedium);
+          if (forceSubmit) params.set('force', '1');
+          try {
+            const response = await fetch(`/api/pubnotify?${params}`);
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              if (isGuardRefusal(data)) {
+                setWpPiWarning(data.error);
+                setWpBypassGuard(true);
+                setMessage({ type: 'error', text: `${savedText} Not submitted to Podcast Index — see the warning above.` });
+              } else {
+                setMessage({ type: 'error', text: `${savedText} The Podcast Index submission failed: ${(data as { error?: string }).error ?? `HTTP ${response.status}`}. Save again to retry.` });
+              }
+              break;
+            }
+            const forcedNote = forceSubmit ? FORCED_SUBMIT_NOTE : '';
+            const piData = data as { podcastIndexUrl?: string; podcastIndexId?: number | null };
+            if (piData.podcastIndexUrl) setWpPiUrl(piData.podcastIndexUrl);
+            if (piData.podcastIndexId) {
+              onPodcastIndexId?.(piData.podcastIndexId);
+              setMessage({ type: 'success', text: `${savedText} Podcast Index notified.${forcedNote}` });
+            } else {
+              // Registration is asynchronous; let App watch for the crawl.
+              onPodcastIndexPending?.();
+              setMessage({ type: 'success', text: `${savedText} Submitted to Podcast Index — it can take a minute or two to appear.${forcedNote}` });
+            }
+          } catch {
+            setMessage({ type: 'error', text: `${savedText} Could not reach Podcast Index. Save again to retry.` });
+          }
+          break;
+        }
         case 'podcastIndex': {
           const submitUrl = normalizeFeedUrl(podcastIndexSubmitUrl);
           if (!submitUrl) {
@@ -980,6 +1045,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
 
   // Which destinations are visible given login / publisher / experimental state.
   const isDestinationVisible = (value: SaveMode): boolean => {
+    if (value === 'wordpress') return isWordPress();
     if (value === 'nostrMusic') return !isPublisherMode && isLoggedIn;
     if (value === 'nostr' || value === 'blossom' || value === 'nsite') return showExperimental && isLoggedIn;
     return true;
@@ -1125,6 +1191,59 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
             )}
           </div>
 
+          {mode === 'wordpress' && (
+            <div style={{ marginTop: '16px' }}>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '12px' }}>
+                Save the RSS feed on this WordPress site. Your site serves it at a permanent address you can use in any podcast app. Saving again updates it.
+              </p>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.875rem' }}>
+                <input
+                  type="checkbox"
+                  checked={wpNotifyIndex}
+                  onChange={(e) => { setWpNotifyIndex(e.target.checked); setWpPiWarning(null); setWpBypassGuard(false); }}
+                />
+                Notify Podcast Index and send a podping
+              </label>
+              {wpPiWarning && (
+                <div style={{ marginTop: '8px', fontSize: '0.8rem', color: 'var(--warning-color, #f59e0b)' }}>
+                  ⚠ {wpPiWarning} Your site may be blocking podcast crawlers (a firewall or "bot protection" setting). Fix that, or submit anyway if you're sure.
+                </div>
+              )}
+              {wpFeedUrl && (
+                <div style={{ marginTop: '12px', padding: '12px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--success)' }}>
+                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.875rem', fontWeight: 600, color: 'var(--success)' }}>
+                    Feed URL (for podcast apps)
+                  </label>
+                  <input
+                    type="text"
+                    value={wpFeedUrl}
+                    readOnly
+                    onClick={(e) => (e.target as HTMLInputElement).select()}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: '4px', border: '1px solid var(--success)', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: '0.75rem', fontFamily: 'monospace' }}
+                  />
+                  <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginTop: '8px', flexWrap: 'wrap' }}>
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => {
+                        navigator.clipboard.writeText(wpFeedUrl);
+                        setMessage({ type: 'success', text: 'Feed URL copied to clipboard' });
+                      }}
+                    >
+                      Copy Feed URL
+                    </button>
+                    <a href={wpFeedUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.875rem', color: '#3b82f6' }}>
+                      Open feed →
+                    </a>
+                    {wpPiUrl && (
+                      <a href={wpPiUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.875rem', color: '#3b82f6' }}>
+                        View on Podcast Index →
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           {mode === 'local' && (
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '16px' }}>
               Save to your browser's local storage. Data persists until you clear browser data.
@@ -1843,6 +1962,7 @@ export function SaveModal({ onClose, album, publisherFeed, feedType = 'album', i
           }
         >
           <ul className="import-help-list">
+                {isWordPress() && <li><strong>Host on this WordPress site</strong> - Saves the RSS feed on this WordPress site, which serves it at a permanent address for any podcast app. Each save also notifies Podcast Index and sends a podping, unless you turn that off.</li>}
                 <li><strong>Local Storage</strong> - Save to your browser's local storage. Data persists until you clear browser data.</li>
                 <li><strong>Download XML</strong> - Download the RSS feed as an XML file to your computer.</li>
                 <li><strong>Copy to Clipboard</strong> - Copy the RSS XML to your clipboard for pasting elsewhere.</li>

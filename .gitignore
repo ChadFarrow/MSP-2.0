@@ -30,3 +30,7 @@ dist-ssr
 
 # Local feed backups / scratch scripts
 scripts/
+
+# WordPress plugin build output (npm run build:wp)
+wordpress/msp-studio/build/
+wordpress/dist/

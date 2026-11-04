@@ -36,7 +36,8 @@ import type { Album, Track } from './types/feed';
 // assets/msp-logo.png is deliberately left in the repo: the Desktop App is a fork
 // with its own App.tsx, and deleting an asset upstream breaks its build when the
 // sync PR lands (see the fork-divergence note in CLAUDE.md).
-const mspLogo = '/msp-logo-192.png';
+// BASE_URL is '/' on the website and './' in the WordPress plugin build.
+const mspLogo = `${import.meta.env.BASE_URL}msp-logo-192.png`;
 import { PodcastIndexIcon } from './components/PodcastIndexIcon';
 import './App.css';
 

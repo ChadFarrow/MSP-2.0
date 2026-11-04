@@ -16,6 +16,8 @@ import { useExperimental } from '../../store/experimentalStore';
 import type { SavedAlbumInfo, NostrMusicAlbumGroup } from '../../types/nostr';
 import type { Album } from '../../types/feed';
 import { ModalWrapper } from './ModalWrapper';
+import { isWordPress } from '../../utils/runtimeTarget';
+import { listWordPressFeeds, loadWordPressFeed, wordPressFeedUrl, type WordPressFeedSummary } from '../../utils/wordpressFeeds';
 
 interface HostedFeedListItem {
   feedId: string;
@@ -39,7 +41,9 @@ interface ImportModalProps {
 export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn, templateMode }: ImportModalProps) {
   const { state: nostrState } = useNostr();
   const { showExperimental } = useExperimental();
-  const [mode, setMode] = useState<'file' | 'paste' | 'url' | 'nostr' | 'nostrMusic' | 'nostrEvent' | 'hosted'>('file');
+  const [mode, setMode] = useState<'wordpress' | 'file' | 'paste' | 'url' | 'nostr' | 'nostrMusic' | 'nostrEvent' | 'hosted'>(isWordPress() ? 'wordpress' : 'file');
+  const [wpFeeds, setWpFeeds] = useState<WordPressFeedSummary[]>([]);
+  const [loadingWpFeeds, setLoadingWpFeeds] = useState(false);
   const [xmlContent, setXmlContent] = useState('');
   const [jsonContent, setJsonContent] = useState('');
   const [feedUrl, setFeedUrl] = useState('');
@@ -136,6 +140,36 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn, templa
     if (mode === 'hosted' && canListFeeds) fetchHostedFeeds();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, isLoggedIn]);
+
+  // Feeds this WordPress site hosts (WordPress plugin build only).
+  const fetchWpFeeds = async () => {
+    setLoadingWpFeeds(true);
+    setError('');
+    try {
+      setWpFeeds(await listWordPressFeeds());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to list WordPress feeds');
+    } finally {
+      setLoadingWpFeeds(false);
+    }
+  };
+
+  useEffect(() => {
+    if (mode === 'wordpress') fetchWpFeeds();
+  }, [mode]);
+
+  const handleImportWpFeed = async (feed: WordPressFeedSummary) => {
+    setLoading(true);
+    setError('');
+    try {
+      const xml = await loadWordPressFeed(feed.guid);
+      onImport(xml, feed.url || wordPressFeedUrl(feed.guid));
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load the feed from WordPress');
+      setLoading(false);
+    }
+  };
 
   const handleLoadFromNostr = async (dTag: string) => {
     const pubkey = nostrState.user?.pubkey;
@@ -354,7 +388,11 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn, templa
         }
         footer={
           <div style={{ display: 'flex', gap: '12px', width: '100%' }}>
-            {mode === 'nostrMusic' ? (
+            {mode === 'wordpress' ? (
+              <button className="btn btn-secondary" onClick={fetchWpFeeds} disabled={loadingWpFeeds}>
+                {loadingWpFeeds ? 'Loading...' : 'Refresh'}
+              </button>
+            ) : mode === 'nostrMusic' ? (
               <button className="btn btn-secondary" onClick={fetchMusicTracks} disabled={loadingMusic}>
                 {loadingMusic ? 'Loading...' : 'Refresh'}
               </button>
@@ -415,6 +453,7 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn, templa
                 // 'hosted' fetch happens in the mode/isLoggedIn effect above
               }}
             >
+              {isWordPress() && <option value="wordpress">My WordPress Feeds</option>}
               <option value="file">Upload File</option>
               <option value="paste">Paste XML</option>
               <option value="url">From URL</option>
@@ -425,7 +464,39 @@ export function ImportModal({ onClose, onImport, onLoadAlbum, isLoggedIn, templa
             </select>
           </div>
 
-          {mode === 'nostrMusic' ? (
+          {mode === 'wordpress' ? (
+            <div className="nostr-music-section">
+              {loadingWpFeeds ? (
+                <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>
+                  Loading feeds from this site...
+                </div>
+              ) : wpFeeds.length > 0 ? (
+                <div className="nostr-album-list">
+                  {wpFeeds.map((feed) => (
+                    <div
+                      key={feed.guid}
+                      className="nostr-music-album-item"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => !loading && handleImportWpFeed(feed)}
+                      onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !loading) { e.preventDefault(); handleImportWpFeed(feed); } }}
+                      style={{ cursor: loading ? 'wait' : 'pointer' }}
+                    >
+                      <div className="nostr-album-item-title">{feed.title || 'Untitled feed'}</div>
+                      <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
+                        {feed.medium || 'music'}{feed.modified ? ` • updated ${new Date(feed.modified).toLocaleString()}` : ''}
+                      </div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', wordBreak: 'break-all' }}>{feed.url}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>
+                  {error || 'No feeds saved on this site yet. Use Save → Host on this WordPress site.'}
+                </div>
+              )}
+            </div>
+          ) : mode === 'nostrMusic' ? (
             <div className="nostr-music-section">
               {loadingMusic ? (
                 <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>

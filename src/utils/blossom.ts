@@ -3,8 +3,19 @@ import type { Album, PublisherFeed } from '../types/feed';
 import type { NostrEvent } from '../types/nostr';
 import { generateRssFeed, generatePublisherRssFeed } from './xmlGenerator';
 import { hexToNpub } from './nostr';
+import { wpConfig } from './runtimeTarget';
 import { DEFAULT_RELAYS, publishEventToRelays } from './nostrRelay';
 import { hasSigner, signEventWithTimeout, getPublicKeyWithTimeout } from './nostrSigner';
+
+/**
+ * The permanent address of a Blossom feed: MSP's /api/feed resolves the pointer
+ * event and redirects to the latest upload. In the WordPress plugin the page's
+ * origin is the artist's site, which has no /api/feed, so it names the MSP API.
+ */
+export function blossomStableUrl(npub: string, feedGuid: string): string {
+  const origin = wpConfig()?.mspApi ?? window.location.origin;
+  return `${origin}/api/feed/${npub}/${feedGuid}.xml`;
+}
 
 // Blossom auth event kind
 const BLOSSOM_AUTH_KIND = 24242;
@@ -170,7 +181,7 @@ export async function uploadToBlossom(
     let stableUrl: string | undefined;
     if (metadataResult.success) {
       const npub = hexToNpub(pubkey);
-      stableUrl = `${window.location.origin}/api/feed/${npub}/${album.podcastGuid}.xml`;
+      stableUrl = blossomStableUrl(npub, album.podcastGuid);
     }
 
     return {
@@ -265,7 +276,7 @@ export async function uploadFeedToBlossom(
     let stableUrl: string | undefined;
     if (metadataResult.success) {
       const npub = hexToNpub(pubkey);
-      stableUrl = `${window.location.origin}/api/feed/${npub}/${feedGuid}.xml`;
+      stableUrl = blossomStableUrl(npub, feedGuid);
     }
 
     return {

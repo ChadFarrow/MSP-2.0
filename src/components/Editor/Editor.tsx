@@ -17,6 +17,8 @@ import { isUsableParty } from '../../utils/publisherParties';
 import { withRole } from '../../utils/publisherRole';
 import { BetaTag } from '../BetaTag';
 import { InfoIcon } from '../InfoIcon';
+import { MediaLibraryButton, AddTracksFromFiles } from '../MediaLibraryButton';
+import { planTracksFromFiles, trackFieldsFromFile } from '../../wordpress/bulkTracks';
 import { Section } from '../Section';
 import { Toggle } from '../Toggle';
 import { AddRecipientSelect } from '../AddRecipientSelect';
@@ -1005,6 +1007,17 @@ export function Editor() {
                           }
                         }}
                       />
+                      <MediaLibraryButton
+                        kind={isVideo ? 'video' : 'audio'}
+                        // Synchronous on purpose: no await, so the index can't go
+                        // stale. WordPress reads size and length when it accepts a
+                        // file; one it couldn't read stays empty and the Feed
+                        // check names the track.
+                        onPick={media => dispatch({
+                          type: 'UPDATE_TRACK',
+                          payload: { index, track: trackFieldsFromFile(media, isVideo, track) }
+                        })}
+                      />
                       {isVideo && resolvingNaddr[index] && (
                         <div style={{ color: 'var(--text-secondary)', fontSize: '0.85em', marginTop: '4px' }}>
                           Resolving Nostr video...
@@ -1170,6 +1183,10 @@ export function Editor() {
                           type: 'UPDATE_TRACK',
                           payload: { index, track: { trackArtUrl: e.target.value } }
                         })}
+                      />
+                      <MediaLibraryButton
+                        kind="image"
+                        onPick={media => dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { trackArtUrl: media.url } } })}
                       />
                     </div>
                     <PodcastImagesList
@@ -1664,6 +1681,16 @@ export function Editor() {
               }}>
                 + Add {isVideo ? 'Video' : 'Track'}
               </button>
+              <AddTracksFromFiles
+                isVideo={isVideo}
+                onPick={files => {
+                  // Planned against this render's tracks and dispatched at once,
+                  // with nothing awaited in between.
+                  const plan = planTracksFromFiles(album.tracks, files, isVideo);
+                  plan.fill.forEach(({ index, track }) => dispatch({ type: 'UPDATE_TRACK', payload: { index, track } }));
+                  plan.add.forEach(track => dispatch({ type: 'ADD_TRACK', payload: track }));
+                }}
+              />
             </div>
           </Section>
         </div>

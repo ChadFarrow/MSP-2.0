@@ -121,4 +121,11 @@ describe('fetchFeedFromUrl', () => {
 
     await expect(fetchFeedFromUrl(SELF_HOSTED)).rejects.toThrow(/paste the XML content directly/);
   });
+
+  it('says to reload when the WordPress plugin route refuses an expired sign-in', async () => {
+    mockFetch
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(errorJson(403, { code: 'rest_cookie_invalid_nonce', message: 'Cookie check failed', data: { status: 403 } }));
+    await expect(fetchFeedFromUrl(SELF_HOSTED)).rejects.toThrow(/expired.*Reload/);
+  });
 });

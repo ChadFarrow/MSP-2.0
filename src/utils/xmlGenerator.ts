@@ -1,7 +1,8 @@
 // MSP 2.0 - XML Generator for Demu RSS Feeds
-import type { Album, Track, Person, ValueBlock, ValueRecipient, Funding, PublisherFeed, RemoteItem, PublisherReference, BaseChannelData, PodcastImage } from '../types/feed';
+import type { Album, Track, Person, ValueBlock, ValueRecipient, Funding, PublisherFeed, RemoteItem, PublisherReference, BaseChannelData, PodcastImage, AlternateEnclosure } from '../types/feed';
 import { DEFAULT_TRANSCRIPT_TYPE } from '../types/feed';
 import { formatRFC822Date } from './dateUtils';
+import { publisherParties } from './publisherParties';
 
 // Escape XML special characters
 const escapeXml = (str: string): string => {
@@ -70,6 +71,9 @@ const collectAlbumNamespaces = (album: Album): Set<string> => {
   for (const track of album.tracks) {
     collectNamespacePrefixes(track.unknownItemElements, prefixes);
     collectNamespacePrefixes(track.value?.unknownElements, prefixes);
+    for (const enclosure of track.alternateEnclosures ?? []) {
+      collectNamespacePrefixes(enclosure.unknownElements, prefixes);
+    }
   }
 
   return prefixes;
@@ -274,21 +278,78 @@ const generateRemoteItemXml = (item: RemoteItem, level: number): string => {
   return `${indent(level)}<podcast:remoteItem ${attrs.join(' ')} />`;
 };
 
-// Generate publisher reference XML (for albums that reference their publisher)
-const generatePublisherXml = (publisher: PublisherReference, level: number): string => {
-  if (!publisher.feedGuid && !publisher.feedUrl) return '';
+// Generate publisher reference XML (for albums that reference their publisher).
+// One remoteItem per party, primary first (utils/publisherParties.ts); one party
+// gives the spec's single-item form, unchanged.
+const generatePublisherXml = (parties: PublisherReference[], level: number): string => {
+  if (parties.length === 0) return '';
+
+  const items = parties.map(publisher => {
+    const attrs: string[] = [`medium="publisher"`];
+    if (publisher.feedGuid) attrs.push(`feedGuid="${escapeXml(publisher.feedGuid)}"`);
+    if (publisher.feedUrl) attrs.push(`feedUrl="${escapeXml(publisher.feedUrl)}"`);
+    // The same role as the publisher feed states for this album (utils/publisherRole.ts).
+    if (publisher.rel?.trim()) attrs.push(`rel="${escapeXml(publisher.rel.trim())}"`);
+    return `${indent(level + 1)}<podcast:remoteItem ${attrs.join(' ')} />`;
+  });
+
+  return [
+    `${indent(level)}<podcast:publisher>`,
+    ...items,
+    `${indent(level)}</podcast:publisher>`,
+  ].join('\n');
+};
+
+// Attributes kept from an imported version or source that MSP has no field for.
+const unknownAttributesXml = (attributes: Record<string, string> | undefined): string[] =>
+  Object.entries(attributes ?? {}).map(([name, value]) => `${name}="${escapeXml(value)}"`);
+
+// Generate alternate enclosure XML (podcast:alternateEnclosure). `op3Guid` is
+// the feed's GUID when OP3 is on, null when it is off.
+const generateAlternateEnclosureXml = (enclosure: AlternateEnclosure, level: number, op3Guid: string | null): string => {
+  // The first source is the version's URL, the one field the editor shows. With
+  // it blank the version is left out (the Feed check says so) rather than
+  // written from a mirror the user can't see.
+  const [first, ...mirrors] = enclosure.sources || [];
+  if (!first?.uri?.trim()) {
+    return '';
+  }
+  const sources = [first, ...mirrors.filter(source => source.uri?.trim())];
 
   const lines: string[] = [];
-  lines.push(`${indent(level)}<podcast:publisher>`);
 
-  const attrs: string[] = [`medium="publisher"`];
-  if (publisher.feedGuid) attrs.push(`feedGuid="${escapeXml(publisher.feedGuid)}"`);
-  if (publisher.feedUrl) attrs.push(`feedUrl="${escapeXml(publisher.feedUrl)}"`);
-  // The same role as the publisher feed states for this album (utils/publisherRole.ts).
-  if (publisher.rel?.trim()) attrs.push(`rel="${escapeXml(publisher.rel.trim())}"`);
+  // Build attributes - type is required
+  const attrs: string[] = [`type="${escapeXml(enclosure.type)}"`];
+  if (enclosure.length) attrs.push(`length="${escapeXml(enclosure.length)}"`);
+  if (enclosure.bitrate) attrs.push(`bitrate="${escapeXml(enclosure.bitrate)}"`);
+  if (enclosure.height) attrs.push(`height="${escapeXml(enclosure.height)}"`);
+  if (enclosure.lang) attrs.push(`lang="${escapeXml(enclosure.lang)}"`);
+  if (enclosure.title) attrs.push(`title="${escapeXml(enclosure.title)}"`);
+  if (enclosure.rel) attrs.push(`rel="${escapeXml(enclosure.rel)}"`);
+  if (enclosure.codecs) attrs.push(`codecs="${escapeXml(enclosure.codecs)}"`);
+  if (enclosure.default) attrs.push('default="true"');
+  attrs.push(...unknownAttributesXml(enclosure.unknownAttributes));
 
-  lines.push(`${indent(level + 1)}<podcast:remoteItem ${attrs.join(' ')} />`);
-  lines.push(`${indent(level)}</podcast:publisher>`);
+  lines.push(`${indent(level)}<podcast:alternateEnclosure ${attrs.join(' ')}>`);
+
+  // Add sources
+  for (const source of sources) {
+    const uri = source.uri.trim();
+    // OP3 only redirects web URLs; an ipfs:// or magnet: source stays as it is.
+    const written = op3Guid !== null && /^https?:\/\//i.test(uri) ? applyOp3Prefix(uri, op3Guid) : uri;
+    const sourceAttrs: string[] = [`uri="${escapeXml(written)}"`];
+    if (source.contentType) sourceAttrs.push(`contentType="${escapeXml(source.contentType)}"`);
+    sourceAttrs.push(...unknownAttributesXml(source.unknownAttributes));
+    lines.push(`${indent(level + 1)}<podcast:source ${sourceAttrs.join(' ')} />`);
+  }
+
+  // Carried-through children such as <podcast:integrity>, kept from import.
+  if (enclosure.unknownElements) {
+    const unknownXml = generateUnknownXml(enclosure.unknownElements, level + 1);
+    if (unknownXml) lines.push(unknownXml);
+  }
+
+  lines.push(`${indent(level)}</podcast:alternateEnclosure>`);
 
   return lines.join('\n');
 };
@@ -455,10 +516,10 @@ const generateCommonChannelElements = (data: BaseChannelData, medium: string, le
 const applyOp3Prefix = (url: string, podcastGuid?: string): string => {
   if (!url) return url;
   // Don't double-prefix URLs that already have OP3
-  if (url.startsWith('https://op3.dev/e')) return url;
+  if (/^https:\/\/op3\.dev\/e/i.test(url)) return url;
   const pgParam = podcastGuid ? `,pg=${podcastGuid}` : '';
-  // For HTTPS URLs, strip the protocol; for HTTP, keep it
-  const urlWithoutProtocol = url.startsWith('https://') ? url.slice(8) : url;
+  // For HTTPS URLs, strip the protocol (in any letter case); for HTTP, keep it
+  const urlWithoutProtocol = /^https:\/\//i.test(url) ? url.slice(8) : url;
   return `https://op3.dev/e${pgParam}/${urlWithoutProtocol}`;
 };
 
@@ -474,6 +535,18 @@ const generatePodcastImageXml = (image: PodcastImage): string | null => {
   if (image.type) attrs.push(`type="${escapeXml(image.type)}"`);
   return `<podcast:image ${attrs.join(' ')} />`;
 };
+
+// <podcast:pinned> is a proposal, not part of the namespace yet
+// (podcast-namespace discussion #570). Its attribute may be renamed from `guid`
+// to `itemGuid`, or the tag replaced by an item-level <podcast:sortOrder>
+// (#747) — this is the one place that writes it, so a spec change lands here.
+// The parser reads both attribute names.
+// `guid` names a track of this feed, as the proposal does. `feedGuid` names a
+// catalog feed of a publisher feed, which has no episodes to pin: that is MSP's
+// extension, named like <podcast:remoteItem feedGuid> so no reader takes it for
+// an episode guid.
+export const generatePinnedXml = (attribute: 'guid' | 'feedGuid', value: string): string =>
+  `<podcast:pinned ${attribute}="${escapeXml(value)}" />`;
 
 // Generate track/item XML
 const generateTrackXml = (track: Track, album: Album, level: number): string => {
@@ -509,6 +582,13 @@ const generateTrackXml = (track: Track, album: Album, level: number): string => 
   const enclosureUrl = album.op3 ? applyOp3Prefix(track.enclosureUrl, album.podcastGuid) : track.enclosureUrl;
   lines.push(`${indent(level + 1)}<enclosure url="${escapeXml(enclosureUrl)}" length="${escapeXml(String(fileLength))}" type="${escapeXml(track.enclosureType)}"/>`);
 
+  // Alternate versions (e.g. a lossless copy of the track)
+  if (track.alternateEnclosures && track.alternateEnclosures.length > 0) {
+    for (const altEnc of track.alternateEnclosures) {
+      const altEncXml = generateAlternateEnclosureXml(altEnc, level + 1, album.op3 ? album.podcastGuid : null);
+      if (altEncXml) lines.push(altEncXml);
+    }
+  }
 
   // Duration
   lines.push(`${indent(level + 1)}<itunes:duration>${escapeXml(track.duration)}</itunes:duration>`);
@@ -566,11 +646,14 @@ export const generateRssFeed = (album: Album): string => {
   // Common channel elements
   lines.push(...generateCommonChannelElements(album, album.medium, 2));
 
-  // Publisher reference (if this album belongs to a publisher)
-  if (album.publisher) {
-    const publisherXml = generatePublisherXml(album.publisher, 2);
-    if (publisherXml) lines.push(publisherXml);
-  }
+  // Publisher references (if this album belongs to a publisher)
+  const publisherXml = generatePublisherXml(publisherParties(album), 2);
+  if (publisherXml) lines.push(publisherXml);
+
+  // Recommended tracks, in track order
+  album.tracks
+    .filter(track => track.pinned && track.guid)
+    .forEach(track => lines.push(`${indent(2)}${generatePinnedXml('guid', track.guid)}`));
 
   // Unknown/unsupported channel elements (preserved from import)
   if (album.unknownChannelElements) {
@@ -641,6 +724,11 @@ export const generatePublisherRssFeed = (publisher: PublisherFeed): string => {
       lines.push(generateRemoteItemXml(item, 2));
     });
   }
+
+  // Recommended albums, in catalog order
+  publisher.remoteItems
+    .filter(item => item.pinned && item.feedGuid)
+    .forEach(item => lines.push(`${indent(2)}${generatePinnedXml('feedGuid', item.feedGuid)}`));
 
   // Unknown/unsupported channel elements (preserved from import)
   if (publisher.unknownChannelElements) {

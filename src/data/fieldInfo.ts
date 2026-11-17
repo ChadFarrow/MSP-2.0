@@ -50,6 +50,8 @@ export const FIELD_INFO = {
   // Publisher Reference
   publisherGuid: "The GUID of your publisher feed. This links your album to a parent publisher feed that aggregates multiple releases.",
   publisherUrl: "URL to your publisher feed. Links this release to the publisher's catalog.",
+  publisherRole: 'What this publisher is to this release. Several roles can be on, for example Artist and Producer. MSP writes them as rel on the publisher reference. The publisher feed should list this release with the same roles, so the two feeds agree: when both state roles and they differ, apps ignore the link. With none on, MSP writes nothing. rel is proposed in podcast-namespace PR #793. Beta feature.',
+  otherPublishers: 'Other publisher feeds that also take part in this release, for example the label when the publisher above is the artist. Each one must list this release in its own feed for apps to confirm it. Several publishers are proposed in podcast-namespace PR #793; an app that reads only one publisher shows the first. Name each publisher once: one publisher with two roles keeps one entry. Beta feature.',
 
   // Publisher Feed
   catalogTitle: "The name of this catalog feed. A publisher can have multiple catalogs (e.g., 'Jazz Collection', 'New Releases 2024').",
@@ -68,6 +70,13 @@ export const FIELD_INFO = {
   transcriptUrl: "Link to a file with time-coded lyrics for display during playback, plus its format. SubRip (.srt) and WebVTT (.vtt) are the widely supported ones. Apps that don't support lyrics simply ignore it.",
   trackGuid: "Unique identifier for this track. Auto-generated, or use guidgenerator.com to create one.",
   trackExplicit: "Mark if this specific track contains explicit content.",
+  trackPinned: "Recommend this track as the first listen for someone new to your music. Written as <podcast:pinned>, a proposed Podcasting 2.0 tag — apps that don't support it yet simply ignore it, and the track order and dates are not changed.",
   overridePersons: "Enable to set different credits for this track than the album level. Track-level persons replace album-level.",
   overrideValue: "Enable to set different payment splits for this track. Used for featuring guest artists or different producers per track.",
+
+  // Alternate Versions (podcast:alternateEnclosure)
+  alternateEnclosures: "A second version of this track, e.g. a lossless FLAC, a smaller, lower-bitrate copy, or the song's music video. The main file stays the one every app plays; apps that support <podcast:alternateEnclosure> let listeners pick a version. MSP sets the type from the URL's extension and reads the file size from your host; you can change both. For a feed where the video is the main file every app plays, choose Video in the feed type menu at the top instead.",
+  alternateEnclosureTitle: "The name apps show in their version picker, e.g. \"Lossless\", \"Low Data\" or \"Music Video\". 32 characters at most.",
+  alternateEnclosureLength: "File size in bytes. MSP fills it in when your host reports it.",
+  alternateEnclosureHeight: "The video's height in pixels, e.g. 1080 for 1080p. Apps use it to name and pick a resolution. MSP reads it from the video when you paste the URL; you can change it.",
 };

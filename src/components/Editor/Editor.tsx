@@ -1,16 +1,21 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useFeed } from '../../store/feedStore';
 import { useNostr } from '../../store/nostrStore';
+import { useExperimental } from '../../store/experimentalStore';
 import { LANGUAGES, PERSON_GROUPS, PERSON_ROLES, createEmptyPersonRole, createEmptyTrack, isVideoMedium, isCommunitySupport, createSupportRecipients, hasUserRecipients, TRANSCRIPT_TYPES, DEFAULT_TRANSCRIPT_TYPE } from '../../types/feed';
 import type { PersonGroup } from '../../types/feed';
 import { FIELD_INFO } from '../../data/fieldInfo';
 import { detectAddressType } from '../../utils/addressUtils';
-import { getMediaDuration, secondsToHHMMSS, formatDuration, getAudioMimeType, isKnownAudioFormat, resolveMediaSize, hhmmssToSeconds } from '../../utils/audioUtils';
+import { getMediaDuration, secondsToHHMMSS, formatDuration, getAudioMimeType, isKnownAudioFormat, resolveMediaSize, hhmmssToSeconds, AUDIO_EXTENSION_LIST } from '../../utils/audioUtils';
 import { getVideoMimeType } from '../../utils/videoUtils';
 import { isNaddrString, resolveNostrVideo } from '../../utils/nostrVideoConverter';
 import { getFeedUrlError, normalizeFeedUrl } from '../../utils/urlValidation';
 import { trackOrderIssue } from '../../utils/trackOrder';
 import { verifyFeedUrl, isGuardRefusal, FORCED_SUBMIT_NOTE } from '../../utils/verifyFeedUrl';
+import { lookupPublisherFeed, PUBLISHER_NOT_FOUND } from '../../utils/publisherLookup';
+import { isUsableParty } from '../../utils/publisherParties';
+import { withRole } from '../../utils/publisherRole';
+import { BetaTag } from '../BetaTag';
 import { InfoIcon } from '../InfoIcon';
 import { ListingSelect } from '../ListingSelect';
 import { Section } from '../Section';
@@ -20,7 +25,12 @@ import { RecipientsList } from '../RecipientsList';
 import { FundingFields } from '../FundingFields';
 import { ArtworkFields } from '../ArtworkFields';
 import { PodcastImagesList } from '../PodcastImagesList';
+import { AlternateEnclosuresList } from '../AlternateEnclosuresList';
+import { AdditionalPublishers } from './AdditionalPublishers';
+import { RolePicker } from '../RolePicker';
+import { showsAlternateVersions } from '../../utils/alternateEnclosure';
 import { FeedCheckPanel } from '../FeedCheckPanel';
+import { PubDateInput } from '../PubDateInput';
 
 // Roles Reference Modal
 function RolesModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
@@ -118,6 +128,7 @@ function Op3StatsLink({ podcastGuid }: { podcastGuid: string }) {
 export function Editor() {
   const { state, dispatch } = useFeed();
   const { state: nostrState } = useNostr();
+  const { showBeta } = useExperimental();
   // Get the active album based on feedType (album or videoFeed)
   const album = state.feedType === 'video' && state.videoFeed ? state.videoFeed : state.album;
 
@@ -143,13 +154,14 @@ export function Editor() {
   const [piBypassVerify, setPiBypassVerify] = useState(false);
   const publisherFeedUrlError = getFeedUrlError(album.publisher?.feedUrl || '');
 
-  // Auto-lookup publisher feed in Podcast Index when URL changes
-  const lookupPublisherFeed = useCallback(async (feedUrl: string) => {
-    if (!feedUrl) {
-      setPublisherLookup({ loading: false, error: null, feedTitle: null, feedImage: null });
-      return;
-    }
-
+  // Auto-lookup publisher feed in Podcast Index when URL changes. The reply can
+  // land after the user edited the field, so it is dropped once `signal` aborts,
+  // and the GUID is set on the publisher at that URL (SET_PUBLISHER_GUID), never
+  // written over the whole reference: that kept a stale URL and deleted the rel
+  // an imported feed states.
+  // The lookup itself is shared with the other publishers (utils/publisherLookup.ts),
+  // and takes a result only when it is the feed at this URL.
+  const lookupPublisher = useCallback(async (feedUrl: string, signal: AbortSignal) => {
     // Only lookup actual URLs, not search terms
     if (!feedUrl.startsWith('http://') && !feedUrl.startsWith('https://')) {
       setPublisherLookup({ loading: false, error: null, feedTitle: null, feedImage: null });
@@ -158,32 +170,13 @@ export function Editor() {
 
     setPublisherLookup({ loading: true, error: null, feedTitle: null, feedImage: null });
 
-    try {
-      const response = await fetch(`/api/pisearch?q=${encodeURIComponent(feedUrl)}`);
-      const data = await response.json();
-
-      if (!response.ok) {
-        setPublisherLookup({ loading: false, error: data.error || 'Feed not found', feedTitle: null, feedImage: null });
-        return;
-      }
-
-      const feed = data.feeds?.[0];
-      if (feed?.podcastGuid) {
-        dispatch({
-          type: 'UPDATE_ALBUM',
-          payload: {
-            publisher: {
-              feedGuid: feed.podcastGuid,
-              feedUrl: feedUrl
-            }
-          }
-        });
-        setPublisherLookup({ loading: false, error: null, feedTitle: feed.title || null, feedImage: feed.image || null });
-      } else {
-        setPublisherLookup({ loading: false, error: 'Feed not found in Podcast Index', feedTitle: null, feedImage: null });
-      }
-    } catch {
-      setPublisherLookup({ loading: false, error: 'Failed to lookup feed', feedTitle: null, feedImage: null });
+    const result = await lookupPublisherFeed(feedUrl, signal);
+    if (signal.aborted) return;
+    if (result.ok) {
+      dispatch({ type: 'SET_PUBLISHER_GUID', payload: { feedUrl, feedGuid: result.feed.feedGuid } });
+      setPublisherLookup({ loading: false, error: null, feedTitle: result.feed.title, feedImage: result.feed.image });
+    } else {
+      setPublisherLookup({ loading: false, error: result.error, feedTitle: null, feedImage: null });
     }
   }, [dispatch]);
 
@@ -195,12 +188,16 @@ export function Editor() {
       return;
     }
 
+    const controller = new AbortController();
     const timer = setTimeout(() => {
-      lookupPublisherFeed(url);
+      lookupPublisher(url, controller.signal);
     }, 500);
 
-    return () => clearTimeout(timer);
-  }, [album.publisher?.feedUrl, lookupPublisherFeed]);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [album.publisher?.feedUrl, lookupPublisher]);
 
   // Submit feed to Podcast Index
   const handleSubmitToPI = async () => {
@@ -748,7 +745,7 @@ export function Editor() {
                   <p style={{ color: 'var(--warning-color, #f59e0b)', fontSize: '12px', marginBottom: '8px' }}>
                     ⚠ {publisherLookup.error}
                   </p>
-                  {publisherLookup.error === 'Feed not found in Podcast Index' && (
+                  {publisherLookup.error === PUBLISHER_NOT_FOUND && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                       <button
                         className="btn btn-secondary"
@@ -787,6 +784,49 @@ export function Editor() {
                 </div>
               )}
             </div>
+            {/* Beta (podcast-namespace PR #793): the role of the publisher, and
+                further publishers. Shown with Show Beta Features on, or when the
+                album already states one, so the toggle never hides what MSP writes. */}
+            {isUsableParty(album.publisher) && (showBeta || album.publisher.rel) && (
+              <div style={{ marginTop: '20px' }}>
+                <RolePicker
+                  rel={album.publisher.rel}
+                  info={FIELD_INFO.publisherRole}
+                  onChange={rel => album.publisher && dispatch({
+                    type: 'UPDATE_ALBUM',
+                    payload: { publisher: withRole(album.publisher, rel) }
+                  })}
+                />
+              </div>
+            )}
+            {(showBeta || (album.additionalPublishers?.length ?? 0) > 0) && (
+              <AdditionalPublishers
+                primary={album.publisher}
+                parties={album.additionalPublishers ?? []}
+                canAdd={showBeta}
+                showRoles={showBeta}
+                onChange={parties => dispatch({
+                  type: 'UPDATE_ALBUM',
+                  payload: { additionalPublishers: parties.length > 0 ? parties : undefined }
+                })}
+                onMakePrimary={index => {
+                  const others = album.additionalPublishers ?? [];
+                  const chosen = others[index];
+                  if (!isUsableParty(chosen)) return;
+                  // Swap: the chosen party is written first, and the old primary
+                  // takes its place (or leaves the list, when the field was empty).
+                  const primary = album.publisher;
+                  const rest = isUsableParty(primary)
+                    ? others.map((party, i) => (i === index ? primary : party))
+                    : others.filter((_, i) => i !== index);
+                  dispatch({
+                    type: 'UPDATE_ALBUM',
+                    payload: { publisher: chosen, additionalPublishers: rest.length > 0 ? rest : undefined }
+                  });
+                }}
+                onGuidFound={(feedUrl, feedGuid) => dispatch({ type: 'SET_PUBLISHER_GUID', payload: { feedUrl, feedGuid } })}
+              />
+            )}
           </Section>
 
           {/* Tracks/Videos Section */}
@@ -987,7 +1027,7 @@ export function Editor() {
                       )}
                       {!isVideo && track.enclosureUrl && !isKnownAudioFormat(track.enclosureUrl) && (
                         <div style={{ color: 'var(--warning, #b8860b)', fontSize: '0.85em', marginTop: '4px' }}>
-                          URL doesn't end with a recognized audio extension (mp3, flac, wav, m4a, aac, ogg, opus, aiff). Podcast apps may not play it.
+                          URL doesn't end with a recognized audio extension ({AUDIO_EXTENSION_LIST}). Podcast apps may not play it.
                         </div>
                       )}
                       {track.enclosureUrl && (
@@ -1035,14 +1075,9 @@ export function Editor() {
                     </div>
                     <div className="form-group">
                       <label className="form-label">Pub Date<InfoIcon text={FIELD_INFO.trackPubDate} /></label>
-                      <input
-                        type="datetime-local"
-                        className="form-input"
-                        value={track.pubDate ? new Date(track.pubDate).toISOString().slice(0, 16) : ''}
-                        onChange={e => dispatch({
-                          type: 'UPDATE_TRACK',
-                          payload: { index, track: { pubDate: new Date(e.target.value).toUTCString() } }
-                        })}
+                      <PubDateInput
+                        value={track.pubDate}
+                        onChange={pubDate => dispatch({ type: 'UPDATE_TRACK', payload: { index, track: { pubDate } } })}
                       />
                     </div>
                     <div className="form-group">
@@ -1184,6 +1219,22 @@ export function Editor() {
                         </select>
                       </div>
                     </div>
+                    {/* Audio versions on album tracks first; video feeds come later.
+                        Adding is a beta feature; versions a track already has always show. */}
+                    {showsAlternateVersions(album, track, showBeta) && (
+                      <AlternateEnclosuresList
+                        canAdd={showBeta}
+                        enclosures={track.alternateEnclosures || []}
+                        onChange={alternateEnclosures => dispatch({
+                          type: 'UPDATE_TRACK',
+                          payload: { index, track: { alternateEnclosures: alternateEnclosures.length > 0 ? alternateEnclosures : undefined } }
+                        })}
+                        onMeasured={(versionId, url, field, value) => dispatch({
+                          type: 'SET_ALTERNATE_ENCLOSURE_MEASURED',
+                          payload: { trackId: track.id, versionId, url, field, value }
+                        })}
+                      />
+                    )}
                     <div className="form-group">
                       <Toggle
                         checked={track.explicit}
@@ -1195,6 +1246,21 @@ export function Editor() {
                         labelSuffix={<InfoIcon text={FIELD_INFO.trackExplicit} />}
                       />
                     </div>
+                    {/* Shown when the feed already has a recommendation, so turning the
+                        beta toggle off can never hide one that will be written. */}
+                    {(showBeta || track.pinned) && (
+                      <div className="form-group beta-field">
+                        <Toggle
+                          checked={!!track.pinned}
+                          onChange={val => dispatch({
+                            type: 'UPDATE_TRACK',
+                            payload: { index, track: { pinned: val } }
+                          })}
+                          label={<>Recommended first listen <BetaTag /></>}
+                          labelSuffix={<InfoIcon text={FIELD_INFO.trackPinned} />}
+                        />
+                      </div>
+                    )}
                     <div className="form-group">
                       <Toggle
                         checked={track.overridePersons}

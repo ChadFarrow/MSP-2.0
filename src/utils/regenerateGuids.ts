@@ -1,11 +1,17 @@
-import type { Album } from '../types/feed';
+import type { Album, AlternateEnclosure } from '../types/feed';
+import { OP3_PREFIX_RE, stripOp3Prefix } from './xmlParser';
 import { listingFlags } from './listing';
 
 /**
  * Drop the passthrough elements that claim a feed's identity: every
  * `<podcast:txt>` (verification tokens such as applepodcastsverify name one
  * specific feed) and an `<atom:link rel="self">` URL. A template is a new feed,
- * so it must not carry the source's. Other passthrough elements are kept.
+ * so it must not carry the source's. Every passthrough `<podcast:pinned>` goes
+ * too: the parser leaves a pin there only when it names nothing the feed models
+ * (no track of an album, no catalog feed of a publisher), so in a template it
+ * can only point at the source's episodes. A pin on one of the feed's own
+ * tracks or catalog feeds is `pinned` on that track or remote item, and is
+ * kept. Other passthrough elements are kept.
  *
  * Does not mutate the input; returns undefined once nothing is left, matching
  * the parser's own passthrough maps.
@@ -16,6 +22,7 @@ export function withoutIdentityPassthrough(
   if (!elements) return elements;
   const rest = { ...elements };
   delete rest['podcast:txt'];
+  delete rest['podcast:pinned'];
   const links = rest['atom:link'];
   if (links) {
     const kept = (Array.isArray(links) ? links : [links]).filter(
@@ -28,6 +35,21 @@ export function withoutIdentityPassthrough(
 }
 
 /**
+ * Alternate sources without their OP3 prefix. An import strips it only when the
+ * main enclosures carried OP3 too, so a feed whose alternates alone had it keeps
+ * a prefix naming the source feed's GUID — which a new feed must not count
+ * downloads against. Does not mutate the input.
+ */
+function withoutOp3Prefix(enclosures: AlternateEnclosure[]): AlternateEnclosure[] {
+  return enclosures.map(enclosure => ({
+    ...enclosure,
+    sources: enclosure.sources.map(source =>
+      OP3_PREFIX_RE.test(source.uri) ? { ...source, uri: stripOp3Prefix(source.uri) } : source
+    ),
+  }));
+}
+
+/**
  * Return a copy of an album/video feed with a fresh feed-level GUID and a fresh
  * GUID for every track.
  *
@@ -35,9 +57,12 @@ export function withoutIdentityPassthrough(
  * inherits another feed's track identities. Reusing a track's `<guid>` across two
  * different feeds makes podcast apps and Podcast Index treat unrelated tracks as
  * the same episode (the bug that produced the Live at Rockpile / Amnesia collision).
- * The source's identity passthrough (verification txt tags, self link) goes too,
- * and so does its listing: a new feed starts Listed, or a template made from a
- * delisted album would be hidden from every directory before anyone noticed.
+ * The source's identity passthrough (verification txt tags, self link, pins that
+ * name none of its tracks) goes too, and so does an OP3 prefix left on an
+ * alternate source. A pinned track stays pinned, and the generator writes the
+ * pin against its new guid. The source's listing goes too: a new feed starts
+ * Listed, or a template made from a delisted album would be hidden from every
+ * directory before anyone noticed.
  *
  * Does not mutate the input. Publisher feeds are handled separately — their
  * `remoteItems` reference real external feeds, so only the feed GUID is renewed.
@@ -48,6 +73,10 @@ export function regenerateAlbumGuids(album: Album): Album {
     podcastGuid: crypto.randomUUID(),
     ...listingFlags('listed'),
     unknownChannelElements: withoutIdentityPassthrough(album.unknownChannelElements),
-    tracks: album.tracks.map((track) => ({ ...track, guid: crypto.randomUUID() })),
+    tracks: album.tracks.map((track) => ({
+      ...track,
+      guid: crypto.randomUUID(),
+      ...(track.alternateEnclosures ? { alternateEnclosures: withoutOp3Prefix(track.alternateEnclosures) } : {}),
+    })),
   };
 }

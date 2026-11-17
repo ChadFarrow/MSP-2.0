@@ -4,6 +4,7 @@
 import type { PublisherFeed, RemoteItem } from '../types/feed';
 import { generatePublisherRssFeed } from './xmlGenerator';
 import { normalizeFeedUrl } from './urlValidation';
+import { linkPublisher, publisherParties } from './publisherParties';
 import {
   getHostedFeedInfo,
   saveHostedFeedInfo,
@@ -11,13 +12,17 @@ import {
   createHostedFeedWithNostr,
   updateHostedFeed,
   updateHostedFeedWithNostr,
+  updateHostedFeedWithEmail,
   buildHostedUrl,
   generateEditToken,
   type HostedFeedInfo
 } from './hostedFeed';
-import { hasSigner } from './nostrSigner';
+import { checkSignerConnection, hasSigner } from './nostrSigner';
+import { isEmailLoggedIn } from './emailSession';
+import { isRefusal, type HostedOwner } from './claimHostedFeed';
 import { fetchFeedFromUrl, parseRssFeed } from './xmlParser';
 import { generateRssFeed } from './xmlGenerator';
+import { isMspHosted, extractFeedIdFromUrl, fetchCatalogFeedXml, getPlatformHost, sameGuid } from './publisherControl';
 
 // Types for publish flow
 export type PublishStep = 'idle' | 'hosting-catalog' | 'hosting' | 'notifying' | 'updating-catalog' | 'complete' | 'error';
@@ -57,25 +62,11 @@ export interface PublishOptions {
   updateCatalogFeeds: boolean;
   linkNostr: boolean;
   nostrPubkey?: string;
+  // Beta (podcast-namespace PR #793): an album that names another publisher
+  // gets this one added as a further party, instead of being skipped.
+  addParty?: boolean;
   onProgress: (progress: PublishProgress) => void;
 }
-
-// Helper to check if a feed URL is MSP-hosted
-const isMspHosted = (url: string): boolean => {
-  if (!url) return false;
-  return (
-    url.includes('/api/hosted/') ||
-    url.includes('musicsideproject.com') ||
-    url.includes('msp.podtards.com') ||
-    url.includes('msp-2-0')
-  );
-};
-
-// Helper to extract feedId from MSP hosted URL
-const extractFeedIdFromUrl = (url: string): string | null => {
-  const match = url.match(/\/api\/hosted\/([a-zA-Z0-9-]+)(?:\.xml)?/);
-  return match ? match[1] : null;
-};
 
 // Helper to check if an error is a CORS or network error
 const isCorsOrNetworkError = (errMsg: string): boolean => {
@@ -275,10 +266,11 @@ async function hostCatalogFeed(
 }
 
 // Process a single catalog feed to add publisher reference
-async function processCatalogFeed(
+export async function processCatalogFeed(
   item: RemoteItem,
   publisherGuid: string,
-  publisherFeedUrl: string
+  publisherFeedUrl: string,
+  { addParty = false }: { addParty?: boolean } = {}
 ): Promise<FeedUpdateResult> {
   const feedUrl = item.feedUrl;
   const title = item.title || item.feedGuid;
@@ -292,18 +284,43 @@ async function processCatalogFeed(
     };
   }
 
+  // Only MSP-hosted albums can be written from here, so don't spend a fetch (and,
+  // for a self-hosted album, an /api/proxy-feed request) on any other.
+  const platform = getPlatformHost(feedUrl);
+  if (platform) {
+    return { title, feedGuid: item.feedGuid, status: 'skipped', message: `Hosted on ${platform.name}: can't be updated` };
+  }
+  if (!isMspHosted(feedUrl)) {
+    return {
+      title,
+      feedGuid: item.feedGuid,
+      status: 'skipped',
+      message: 'Not on MSP: upload the new version from Download Catalog to your host'
+    };
+  }
+
   try {
     // Fetch and parse the feed
-    const xml = await fetchFeedFromUrl(feedUrl);
+    const xml = await fetchCatalogFeedXml(feedUrl);
     const album = parseRssFeed(xml);
 
-    // Add/update publisher reference
+    // An album can name several publishers (utils/publisherParties.ts). If it
+    // names others by GUID but not this one, it is someone else's claim, and
+    // overwriting it here would take the album from them — unless `addParty`
+    // (Beta Features) adds this publisher after the others.
+    const parties = publisherParties(album);
+    if (!addParty && parties.some(party => party.feedGuid?.trim()) && !parties.some(party => sameGuid(party.feedGuid, publisherGuid))) {
+      return {
+        title: album.title || title,
+        feedGuid: item.feedGuid,
+        status: 'skipped',
+        message: 'Names a different publisher feed: left unchanged'
+      };
+    }
+
+    // Add/update this publisher's reference, keeping every other publisher.
     // rel mirrors this album's entry in the publisher feed, so both sides agree.
-    album.publisher = {
-      feedGuid: publisherGuid,
-      feedUrl: publisherFeedUrl,
-      rel: item.rel
-    };
+    Object.assign(album, linkPublisher(album, { feedGuid: publisherGuid, feedUrl: publisherFeedUrl, rel: item.rel }));
 
     // Update build date to reflect the modification
     album.lastBuildDate = new Date().toUTCString();
@@ -312,38 +329,50 @@ async function processCatalogFeed(
     const updatedXml = generateRssFeed(album);
     const feedTitle = album.title || title;
 
-    // Check if MSP-hosted and has credentials
-    if (isMspHosted(feedUrl)) {
-      const feedId = extractFeedIdFromUrl(feedUrl);
-      if (feedId) {
-        const hostedInfo = getHostedFeedInfo(album.podcastGuid);
-        if (hostedInfo && hostedInfo.feedId === feedId) {
-          // Check if we can use Nostr auth
-          const isNostrLinked = hostedInfo.ownerPubkey && hasSigner();
+    const feedId = extractFeedIdFromUrl(feedUrl);
+    if (feedId) {
+      const hostedInfo = getHostedFeedInfo(album.podcastGuid);
+      const record = hostedInfo && hostedInfo.feedId === feedId ? hostedInfo : null;
+      let updated = false;
 
-          if (isNostrLinked) {
-            await updateHostedFeedWithNostr(feedId, updatedXml, feedTitle);
-          } else if (hostedInfo.editToken) {
-            await updateHostedFeed(feedId, hostedInfo.editToken, updatedXml, feedTitle);
-          } else {
-            // No valid auth method
-            return {
-              title: feedTitle,
-              feedGuid: item.feedGuid,
-              status: 'skipped',
-              message: 'No credentials'
-            };
+      if (record?.ownerPubkey && hasSigner()) {
+        await updateHostedFeedWithNostr(feedId, updatedXml, feedTitle);
+        updated = true;
+      } else if (record?.editToken) {
+        await updateHostedFeed(feedId, record.editToken, updatedXml, feedTitle);
+        updated = true;
+      } else {
+        // No usable record. That record lives in one site address's localStorage,
+        // so an album saved on another address (or in another browser) arrives here
+        // with none — but the server accepts its Nostr or email owner without one.
+        const owners: HostedOwner[] = [
+          ...(hasSigner() ? ['nostr' as const] : []),
+          ...(isEmailLoggedIn() ? ['email' as const] : [])
+        ];
+        for (const owner of owners) {
+          try {
+            if (owner === 'nostr') await updateHostedFeedWithNostr(feedId, updatedXml, feedTitle);
+            else await updateHostedFeedWithEmail(feedId, updatedXml, feedTitle);
+            updated = true;
+            break;
+          } catch (ownerErr) {
+            if (!isRefusal(ownerErr)) throw ownerErr;
           }
-
-          // Notify PI in background (don't wait)
-          notifyPodcastIndex(feedUrl, album.medium).catch(err => console.warn('PI notification failed:', err));
-          return {
-            title: feedTitle,
-            feedGuid: item.feedGuid,
-            status: 'updated',
-            message: 'Updated on MSP'
-          };
         }
+        if (!updated && owners.length > 0) {
+          return { title: feedTitle, feedGuid: item.feedGuid, status: 'skipped', message: 'Not owned by your signed-in account' };
+        }
+      }
+
+      if (updated) {
+        // Notify PI in background (don't wait)
+        notifyPodcastIndex(feedUrl, album.medium).catch(err => console.warn('PI notification failed:', err));
+        return {
+          title: feedTitle,
+          feedGuid: item.feedGuid,
+          status: 'updated',
+          message: 'Updated on MSP'
+        };
       }
     }
 
@@ -402,11 +431,21 @@ export async function publishPublisherFeed(
   publisherFeed: PublisherFeed,
   options: PublishOptions
 ): Promise<PublishResult> {
-  const { hostCatalogFeeds, updateCatalogFeeds, linkNostr, nostrPubkey, onProgress } = options;
+  const { hostCatalogFeeds, updateCatalogFeeds, linkNostr, nostrPubkey, addParty, onProgress } = options;
 
   const podcastGuid = publisherFeed.podcastGuid;
   if (!podcastGuid) {
     return { success: false, error: 'Publisher feed must have a GUID' };
+  }
+
+  // Pre-flight, as every signing handler does (CLAUDE.md): this flow can sign the
+  // publisher feed and then once per MSP album, and a dead NIP-46 signer would
+  // otherwise cost the full timeout on each of them.
+  if (hasSigner()) {
+    const health = await checkSignerConnection();
+    if (!health.connected) {
+      return { success: false, error: health.error ?? 'Nostr signer is not connected.' };
+    }
   }
 
   // Make a mutable copy of the publisher feed to update URLs
@@ -602,7 +641,7 @@ export async function publishPublisherFeed(
         }
       });
 
-      const result = await processCatalogFeed(item, podcastGuid, feedUrl);
+      const result = await processCatalogFeed(item, podcastGuid, feedUrl, { addParty });
       catalogUpdateResults.push(result);
     }
   }
@@ -645,6 +684,44 @@ export function getPublishStatus(podcastGuid: string): {
     feedUrl: null,
     hostedInfo: null
   };
+}
+
+/**
+ * The albums a publish just linked. Status after a publish comes from here, not
+ * from re-reading the albums: the blob CDN can serve the pre-publish XML for up
+ * to 60 s after the write.
+ */
+export function linkedAfterPublish(results: FeedUpdateResult[], items: RemoteItem[]): RemoteItem[] {
+  const updated = new Set(results.filter(r => r.status === 'updated').map(r => r.feedGuid));
+  return items.filter(item => updated.has(item.feedGuid));
+}
+
+/** "2 updated, 1 failed, 21 skipped". A run that updated nothing is never just "Complete". */
+export function summarizeCatalogUpdates(results: FeedUpdateResult[]): string {
+  const count = (status: FeedUpdateResult['status']) => results.filter(r => r.status === status).length;
+  const parts: string[] = [];
+  if (count('updated') > 0) parts.push(`${count('updated')} updated`);
+  if (count('downloaded') > 0) parts.push(`${count('downloaded')} downloaded`);
+  if (count('error') > 0) parts.push(`${count('error')} failed`);
+  if (count('skipped') > 0) parts.push(`${count('skipped')} skipped`);
+  return parts.join(', ') || 'Complete';
+}
+
+/**
+ * A skipped album is normal now that mixed catalogs publish (a self-hosted album
+ * is the artist's to upload), so it must not look like a failure.
+ */
+export function catalogResultTone(status: FeedUpdateResult['status']): 'ok' | 'neutral' | 'error' {
+  if (status === 'updated' || status === 'downloaded') return 'ok';
+  return status === 'skipped' ? 'neutral' : 'error';
+}
+
+/**
+ * The Publish section writes the link back into MSP albums, so it shows whenever
+ * the catalog has one, even beside albums it can't write (it skips those).
+ */
+export function shouldShowPublishSection(remoteItems: RemoteItem[]): boolean {
+  return remoteItems.some(item => isMspHosted(item.feedUrl || ''));
 }
 
 /**

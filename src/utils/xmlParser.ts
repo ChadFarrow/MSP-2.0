@@ -1,7 +1,8 @@
 // MSP 2.0 - XML Parser for importing Demu RSS Feeds
 import { XMLParser } from 'fast-xml-parser';
-import type { Album, Track, Person, PersonGroup, ValueRecipient, ValueBlock, Funding, PublisherFeed, RemoteItem, PublisherReference, BaseChannelData, PodcastImage, ServiceBlock } from '../types/feed';
+import type { Album, Track, Person, PersonGroup, ValueRecipient, ValueBlock, Funding, PublisherFeed, RemoteItem, PublisherReference, BaseChannelData, PodcastImage, AlternateEnclosure, AlternateEnclosureSource, ServiceBlock } from '../types/feed';
 import { createEmptyTrack, LEGACY_MSP_NODE_PUBKEY, MSP_SUPPORT_RECIPIENT, DEFAULT_TRANSCRIPT_TYPE } from '../types/feed';
+import { fromParties, samePublisher } from './publisherParties';
 import { areValueBlocksStrictEqual, arePersonsEqual } from './comparison';
 import { detectAddressType } from './addressUtils';
 import { MIN_PLAUSIBLE_MEDIA_BYTES } from './audioUtils';
@@ -13,10 +14,20 @@ export const OP3_PREFIX_RE = /^https:\/\/op3\.dev\/e(?:,[^/]*)?\//;
 export function stripOp3Prefix(url: string): string {
   const stripped = url.replace(OP3_PREFIX_RE, '');
   // If the remaining URL doesn't start with a protocol, it was HTTPS
-  if (!stripped.startsWith('http://') && !stripped.startsWith('https://')) {
+  if (!/^https?:\/\//i.test(stripped)) {
     return `https://${stripped}`;
   }
   return stripped;
+}
+
+// Alternate sources follow the OP3 toggle like the main enclosure: stored bare,
+// prefixed on save when OP3 is on. Only strip when the feed's main enclosures
+// carried OP3 (album.op3), or the save would not put the prefix back. A template
+// drops the rest in regenerateAlbumGuids.
+function stripAlternateOp3(enclosures: AlternateEnclosure[]): void {
+  for (const source of enclosures.flatMap(enclosure => enclosure.sources)) {
+    if (OP3_PREFIX_RE.test(source.uri)) source.uri = stripOp3Prefix(source.uri);
+  }
 }
 
 // Known channel keys that we explicitly parse (don't capture as unknown)
@@ -84,7 +95,8 @@ const KNOWN_ITEM_KEYS = new Set([
   'podcast:image',
   'podcast:transcript',
   'podcast:person',
-  'podcast:value'
+  'podcast:value',
+  'podcast:alternateEnclosure'
 ]);
 
 /**
@@ -193,20 +205,20 @@ export const parseRssFeed = (xmlString: string): Album => {
     album.funding = fundingArray.map(parseFunding).filter(Boolean) as Funding[];
   }
 
-  // Publisher reference (if this album belongs to a publisher)
-  const publisher = channel['podcast:publisher'];
-  if (publisher) {
-    album.publisher = parsePublisherReference(publisher);
-  }
+  // Publisher references (if this album belongs to a publisher). Every party is
+  // kept, primary first (utils/publisherParties.ts).
+  const parties = parsePublisherReferences(channel['podcast:publisher']);
 
   // Some feeds point at their publisher with a bare channel-level
   // <podcast:remoteItem medium="publisher"> and no <podcast:publisher> wrapper.
   // That has to be *modelled*, not passed through as an unknown element: the
-  // Download Catalog flows overwrite album.publisher unconditionally after
+  // publish and Download Catalog flows set this publisher's party after
   // parsing, so a passed-through copy would be re-emitted alongside the
   // <podcast:publisher> block the generator writes — two publisher references
-  // in a file we rewrote on the user's behalf. Podroll remoteItems (any other
-  // medium) still round-trip untouched via unknownChannelElements.
+  // in a file we rewrote on the user's behalf. Every bare publisher item is a
+  // party, after the wrapper's, unless it names a party already read; a second
+  // one used to be deleted outright. Podroll remoteItems (any other medium)
+  // still round-trip untouched via unknownChannelElements.
   const channelRemoteItems = channel['podcast:remoteItem'];
   const remoteItemArray = channelRemoteItems
     ? (Array.isArray(channelRemoteItems) ? channelRemoteItems : [channelRemoteItems])
@@ -214,20 +226,10 @@ export const parseRssFeed = (xmlString: string): Album => {
   const podrollItems = remoteItemArray.filter(
     item => getAttr(item, 'medium') !== 'publisher'
   );
-  if (podrollItems.length !== remoteItemArray.length && !album.publisher) {
-    const publisherItem = remoteItemArray.find(
-      item => getAttr(item, 'medium') === 'publisher'
-    );
-    const feedGuid = getAttr(publisherItem, 'feedGuid');
-    const feedUrl = getAttr(publisherItem, 'feedUrl');
-    if (feedGuid || feedUrl) {
-      album.publisher = {
-        feedGuid: feedGuid || '',
-        feedUrl: feedUrl || undefined,
-        rel: getAttr(publisherItem, 'rel') || undefined
-      };
-    }
+  for (const item of remoteItemArray) {
+    if (getAttr(item, 'medium') === 'publisher') addParty(parties, toPublisherReference(item));
   }
+  if (parties.length > 0) Object.assign(album, fromParties(parties));
 
   // Artist Npub (from podcast:txt with purpose="npub"). Only the first non-empty
   // npub is modelled — the generator writes artistNpub back out — so only that
@@ -270,8 +272,18 @@ export const parseRssFeed = (xmlString: string): Album => {
       if (OP3_PREFIX_RE.test(track.enclosureUrl)) {
         track.enclosureUrl = stripOp3Prefix(track.enclosureUrl);
       }
+      stripAlternateOp3(track.alternateEnclosures ?? []);
     }
   }
+
+  // Recommended tracks. Both `guid` (the proposal) and `itemGuid` (the rename
+  // discussed on it) are read.
+  const tracksByGuid = new Map(album.tracks.filter(track => track.guid).map(track => [track.guid, track]));
+  album.unknownChannelElements = consumePins(
+    channel,
+    album.unknownChannelElements,
+    pin => tracksByGuid.get(getAttr(pin, 'guid') || getAttr(pin, 'itemGuid'))
+  );
 
   return album;
 };
@@ -374,6 +386,28 @@ function keepPassthrough(
     delete elements[key];
   }
   return Object.keys(elements).length > 0 ? elements : undefined;
+}
+
+/**
+ * Read <podcast:pinned> (a proposed tag). A pin that `targetOf` resolves to
+ * something this feed models — a track, or a publisher's catalog feed — sets
+ * that target's `pinned`, and the generator writes it back, so it leaves the
+ * passthrough. A pin naming nothing here round-trips as is.
+ */
+function consumePins(
+  channel: Record<string, unknown>,
+  elements: Record<string, unknown> | undefined,
+  targetOf: (pin: unknown) => { pinned?: boolean } | undefined
+): Record<string, unknown> | undefined {
+  const pinTags = channel['podcast:pinned'];
+  if (!pinTags) return elements;
+  const unmatchedPins = (Array.isArray(pinTags) ? pinTags : [pinTags]).filter(pin => {
+    const target = targetOf(pin);
+    if (!target) return true;
+    target.pinned = true;
+    return false;
+  });
+  return keepPassthrough(elements, 'podcast:pinned', unmatchedPins);
 }
 
 // itunes:explicit is "true"/"false" today. Apple's older vocabulary was "yes" /
@@ -547,6 +581,138 @@ function parseValueBlock(node: unknown): ValueBlock {
   };
 }
 
+// Attributes of an alternate version or source that MSP has no field for. They
+// ride on the model and are written back, as unknown children are: once the
+// element is modelled, nothing on it reaches the item passthrough.
+function captureUnknownAttributes(node: object, known: ReadonlySet<string>): Record<string, string> | undefined {
+  const unknown: Record<string, string> = {};
+  for (const [key, value] of Object.entries(node)) {
+    if (key.startsWith('@_') && !known.has(key.slice(2))) unknown[key.slice(2)] = String(value);
+  }
+  return Object.keys(unknown).length > 0 ? unknown : undefined;
+}
+
+const ALTERNATE_SOURCE_ATTRIBUTES = new Set(['uri', 'contentType']);
+const ALTERNATE_ENCLOSURE_ATTRIBUTES = new Set(['type', 'length', 'bitrate', 'height', 'lang', 'title', 'rel', 'codecs', 'default']);
+
+// Parse alternate enclosure source (podcast:source)
+function parseAlternateEnclosureSource(node: unknown): AlternateEnclosureSource | null {
+  if (!node || typeof node !== 'object') return null;
+  const uri = getAttr(node, 'uri');
+  if (!uri) return null;
+
+  const unknownAttributes = captureUnknownAttributes(node, ALTERNATE_SOURCE_ATTRIBUTES);
+  return {
+    uri,
+    contentType: getAttr(node, 'contentType') || undefined,
+    ...(unknownAttributes ? { unknownAttributes } : {})
+  };
+}
+
+// '#text' too, for the same reason as VALUE_BLOCK_KNOWN_KEYS.
+const ALTERNATE_ENCLOSURE_KNOWN_KEYS = new Set(['podcast:source', '#text']);
+
+// Parse alternate enclosure (podcast:alternateEnclosure). Null when MSP can't
+// read it (no type, or no source with a uri); the caller keeps such a node in
+// the passthrough instead.
+function parseAlternateEnclosure(node: unknown): AlternateEnclosure | null {
+  if (!node || typeof node !== 'object' || Array.isArray(node)) return null;
+
+  const type = getAttr(node, 'type');
+  if (!type) return null; // type is required
+
+  const enclosureNode = node as Record<string, unknown>;
+
+  // Parse sources
+  const sourcesNode = enclosureNode['podcast:source'];
+  let sources: AlternateEnclosureSource[] = [];
+  if (sourcesNode) {
+    const sourcesArray = Array.isArray(sourcesNode) ? sourcesNode : [sourcesNode];
+    sources = sourcesArray.map(parseAlternateEnclosureSource).filter(Boolean) as AlternateEnclosureSource[];
+  }
+
+  // Must have at least one source
+  if (sources.length === 0) return null;
+
+  // <podcast:integrity> and any other child are carried through as they are:
+  // MSP has no field for them, and reading them into a model dropped a second
+  // integrity element and rewrote an unknown integrity type as "sri".
+  const unknownElements = captureUnknownElements(enclosureNode, ALTERNATE_ENCLOSURE_KNOWN_KEYS);
+  const unknownAttributes = captureUnknownAttributes(enclosureNode, ALTERNATE_ENCLOSURE_ATTRIBUTES);
+
+  return {
+    id: crypto.randomUUID(),
+    type,
+    length: getAttr(node, 'length') || undefined,
+    bitrate: getAttr(node, 'bitrate') || undefined,
+    height: getAttr(node, 'height') || undefined,
+    lang: getAttr(node, 'lang') || undefined,
+    title: getAttr(node, 'title') || undefined,
+    rel: getAttr(node, 'rel') || undefined,
+    codecs: getAttr(node, 'codecs') || undefined,
+    default: getAttr(node, 'default').trim().toLowerCase() === 'true',
+    sources,
+    ...(unknownAttributes ? { unknownAttributes } : {}),
+    ...(unknownElements ? { unknownElements } : {})
+  };
+}
+
+/**
+ * Split a track's <podcast:alternateEnclosure> nodes into the versions MSP can
+ * edit and the ones it can't read. The unreadable ones go back in the
+ * passthrough, so a re-save writes them unchanged instead of deleting them.
+ */
+function splitAlternateEnclosures(nodes: unknown): { versions: AlternateEnclosure[]; unreadable: unknown[] } {
+  const versions: AlternateEnclosure[] = [];
+  const unreadable: unknown[] = [];
+  if (!nodes) return { versions, unreadable };
+  for (const node of Array.isArray(nodes) ? nodes : [nodes]) {
+    const version = parseAlternateEnclosure(node);
+    if (version) versions.push(version);
+    else unreadable.push(node);
+  }
+  return { versions, unreadable };
+}
+
+/**
+ * Bring a track saved in localStorage up to date. From Jan to Oct 2026 MSP did
+ * not model <podcast:alternateEnclosure>, so the element was stored verbatim in
+ * unknownItemElements; left there, the generator still writes it while the
+ * editor never shows it, and "+ Add Alternate Version" adds a second copy
+ * beside one the user can't see or remove. A version stored in Jan 2026, when
+ * the feature briefly existed, may carry a modelled `integrity`. `stripOp3` is
+ * the album's op3, as on import. Safe to run on every load: a second run
+ * changes nothing.
+ */
+export function migrateStoredAlternateEnclosures(track: Track, stripOp3: boolean): Track {
+  type StoredVersion = AlternateEnclosure & { integrity?: { type: string; value: string } };
+  const stored = (track.alternateEnclosures ?? []) as StoredVersion[];
+  if (stored.length === 0 && !(track.unknownItemElements && 'podcast:alternateEnclosure' in track.unknownItemElements)) {
+    return track;
+  }
+  const current = stored.map(({ integrity, ...enc }) => ({
+    ...enc,
+    id: enc.id || crypto.randomUUID(),
+    ...(integrity?.value
+      ? { unknownElements: { ...enc.unknownElements, 'podcast:integrity': { '@_type': integrity.type, '@_value': integrity.value } } }
+      : {})
+  }));
+
+  const { versions, unreadable } = splitAlternateEnclosures(track.unknownItemElements?.['podcast:alternateEnclosure']);
+  if (stripOp3) stripAlternateOp3(versions);
+
+  const alternateEnclosures = [...current, ...versions];
+  return {
+    ...track,
+    alternateEnclosures: alternateEnclosures.length > 0 ? alternateEnclosures : undefined,
+    unknownItemElements: keepPassthrough(
+      track.unknownItemElements ? { ...track.unknownItemElements } : undefined,
+      'podcast:alternateEnclosure',
+      unreadable
+    )
+  };
+}
+
 // Parse common channel elements shared between Album and PublisherFeed
 function parseCommonChannelElements(channel: Record<string, unknown>): Omit<BaseChannelData, 'unknownChannelElements'> {
   // Basic info
@@ -707,44 +873,67 @@ function parseRemoteItem(node: unknown): RemoteItem | null {
   };
 }
 
+/** Add `party` unless it is undefined or the list already names that publisher. */
+function addParty(parties: PublisherReference[], party: PublisherReference | undefined): void {
+  if (party && !parties.some(existing => samePublisher(existing, party))) parties.push(party);
+}
+
+/** One publisher party from a remoteItem-shaped node, or undefined when it names no feed. */
+function toPublisherReference(node: unknown): PublisherReference | undefined {
+  const feedGuid = getAttr(node, 'feedGuid');
+  const feedUrl = getAttr(node, 'feedUrl');
+  if (!feedGuid && !feedUrl) return undefined;
+  return {
+    feedGuid: feedGuid || '',
+    feedUrl: feedUrl || undefined,
+    rel: getAttr(node, 'rel') || undefined
+  };
+}
+
 /**
- * Parse a publisher reference (for albums that belong to a publisher).
+ * Parse the publisher references of an album, primary first.
  *
- * The spec form is a <podcast:publisher> wrapping exactly one
- * <podcast:remoteItem medium="publisher">, and that is what the generator emits.
- * Two malformed shapes also occur in the wild and both used to return undefined
- * — which silently *deleted* them, because 'podcast:publisher' is in
+ * The spec form is a <podcast:publisher> wrapping one
+ * <podcast:remoteItem medium="publisher">, and that is what the generator emits
+ * for one party. podcast-namespace PR #793 proposes one item per party (the
+ * artist and the label), so every publisher item is a party; MSP used to keep
+ * the first and delete the rest. Two malformed shapes also occur in the wild and
+ * both used to be *deleted*, because 'podcast:publisher' is in
  * KNOWN_CHANNEL_KEYS and so is excluded from unknownChannelElements too. Since
  * the Download Feed flow is a parse→regenerate, that lost the tag outright.
- * Reading them here normalizes all three to the canonical form on output.
+ * Reading them here normalizes all of them to the canonical form on output.
  */
-function parsePublisherReference(node: unknown): PublisherReference | undefined {
-  if (!node) return undefined;
+function parsePublisherReferences(node: unknown): PublisherReference[] {
+  if (!node || typeof node !== 'object') return [];
 
   const publisherNode = node as Record<string, unknown>;
   const raw = publisherNode['podcast:remoteItem'];
 
   // fast-xml-parser returns an array when the child repeats, and getAttr returns
   // '' for an array — so more than one remoteItem used to drop the publisher
-  // entirely. The spec allows exactly one; take the first usable entry.
-  const candidates: unknown[] = raw ? (Array.isArray(raw) ? raw : [raw]) : [];
-  // Attributes written directly on <podcast:publisher> with no child element.
-  // Out of spec, but reading it beats discarding the user's data.
-  candidates.push(publisherNode);
+  // entirely.
+  const items: unknown[] = raw ? (Array.isArray(raw) ? raw : [raw]) : [];
 
-  for (const candidate of candidates) {
-    const feedGuid = getAttr(candidate, 'feedGuid');
-    const feedUrl = getAttr(candidate, 'feedUrl');
-    if (feedGuid || feedUrl) {
-      return {
-        feedGuid: feedGuid || '',
-        feedUrl: feedUrl || undefined,
-        rel: getAttr(candidate, 'rel') || undefined
-      };
-    }
+  // A party is an item with medium="publisher", or with no medium. The generator
+  // writes every party back as medium="publisher", so an item of another medium
+  // (out of spec inside this element) must not become one.
+  // The same publisher named twice is one party: the first entry is kept.
+  const isPartyMedium = (item: unknown) => ['', 'publisher'].includes(getAttr(item, 'medium'));
+  const parties: PublisherReference[] = [];
+  for (const item of items.filter(isPartyMedium)) addParty(parties, toPublisherReference(item));
+  if (parties.length > 0) return parties;
+
+  // No publisher-medium item: keep the first usable item of any medium, as MSP
+  // did before parties existed, rather than drop the reference.
+  for (const item of items) {
+    const party = toPublisherReference(item);
+    if (party) return [party];
   }
 
-  return undefined;
+  // Attributes written directly on <podcast:publisher> with no child element.
+  // Out of spec, but reading it beats discarding the user's data.
+  const bare = toPublisherReference(publisherNode);
+  return bare ? [bare] : [];
 }
 
 // Parse track/item
@@ -840,8 +1029,20 @@ function parseTrack(node: unknown, trackNumber: number, albumValue: ValueBlock, 
     track.overrideValue = !areValueBlocksStrictEqual(track.value, albumValue);
   }
 
+  // Alternate versions (e.g. a lossless copy of the track)
+  const { versions, unreadable } = splitAlternateEnclosures(item['podcast:alternateEnclosure']);
+  if (versions.length > 0) {
+    track.alternateEnclosures = versions;
+  }
+
   // Capture unknown item elements
   track.unknownItemElements = captureUnknownElements(item, KNOWN_ITEM_KEYS);
+  if (unreadable.length > 0) {
+    track.unknownItemElements = {
+      ...track.unknownItemElements,
+      'podcast:alternateEnclosure': unreadable.length === 1 ? unreadable[0] : unreadable
+    };
+  }
 
   return track;
 }
@@ -1026,6 +1227,17 @@ export const parsePublisherRssFeed = (xmlString: string): PublisherFeed => {
     const remoteArray = Array.isArray(remoteItems) ? remoteItems : [remoteItems];
     feed.remoteItems = remoteArray.map(parseRemoteItem).filter(Boolean) as RemoteItem[];
   }
+
+  // Recommended albums: MSP's <podcast:pinned feedGuid>, since a publisher feed
+  // has no episodes for the proposal's `guid` to name. A `guid` pin is left alone.
+  // A feedUrl-only item has feedGuid '', which every pin without the attribute
+  // would otherwise match.
+  const itemsByFeedGuid = new Map(feed.remoteItems.filter(item => item.feedGuid).map(item => [item.feedGuid, item]));
+  feed.unknownChannelElements = consumePins(
+    channel,
+    feed.unknownChannelElements,
+    pin => itemsByFeedGuid.get(getAttr(pin, 'feedGuid'))
+  );
 
   return feed;
 };

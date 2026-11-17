@@ -1,14 +1,22 @@
 import { useState } from 'react';
+import './CatalogFeedsSection.css';
 import type { PublisherFeed } from '../../../types/feed';
 import { createEmptyRemoteItem } from '../../../types/feed';
 import type { FeedAction } from '../../../store/feedStore';
 import { useNostr } from '../../../store/nostrStore';
+import { useExperimental } from '../../../store/experimentalStore';
 import { createAdminAuthHeader } from '../../../utils/adminAuth';
 import { checkSignerConnection } from '../../../utils/nostrSigner';
 import { getFeedUrlError, normalizeFeedUrl } from '../../../utils/urlValidation';
 import { verifyFeedUrl, isGuardRefusal, FORCED_SUBMIT_NOTE } from '../../../utils/verifyFeedUrl';
-import { PUBLISHER_ROLES, catalogRole } from '../../../utils/publisherRole';
+import { PUBLISHER_ROLES, catalogRole, withRole } from '../../../utils/publisherRole';
+import { RolePicker } from '../../RolePicker';
+import { getPlatformHost, isMspHosted, linkBackMessage, platformRefusal, platformWarning } from '../../../utils/publisherControl';
+import { buildHostedUrl } from '../../../utils/hostedFeed';
+import type { LinkBackState } from './useLinkBackStatus';
+import { BetaTag } from '../../BetaTag';
 import { InfoIcon } from '../../InfoIcon';
+import { Toggle } from '../../Toggle';
 import { Section } from '../../Section';
 
 interface SearchResult {
@@ -32,16 +40,22 @@ const PUBLISHER_FIELD_INFO = {
   remoteItemFeedGuid: 'The podcast:guid of the feed you want to include in your publisher catalog. This is the unique identifier that links to the feed.',
   remoteItemFeedUrl: 'The URL of the RSS feed (optional but recommended). This helps apps find the feed if they cannot resolve the GUID.',
   remoteItemTitle: 'A display title for this feed (optional). If not provided, apps will fetch the title from the feed itself.',
-  publisherRole: 'Tells apps whether this publisher is the artist of these feeds or a label. MSP writes it as rel on each catalog feed, and on the publisher reference of each album when you publish. "Not stated" writes nothing. rel is proposed in podcast-namespace discussion #579.',
+  remoteItemPinned: 'Recommend this release as the first listen for someone new to your music. Written as <podcast:pinned feedGuid>: the proposed Podcasting 2.0 tag only pins an episode of the same feed, so naming a catalog feed is MSP\'s own extension, and no app reads it yet. The catalog order is not changed.',
+  publisherRole: 'Sets one role on every catalog feed at once, for example Artist or Label. You can also set the roles of each feed below, for example Artist and Producer for one album. MSP writes them as rel on each catalog feed, and on the publisher reference of each album when you publish. "Not stated" writes nothing. rel is proposed in podcast-namespace PR #793. Beta feature.',
+  itemRole: 'What this publisher is to this feed. The feed should name this publisher with the same roles, so the two feeds agree: when both state roles and they differ, apps ignore the link, and the check below this feed says so. With none on, MSP writes nothing. Beta feature.',
 };
 
 interface CatalogFeedsSectionProps {
   publisherFeed: PublisherFeed;
   dispatch: React.Dispatch<FeedAction>;
+  linkBack: LinkBackState;
 }
 
-export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSectionProps) {
+export function CatalogFeedsSection({ publisherFeed, dispatch, linkBack }: CatalogFeedsSectionProps) {
   const { state: nostrState } = useNostr();
+  const { showBeta } = useExperimental();
+  // Read three times by the catalog-wide role control, so computed once.
+  const role = catalogRole(publisherFeed.remoteItems);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -167,16 +181,18 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
     const alreadyExists = publisherFeed.remoteItems.some(item => item.feedGuid === feed.feedId);
     if (alreadyExists) return;
 
-    dispatch({
-      type: 'ADD_REMOTE_ITEM',
-      payload: {
-        ...createEmptyRemoteItem(),
-        feedGuid: feed.feedId,
-        feedUrl: `${window.location.origin}/api/hosted/${feed.feedId}.xml`,
-        title: feed.title || 'Untitled Feed',
-        medium: feed.medium
-      }
-    });
+    const newItem = {
+      ...createEmptyRemoteItem(),
+      feedGuid: feed.feedId,
+      // The canonical address, not this page's origin: the URL is written into the
+      // published catalog, and a preview, an alias or the desktop app's webview
+      // would otherwise put an address there that apps can't or shouldn't use.
+      feedUrl: buildHostedUrl(feed.feedId),
+      title: feed.title || 'Untitled Feed',
+      medium: feed.medium
+    };
+    dispatch({ type: 'ADD_REMOTE_ITEM', payload: newItem });
+    void linkBack.checkItems([newItem]);
 
     // Remove from displayed list
     setMyFeeds(prev => prev.filter(f => f.feedId !== feed.feedId));
@@ -211,17 +227,18 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
   };
 
   const handleAddFromSearch = (result: SearchResult) => {
-    dispatch({
-      type: 'ADD_REMOTE_ITEM',
-      payload: {
-        ...createEmptyRemoteItem(),
-        feedGuid: result.podcastGuid,
-        feedUrl: normalizeFeedUrl(result.url),
-        title: result.title,
-        image: result.image,
-        medium: 'music'
-      }
-    });
+    // The button is disabled for these; this is the backstop.
+    if (getPlatformHost(result.url)) return;
+    const newItem = {
+      ...createEmptyRemoteItem(),
+      feedGuid: result.podcastGuid,
+      feedUrl: normalizeFeedUrl(result.url),
+      title: result.title,
+      image: result.image,
+      medium: 'music'
+    };
+    dispatch({ type: 'ADD_REMOTE_ITEM', payload: newItem });
+    void linkBack.checkItems([newItem]);
     setSearchResults(prev => prev.filter(r => r.id !== result.id));
   };
 
@@ -283,25 +300,33 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
         </strong>
       </p>
 
-      {/* Publisher role, written as rel on both sides of each link (utils/publisherRole.ts) */}
-      <div className="form-group" style={{ marginBottom: '20px' }}>
-        <label className="form-label">This publisher is<InfoIcon text={PUBLISHER_FIELD_INFO.publisherRole} /></label>
-        <select
-          className="form-select"
-          value={catalogRole(publisherFeed.remoteItems) ?? 'mixed'}
-          // The role lives on the catalog items, so there is nothing to hold it yet.
-          disabled={publisherFeed.remoteItems.length === 0}
-          title={publisherFeed.remoteItems.length === 0 ? 'Add a catalog feed first' : undefined}
-          onChange={e => dispatch({ type: 'SET_PUBLISHER_ROLE', payload: e.target.value })}
-        >
-          {catalogRole(publisherFeed.remoteItems) === null && (
-            <option value="mixed" disabled>Mixed (the imported feeds state different roles)</option>
-          )}
-          {PUBLISHER_ROLES.map(role => (
-            <option key={role.value} value={role.value}>{role.label}</option>
-          ))}
-        </select>
-      </div>
+      {/* Publisher role, written as rel on both sides of each link (utils/publisherRole.ts).
+          Beta: shown with Show Beta Features on, or when a catalog feed already
+          states a role, so the toggle never hides what MSP writes. */}
+      {(showBeta || role !== '') && (
+        <div className="form-group beta-field" style={{ marginBottom: '20px' }}>
+          <label className="form-label">This publisher is <BetaTag /><InfoIcon text={PUBLISHER_FIELD_INFO.publisherRole} /></label>
+          <select
+            className="form-select"
+            value={role ?? 'mixed'}
+            // The role lives on the catalog items, so there is nothing to hold it yet.
+            disabled={publisherFeed.remoteItems.length === 0}
+            title={publisherFeed.remoteItems.length === 0 ? 'Add a catalog feed first' : undefined}
+            onChange={e => dispatch({ type: 'SET_PUBLISHER_ROLE', payload: e.target.value })}
+          >
+            {role === null && (
+              <option value="mixed" disabled>Mixed (the feeds state different roles)</option>
+            )}
+            {/* A set of roles, or an imported token, that is not one of the choices. */}
+            {role && !PUBLISHER_ROLES.some(choice => choice.value === role) && (
+              <option value={role} disabled>{role}</option>
+            )}
+            {PUBLISHER_ROLES.map(choice => (
+              <option key={choice.value} value={choice.value}>{choice.label}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Search UI */}
       <div style={{ marginBottom: '20px' }}>
@@ -355,7 +380,9 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
               </button>
             </div>
             <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
-            {searchResults.map(result => (
+            {searchResults.map(result => {
+              const platform = getPlatformHost(result.url);
+              return (
               <div
                 key={result.id}
                 style={{
@@ -378,16 +405,25 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
                   }}
                   onError={e => (e.target as HTMLImageElement).style.display = 'none'}
                 />
-                <span style={{ flex: 1, fontWeight: 500 }}>{result.title}</span>
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontWeight: 500 }}>{result.title}</span>
+                  {platform && (
+                    <p style={{ color: 'var(--warning)', fontSize: '12px', marginTop: '4px' }}>
+                      {platformRefusal(platform)}
+                    </p>
+                  )}
+                </div>
                 <button
                   className="btn btn-primary"
                   onClick={() => handleAddFromSearch(result)}
-                  style={{ padding: '6px 16px' }}
+                  disabled={!!platform}
+                  style={{ padding: '6px 16px', flexShrink: 0 }}
                 >
-                  Add
+                  {platform ? "Can't add" : 'Add'}
                 </button>
               </div>
-            ))}
+              );
+            })}
             </div>
           </div>
         )}
@@ -542,9 +578,22 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
         )}
       </div>
 
-      <div className="repeatable-list">
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' }}>
+        <button
+          className="btn btn-secondary"
+          onClick={() => void linkBack.checkAll()}
+          disabled={linkBack.checkingAll || publisherFeed.remoteItems.length === 0}
+          title="Check whether each album's feed points back to this publisher feed"
+        >
+          {linkBack.checkingAll ? 'Checking…' : 'Check links back'}
+        </button>
+      </div>
+
+      <div className="repeatable-list catalog-feed-list">
         {publisherFeed.remoteItems.map((item, index) => {
           const feedUrlError = item.feedUrl ? getFeedUrlError(item.feedUrl) : null;
+          const platform = getPlatformHost(item.feedUrl);
+          const linkStatus = platform ? undefined : linkBack.statusFor(item);
           return (
           <div key={index} className="repeatable-item">
             <div className="repeatable-item-content" style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
@@ -596,8 +645,8 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
                   </button>
                 )}
               </div>
-              {/* Form Fields */}
-              <div style={{ flex: 1 }}>
+              {/* Form Fields: below the artwork when there's no room beside it (CatalogFeedsSection.css) */}
+              <div className="catalog-feed-fields">
                 <div className="form-grid">
                   <div className="form-group" style={{ width: '80px' }}>
                     <label className="form-label">Order</label>
@@ -654,7 +703,48 @@ export function CatalogFeedsSection({ publisherFeed, dispatch }: CatalogFeedsSec
                         ⚠ This feed's URL (as registered in Podcast Index) has a problem: {feedUrlError} Some apps may fail to fetch it — consider re-hosting the feed at a clean URL and re-submitting.
                       </p>
                     )}
+                    {platform && (
+                      <p style={{ color: 'var(--warning)', fontSize: '12px', marginTop: '4px' }}>
+                        ⚠ {platformWarning(platform)}
+                      </p>
+                    )}
+                    {linkStatus === 'checking' && (
+                      <p style={{ color: 'var(--text-secondary)', fontSize: '12px', marginTop: '4px' }}>Checking…</p>
+                    )}
+                    {linkStatus && linkStatus !== 'checking' && (
+                      <p style={{
+                        color: linkStatus.status === 'linked' ? 'var(--text-secondary)' : 'var(--warning)',
+                        fontSize: '12px',
+                        marginTop: '4px'
+                      }}>
+                        {linkStatus.status === 'linked' ? '✓ ' : ''}{linkBackMessage(linkStatus, isMspHosted(item.feedUrl ?? ''), showBeta)}
+                      </p>
+                    )}
                   </div>
+                  {/* The roles of this one link (podcast-namespace PR #793). Beta, and
+                      shown when the feed already states one, as the toggle below. */}
+                  {(showBeta || item.rel) && (
+                    <RolePicker
+                      rel={item.rel}
+                      info={PUBLISHER_FIELD_INFO.itemRole}
+                      onChange={rel => dispatch({ type: 'UPDATE_REMOTE_ITEM', payload: { index, item: withRole(item, rel) } })}
+                    />
+                  )}
+                  {/* Shown when the catalog already has a recommendation, so turning the
+                      beta toggle off can never hide one that will be written. */}
+                  {(showBeta || item.pinned) && (
+                    <div className="form-group beta-field">
+                      <Toggle
+                        checked={!!item.pinned}
+                        onChange={val => dispatch({
+                          type: 'UPDATE_REMOTE_ITEM',
+                          payload: { index, item: { ...item, pinned: val } }
+                        })}
+                        label={<>Recommended first listen <BetaTag /></>}
+                        labelSuffix={<InfoIcon text={PUBLISHER_FIELD_INFO.remoteItemPinned} />}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

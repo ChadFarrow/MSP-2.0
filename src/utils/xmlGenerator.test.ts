@@ -141,6 +141,17 @@ describe('OP3 analytics prefix', () => {
     expect(xml).toContain('url="https://op3.dev/e,pg=test-guid-123/example.com/track1.mp3"');
   });
 
+  it('strips an uppercase HTTPS scheme before prefixing', () => {
+    const album = createEmptyAlbum();
+    album.op3 = true;
+    album.podcastGuid = 'test-guid-123';
+    album.tracks[0].enclosureUrl = 'HTTPS://example.com/track1.mp3';
+
+    const xml = generateRssFeed(album);
+
+    expect(xml).toContain('url="https://op3.dev/e,pg=test-guid-123/example.com/track1.mp3"');
+  });
+
   it('prefixes HTTP enclosure URLs keeping full URL', () => {
     const album = createEmptyAlbum();
     album.title = 'Test Album';
@@ -482,5 +493,15 @@ describe('XML escaping at every interpolation site', () => {
     const xml = generateRssFeed(album);
     expect(xml).toContain('length="123&quot; x=&quot;y"');
     expect(xml).toContain('<itunes:duration>00:03:00 &amp; more</itunes:duration>');
+  });
+
+  it('escapes the guid= and feedGuid= attributes of podcast:pinned', () => {
+    const album = createEmptyAlbum();
+    album.tracks = [{ ...createEmptyTrack(1), guid: 'a & "b"', pinned: true }];
+    expect(generateRssFeed(album)).toContain('<podcast:pinned guid="a &amp; &quot;b&quot;" />');
+
+    const publisher = createEmptyPublisherFeed();
+    publisher.remoteItems = [{ feedGuid: 'a & "b"', pinned: true }];
+    expect(generatePublisherRssFeed(publisher)).toContain('<podcast:pinned feedGuid="a &amp; &quot;b&quot;" />');
   });
 });

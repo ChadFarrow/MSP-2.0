@@ -18,7 +18,7 @@ vi.hoisted(() => {
 import { feedReducer, emptyFeedCheck } from './feedStore';
 import type { FeedState } from './feedStore';
 import { createEmptyAlbum, createEmptyPublisherFeed, createEmptyRemoteItem, createEmptyTrack } from '../types/feed';
-import type { Album, RemoteItem } from '../types/feed';
+import type { Album, AlternateEnclosure, RemoteItem } from '../types/feed';
 import type { FeedIssue } from '../utils/feedChecks';
 import { LINK_CHECK_LIMIT } from '../utils/linkCheck';
 
@@ -326,5 +326,89 @@ describe('feedReducer feed check', () => {
     expect(state.feedCheck.feedType).toBe('publisher');
     expect(state.feedCheck.sourceFindings).toEqual([]);
     expect(state.feedCheck.linkRun?.id).toBe(2);
+  });
+});
+
+describe('feedReducer SET_ALTERNATE_ENCLOSURE_MEASURED', () => {
+  // A size or height lookup lands up to ~10 s after it starts. It names the
+  // track and the version by id, so it lands right whatever the user did meanwhile.
+  const FLAC = 'https://example.com/1.flac';
+  const withVersion = (version: Partial<AlternateEnclosure> = {}): FeedState => {
+    const album = albumWith(['Sat, 01 Feb 2025 00:02:00 GMT', 'Sat, 01 Feb 2025 00:01:00 GMT']);
+    album.tracks[1].alternateEnclosures = [{ id: 'v', type: 'audio/flac', sources: [{ uri: FLAC }], ...version }];
+    return makeState(album);
+  };
+  const measured = (state: FeedState, trackId: string, url = FLAC) => feedReducer(state, {
+    type: 'SET_ALTERNATE_ENCLOSURE_MEASURED', payload: { trackId, versionId: 'v', url, field: 'length', value: '31200000' }
+  });
+
+  it('writes the size to that version, wherever its track is now', () => {
+    let state = withVersion();
+    const trackId = state.album.tracks[1].id;
+    state = feedReducer(state, { type: 'REORDER_TRACKS', payload: { fromIndex: 1, toIndex: 0 } });
+    state = measured(state, trackId);
+    expect(state.album.tracks[0].alternateEnclosures![0].length).toBe('31200000');
+    expect(state.album.tracks[1].alternateEnclosures).toBeUndefined();
+    expect(state.isDirty).toBe(true);
+  });
+
+  it('matches the URL without its surrounding spaces', () => {
+    const state = withVersion({ sources: [{ uri: ` ${FLAC} ` }] });
+    expect(measured(state, state.album.tracks[1].id).album.tracks[1].alternateEnclosures![0].length).toBe('31200000');
+  });
+
+  it('changes nothing if, meanwhile, the URL changed, a size was typed, or the version or track went', () => {
+    for (const state of [withVersion({ sources: [{ uri: 'https://example.com/2.flac' }] }), withVersion({ length: '42' }), withVersion({ id: 'w' })]) {
+      expect(measured(state, state.album.tracks[1].id)).toBe(state);
+    }
+    const state = withVersion();
+    expect(measured(state, 'no-such-track')).toBe(state);
+  });
+
+  it('writes a measured video height the same way, unless one was typed', () => {
+    const MP4 = 'https://example.com/1.mp4';
+    const height = (state: FeedState) => feedReducer(state, {
+      type: 'SET_ALTERNATE_ENCLOSURE_MEASURED', payload: { trackId: state.album.tracks[1].id, versionId: 'v', url: MP4, field: 'height', value: '1080' }
+    });
+    const video = withVersion({ type: 'video/mp4', length: '58390859', sources: [{ uri: MP4 }] });
+    expect(height(video).album.tracks[1].alternateEnclosures![0]).toMatchObject({ height: '1080', length: '58390859' });
+    const typed = withVersion({ type: 'video/mp4', height: '720', sources: [{ uri: MP4 }] });
+    expect(height(typed)).toBe(typed);
+  });
+});
+
+describe('feedReducer SET_PUBLISHER_GUID', () => {
+  // A Podcast Index lookup lands after a network round trip. It names the
+  // publisher by URL, so it can't write over an edit made meanwhile.
+  const URL_A = 'https://example.com/artist.xml';
+  // Built inline, not with makeState: the Desktop App's copy of this file has
+  // its own makeState, and this block reaches it through the sync.
+  const withPublisher = (fields: Partial<Album>): FeedState => ({
+    feedType: 'album',
+    album: { ...createEmptyAlbum(), ...fields },
+    videoFeed: null,
+    publisherFeed: null,
+    isDirty: false,
+    publisherFeedInstance: 0,
+    feedCheck: emptyFeedCheck()
+  });
+  const found = (state: FeedState, feedUrl = URL_A) =>
+    feedReducer(state, { type: 'SET_PUBLISHER_GUID', payload: { feedUrl, feedGuid: 'artist-guid' } });
+
+  it('sets the GUID and keeps the rel an imported feed states', () => {
+    const state = found(withPublisher({ publisher: { feedGuid: '', feedUrl: URL_A, rel: 'artist' } }));
+    expect(state.album.publisher).toEqual({ feedGuid: 'artist-guid', feedUrl: URL_A, rel: 'artist' });
+    expect(state.isDirty).toBe(true);
+  });
+
+  it('keeps the other publishers', () => {
+    const label = { feedGuid: 'label-guid', feedUrl: 'https://example.com/label.xml', rel: 'label' };
+    const state = found(withPublisher({ publisher: { feedGuid: '', feedUrl: URL_A }, additionalPublishers: [label] }));
+    expect(state.album.additionalPublishers).toEqual([label]);
+  });
+
+  it('changes nothing when the URL was edited meanwhile', () => {
+    const state = withPublisher({ publisher: { feedGuid: '', feedUrl: 'https://example.com/artist.xm' } });
+    expect(found(state)).toBe(state);
   });
 });

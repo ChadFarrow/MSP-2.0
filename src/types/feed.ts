@@ -72,6 +72,59 @@ export interface RemoteItem {
   // The publisher's role, e.g. "artist" or "label". Not in the spec yet — see
   // utils/publisherRole.ts. Absent means not stated.
   rel?: string;
+  /**
+   * Publisher catalog only: an album recommended to new listeners,
+   * written as a channel-level <podcast:pinned feedGuid> naming this feed. That
+   * is MSP's extension — the proposal (podcast-namespace #570) only pins an
+   * episode of the same feed. See generatePinnedXml in xmlGenerator.ts.
+   */
+  pinned?: boolean;
+}
+
+// Alternate enclosure types (podcast:alternateEnclosure)
+export interface AlternateEnclosureSource {
+  uri: string;
+  contentType?: string;
+  // Attributes MSP has no field for, carried through from import unchanged.
+  unknownAttributes?: Record<string, string>;
+}
+
+// Everything on an alternate version that describes one particular file.
+export interface AlternateEnclosureFile {
+  source: AlternateEnclosureSource;  // the first <podcast:source>, as it was
+  type: string;
+  length?: string;
+  bitrate?: string;
+  height?: string;
+  codecs?: string;
+  integrity?: unknown;               // the 'podcast:integrity' passthrough entry
+}
+
+export interface AlternateEnclosure {
+  id: string;
+  type: string;                    // Required: MIME type
+  length?: string;                 // File size in bytes
+  bitrate?: string;                // bits/sec
+  height?: string;                 // Video height
+  lang?: string;                   // BCP 47 language tag
+  title?: string;                  // Max 32 chars
+  rel?: string;                    // Grouping ID, max 32 chars
+  codecs?: string;                 // RFC 6381
+  default?: boolean;
+  sources: AlternateEnclosureSource[];
+  // Attributes MSP has no field for, carried through from import unchanged.
+  unknownAttributes?: Record<string, string>;
+  // Editor only, never written to XML: the user picked the type, so a URL edit
+  // no longer sets it from the extension. Kept on the version, not in the
+  // component, so it survives collapsing the track and a reload.
+  typeSetByHand?: boolean;
+  // Editor only, never written to XML: what described the file at the URL the
+  // version had before the user edited it, so an edit that returns to that URL
+  // gets it back. Set by urlChange() in utils/alternateEnclosure.ts.
+  originalFile?: AlternateEnclosureFile;
+  // Children other than <podcast:source> (<podcast:integrity>, anything newer),
+  // carried through from import unchanged.
+  unknownElements?: Record<string, unknown>;
 }
 
 // A <podcast:block id="..."> that addresses one named service. Kept verbatim:
@@ -200,6 +253,14 @@ export interface Track {
   persons: Person[];
   overrideValue: boolean;
   value?: ValueBlock;
+  alternateEnclosures?: AlternateEnclosure[];
+  /**
+   * A track recommended to new listeners, written as a channel-level
+   * <podcast:pinned> pointing at this track's guid. Proposed tag only
+   * (podcast-namespace discussions #570 / #747), so the editor shows it behind
+   * the experimental toggle. See generatePinnedXml in xmlGenerator.ts.
+   */
+  pinned?: boolean;
   unknownItemElements?: Record<string, unknown>;
 }
 
@@ -256,6 +317,12 @@ export interface Album {
 
   // Publisher reference (optional - links this feed to a parent publisher feed)
   publisher?: PublisherReference;
+
+  // Further parties inside the same <podcast:publisher>, in feed order, after
+  // `publisher` (the primary party). An album released by a label and credited
+  // to its artist names both. Proposed in podcast-namespace PR #793; see
+  // utils/publisherParties.ts.
+  additionalPublishers?: PublisherReference[];
 
   // Unknown/unsupported XML elements (preserved for round-trip)
   unknownChannelElements?: Record<string, unknown>;
@@ -559,6 +626,18 @@ export const createEmptyRemoteItem = (): RemoteItem => ({
   feedUrl: '',
   title: '',
   medium: 'music'
+});
+
+// Default empty alternate enclosure source
+export const createEmptyAlternateEnclosureSource = (): AlternateEnclosureSource => ({
+  uri: ''
+});
+
+// Default empty alternate enclosure
+export const createEmptyAlternateEnclosure = (mimeType = 'audio/mpeg'): AlternateEnclosure => ({
+  id: crypto.randomUUID(),
+  type: mimeType,
+  sources: [createEmptyAlternateEnclosureSource()]
 });
 
 // Default empty publisher reference

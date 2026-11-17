@@ -4,17 +4,24 @@ import { Section } from '../../Section';
 import { InfoIcon } from '../../InfoIcon';
 import { useNostr } from '../../../store/nostrStore';
 import { useFeed } from '../../../store/feedStore';
+import { useExperimental } from '../../../store/experimentalStore';
 import {
   publishPublisherFeed,
   getPublishStatus,
+  linkedAfterPublish,
+  summarizeCatalogUpdates,
+  catalogResultTone,
   type PublishProgress,
   type PublishResult
 } from '../../../utils/publisherPublish';
+import { isMspHosted } from '../../../utils/publisherControl';
+import type { LinkBackState } from './useLinkBackStatus';
 import { downloadHostedFeedBackup, type HostedFeedInfo } from '../../../utils/hostedFeed';
 import { publisherStorage } from '../../../utils/storage';
 
 interface PublishSectionProps {
   publisherFeed: PublisherFeed;
+  linkBack: LinkBackState;
 }
 
 type StepStatus = 'pending' | 'in-progress' | 'complete' | 'error' | 'skipped';
@@ -25,9 +32,10 @@ interface StepState {
   updatingCatalog: StepStatus;
 }
 
-export function PublishSection({ publisherFeed }: PublishSectionProps) {
+export function PublishSection({ publisherFeed, linkBack }: PublishSectionProps) {
   const { state: nostrState } = useNostr();
   const { dispatch } = useFeed();
+  const { showBeta } = useExperimental();
   const isLoggedIn = nostrState.isLoggedIn;
 
   // Publish state
@@ -124,6 +132,7 @@ export function PublishSection({ publisherFeed }: PublishSectionProps) {
       updateCatalogFeeds: updateCatalogFeeds && publisherFeed.remoteItems.length > 0,
       linkNostr: isLoggedIn,
       nostrPubkey: nostrState.user?.pubkey,
+      addParty: showBeta,
       onProgress: setProgress
     });
 
@@ -135,6 +144,13 @@ export function PublishSection({ publisherFeed }: PublishSectionProps) {
       if (!isPublished && result.hostedInfo) {
         setPendingHostedInfo(result.hostedInfo);
       }
+
+      // Before the re-dispatch below, whose automatic re-check would otherwise
+      // re-read these albums and could get the pre-publish copy from the blob CDN.
+      linkBack.markLinked(linkedAfterPublish(
+        result.catalogUpdateResults ?? [],
+        (result.updatedPublisherFeed ?? publisherFeed).remoteItems
+      ));
 
       // Update the publisher feed in the store with new catalog URLs
       if (result.updatedPublisherFeed) {
@@ -162,20 +178,11 @@ export function PublishSection({ publisherFeed }: PublishSectionProps) {
     }
   };
 
-  const getCatalogUpdateSummary = () => {
-    if (!publishResult?.catalogUpdateResults) return 'Complete';
+  const getCatalogUpdateSummary = () =>
+    publishResult?.catalogUpdateResults ? summarizeCatalogUpdates(publishResult.catalogUpdateResults) : 'Complete';
 
-    const updated = publishResult.catalogUpdateResults.filter(r => r.status === 'updated').length;
-    const downloaded = publishResult.catalogUpdateResults.filter(r => r.status === 'downloaded').length;
-    const errors = publishResult.catalogUpdateResults.filter(r => r.status === 'error').length;
-
-    const parts = [];
-    if (updated > 0) parts.push(`${updated} updated`);
-    if (downloaded > 0) parts.push(`${downloaded} downloaded`);
-    if (errors > 0) parts.push(`${errors} failed`);
-
-    return parts.join(', ') || 'Complete';
-  };
+  // Only MSP-hosted albums can be written here; the others are skipped.
+  const mspAlbumCount = publisherFeed.remoteItems.filter(item => isMspHosted(item.feedUrl ?? '')).length;
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -260,9 +267,9 @@ export function PublishSection({ publisherFeed }: PublishSectionProps) {
           <span style={{ width: '24px', fontSize: '16px' }}>{getStepIcon(stepStates.updatingCatalog)}</span>
           <span style={{ flex: 1, fontWeight: 500 }}>
             Add publisher references
-            {publisherFeed.remoteItems.length > 0 && (
+            {mspAlbumCount > 0 && (
               <span style={{ color: 'var(--text-secondary)', fontWeight: 400 }}>
-                {' '}({publisherFeed.remoteItems.length})
+                {' '}({mspAlbumCount} on MSP)
               </span>
             )}
           </span>
@@ -302,7 +309,7 @@ export function PublishSection({ publisherFeed }: PublishSectionProps) {
                 style={{ width: '16px', height: '16px' }}
               />
               <span>Add publisher references to catalog feeds</span>
-              <InfoIcon text="Adds a <podcast:publisher> tag to each catalog feed, linking them back to this publisher feed. MSP-hosted feeds with saved credentials are updated automatically; others are downloaded for manual upload." />
+              <InfoIcon text="Adds a <podcast:publisher> tag to each catalog feed, linking them back to this publisher feed. MSP-hosted feeds you own are updated automatically. Other feeds are skipped: get their new version from Download Catalog and upload it to their host." />
             </label>
           )}
 
@@ -572,13 +579,14 @@ export function PublishSection({ publisherFeed }: PublishSectionProps) {
                   alignItems: 'center',
                   justifyContent: 'center',
                   fontSize: '12px',
-                  backgroundColor: result.status === 'updated' ? 'var(--success-color)' :
-                    result.status === 'downloaded' ? 'var(--warning-color, #f59e0b)' :
+                  backgroundColor: catalogResultTone(result.status) === 'ok' ? 'var(--success-color)' :
+                    catalogResultTone(result.status) === 'neutral' ? 'var(--text-secondary)' :
                       'var(--danger-color)',
                   color: 'white'
                 }}>
                   {result.status === 'updated' ? '✓' :
-                    result.status === 'downloaded' ? '↓' : '!'}
+                    result.status === 'downloaded' ? '↓' :
+                      result.status === 'skipped' ? '–' : '!'}
                 </span>
                 <span style={{ flex: 1, fontWeight: 500, fontSize: '14px' }}>{result.title}</span>
                 <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>

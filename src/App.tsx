@@ -21,6 +21,7 @@ import { PodpingModal } from './components/modals/PodpingModal';
 import { InfoModal } from './components/modals/InfoModal';
 import { NostrConnectModal } from './components/modals/NostrConnectModal';
 import { NewFeedChoiceModal } from './components/modals/NewFeedChoiceModal';
+import { BetaBanner } from './components/BetaBanner';
 import { Editor } from './components/Editor/Editor';
 import { PublisherEditor } from './components/Editor/PublisherEditor';
 import { AdminPage } from './components/admin/AdminPage';
@@ -62,7 +63,7 @@ function cachedPiFeedId(rawGuid: string | undefined): number | null {
 function AppContent() {
   const { state, dispatch } = useFeed();
   const { theme, toggleTheme } = useTheme();
-  const { showExperimental, toggleExperimental } = useExperimental();
+  const { showExperimental, toggleExperimental, showBeta, toggleBeta } = useExperimental();
   const [showImportModal, setShowImportModal] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
@@ -374,6 +375,14 @@ function AppContent() {
                       🧪 {showExperimental ? 'Hide' : 'Show'} Experimental Features
                     </button>
                   )}
+                  {/* Beta features ship to production; users opt in here. */}
+                  <button
+                    className="dropdown-item"
+                    title="Turn on editor features still in testing, marked 🧪"
+                    onClick={() => { toggleBeta(); setShowDropdown(false); }}
+                  >
+                    🧪 {showBeta ? 'Hide' : 'Show'} Beta Features
+                  </button>
                   <div className="dropdown-divider" />
                   {nostrState.isLoggedIn ? (
                     <button
@@ -412,6 +421,7 @@ function AppContent() {
             </div>
           </div>
         </header>
+        <BetaBanner />
         {state.feedType === 'publisher' ? <PublisherEditor /> : <Editor key={`${state.feedType}-${state.album?.podcastGuid}-${state.videoFeed?.podcastGuid}`} />}
         <div className="bottom-toolbar">
           <button

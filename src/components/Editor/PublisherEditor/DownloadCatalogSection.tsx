@@ -6,14 +6,27 @@ import { generateRssFeed, downloadXml } from '../../../utils/xmlGenerator';
 import { getHostedFeedInfo, buildHostedUrl } from '../../../utils/hostedFeed';
 import { getFeedUrlError, normalizeFeedUrl } from '../../../utils/urlValidation';
 import { verifyFeedUrl, isGuardRefusal, FORCED_SUBMIT_NOTE } from '../../../utils/verifyFeedUrl';
+import { linkPublisher } from '../../../utils/publisherParties';
+import { classifyAlbumLinkBack, getPlatformHost, linkBackMessage, platformWarning } from '../../../utils/publisherControl';
+import type { LinkBackState } from './useLinkBackStatus';
+import { useExperimental } from '../../../store/experimentalStore';
+
+// An album that names only another publisher is that publisher's claim, so its
+// new version would take it from them (the publish flow skips it for the same
+// reason).
+const OTHER_PUBLISHER_NOTE =
+  'Names a different publisher feed, so MSP leaves it alone. Ask the owner of that publisher feed if it should move.';
 
 interface DownloadCatalogSectionProps {
   publisherFeed: PublisherFeed;
   /** Store-level counter, bumped whenever a different publisher feed is loaded. */
   feedInstance: number;
+  linkBack: LinkBackState;
 }
 
-export function DownloadCatalogSection({ publisherFeed, feedInstance }: DownloadCatalogSectionProps) {
+export function DownloadCatalogSection({ publisherFeed, feedInstance, linkBack }: DownloadCatalogSectionProps) {
+  // Beta (podcast-namespace PR #793): add this publisher to an album that names another.
+  const { showBeta } = useExperimental();
   const [downloadingIndex, setDownloadingIndex] = useState<number | null>(null);
   const [downloadingAll, setDownloadingAll] = useState(false);
   const [publisherFeedUrl, setPublisherFeedUrl] = useState('');
@@ -173,13 +186,19 @@ export function DownloadCatalogSection({ publisherFeed, feedInstance }: Download
       const xml = await fetchFeedFromUrl(item.feedUrl);
       const album = parseRssFeed(xml);
 
+      // With Beta Features on, this publisher is added after the others instead.
+      if (!showBeta && classifyAlbumLinkBack(album, publisherFeed.podcastGuid).status === 'other') {
+        alert(`${item.title || item.feedUrl}: ${OTHER_PUBLISHER_NOTE}`);
+        return;
+      }
+
       // Add publisher reference and update lastBuildDate
       // rel mirrors this album's entry in the publisher feed, so both sides agree.
-      album.publisher = {
+      Object.assign(album, linkPublisher(album, {
         feedGuid: publisherFeed.podcastGuid,
         feedUrl: publisherFeedUrl,
         rel: item.rel
-      };
+      }));
       album.lastBuildDate = new Date().toUTCString();
 
       // Generate new XML with publisher reference
@@ -205,6 +224,8 @@ export function DownloadCatalogSection({ publisherFeed, feedInstance }: Download
     // A failed feed used to vanish here — the catch below was empty, so a run
     // that downloaded nothing looked identical to one that downloaded everything.
     const failures: string[] = [];
+    // Albums that name only another publisher: not downloaded, but reported.
+    const skipped: string[] = [];
     for (let i = 0; i < publisherFeed.remoteItems.length; i++) {
       const item = publisherFeed.remoteItems[i];
       if (!item.feedUrl) continue;
@@ -215,13 +236,19 @@ export function DownloadCatalogSection({ publisherFeed, feedInstance }: Download
         const xml = await fetchFeedFromUrl(item.feedUrl);
         const album = parseRssFeed(xml);
 
+        // With Beta Features on, this publisher is added after the others instead.
+        if (!showBeta && classifyAlbumLinkBack(album, publisherFeed.podcastGuid).status === 'other') {
+          skipped.push(item.title || item.feedUrl);
+          continue;
+        }
+
         // Add publisher reference and update lastBuildDate
         // rel mirrors this album's entry in the publisher feed, so both sides agree.
-        album.publisher = {
+        Object.assign(album, linkPublisher(album, {
           feedGuid: publisherFeed.podcastGuid,
           feedUrl: publisherFeedUrl,
           rel: item.rel
-        };
+        }));
         album.lastBuildDate = new Date().toUTCString();
 
         // Generate new XML with publisher reference
@@ -245,12 +272,17 @@ export function DownloadCatalogSection({ publisherFeed, feedInstance }: Download
     setDownloadingIndex(null);
     setDownloadingAll(false);
 
+    const report: string[] = [];
     if (failures.length > 0) {
-      alert(
+      report.push(
         `${failures.length} of ${publisherFeed.remoteItems.length} feeds could not be downloaded:\n\n` +
         failures.join('\n\n')
       );
     }
+    if (skipped.length > 0) {
+      report.push(`${skipped.length} not downloaded. ${OTHER_PUBLISHER_NOTE}\n\n${skipped.join('\n')}`);
+    }
+    if (report.length > 0) alert(report.join('\n\n'));
   };
 
   const hasPublisherGuid = !!publisherFeed.podcastGuid;
@@ -401,6 +433,16 @@ export function DownloadCatalogSection({ publisherFeed, feedInstance }: Download
                 <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                   {item.feedGuid}
                 </div>
+                {(() => {
+                  // A copy of these would be no use (platform) or would take the
+                  // album from the publisher it names now (other), so say so here.
+                  const platform = getPlatformHost(item.feedUrl);
+                  const status = platform ? undefined : linkBack.statusFor(item);
+                  const text = platform
+                    ? platformWarning(platform)
+                    : status && status !== 'checking' && status.status === 'other' ? linkBackMessage(status, false, showBeta) : null;
+                  return text && <div style={{ fontSize: '12px', color: 'var(--warning)', marginTop: '4px' }}>⚠ {text}</div>;
+                })()}
               </div>
               <button
                 className="btn btn-secondary"

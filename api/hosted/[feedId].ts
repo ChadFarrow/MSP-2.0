@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { put, del, list } from '@vercel/blob';
 import { parseAuthHeader, parseFeedAuthHeader } from '../_utils/adminAuth.js';
 import {
+  HOSTED_FEED_EDGE_TTL_S,
   notifyPodcastIndex,
   hasItunesBlock,
   getBaseUrl,
@@ -14,6 +15,7 @@ import type { PodcastIndexAddResult } from '../_utils/feedUtils.js';
 import { extractPodcastMedium } from '../_utils/xmlUtils.js';
 import { parseEmailAuthHeader } from '../_utils/emailAuth.js';
 import { addFeedToAccount, removeFeedFromAccount } from '../_utils/accountStore.js';
+import { applyCors } from '../_utils/cors.js';
 
 // Metadata stored in separate .meta.json blob
 interface FeedMetadata {
@@ -99,12 +101,16 @@ async function backupFeed(feedId: string, blobUrl: string): Promise<void> {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Handle CORS preflight
-  if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Edit-Token, Authorization, X-Admin-Key, X-Email-Session');
-    return res.status(204).end();
+  // Public: the WordPress plugin calls this from each artist's own site, so the
+  // origins can't be listed. Safe because auth is headers, never cookies.
+  // Applied to every response, not only the preflight, or a browser on another
+  // origin can't read a PUT's result or an error message.
+  if (applyCors(req, res, {
+    methods: 'GET, POST, PUT, DELETE, PATCH, OPTIONS',
+    headers: 'Content-Type, X-Edit-Token, Authorization, X-Admin-Key, X-Email-Session',
+    public: true
+  })) {
+    return;
   }
 
   let { feedId } = req.query;
@@ -192,7 +198,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Set cache and CORS headers. application/xml (not application/rss+xml)
         // so browsers render the feed inline in a tab instead of downloading it;
         // podcast apps / Podcast Index parse either content-type the same.
-        res.setHeader('Cache-Control', 'public, max-age=300');
+        // The edge TTL decides how long a save stays invisible, and so how long a
+        // podping has to wait: see HOSTED_FEED_SETTLE_MS before raising it.
+        res.setHeader('Cache-Control', `public, max-age=0, s-maxage=${HOSTED_FEED_EDGE_TTL_S}`);
         res.setHeader('Content-Type', 'application/xml; charset=utf-8');
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');

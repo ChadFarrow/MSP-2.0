@@ -70,6 +70,20 @@ export function generateEditToken(): string {
 }
 
 /**
+ * A refused hosted-feed request. `status` is the HTTP status, so callers can tell
+ * "already exists" (409) from "not yours" (401/403) without matching message text.
+ */
+export class HostedFeedError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'HostedFeedError';
+    this.status = status;
+  }
+}
+
+/**
  * Fetch a hosted-feed API endpoint, throwing a friendly error on a non-2xx
  * (reusing the server's `error` field when present). Shared by every call below.
  */
@@ -81,7 +95,7 @@ async function hostedRequest<T = unknown>(
   const response = await fetch(input, init);
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: failMessage }));
-    throw new Error(error.error || failMessage);
+    throw new HostedFeedError(error.error || failMessage, response.status);
   }
   return response.json();
 }

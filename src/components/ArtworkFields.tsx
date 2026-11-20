@@ -1,5 +1,6 @@
 import { FIELD_INFO } from '../data/fieldInfo';
 import { InfoIcon } from './InfoIcon';
+import { MediaLibraryButton } from './MediaLibraryButton';
 
 interface ArtworkFieldsProps {
   imageUrl: string | undefined;
@@ -35,6 +36,7 @@ export function ArtworkFields({
           value={imageUrl || ''}
           onChange={e => onUpdate('imageUrl', e.target.value)}
         />
+        <MediaLibraryButton kind="image" onPick={media => onUpdate('imageUrl', media.url)} />
       </div>
       <div className="form-group">
         <label className="form-label">Image Title<InfoIcon text={FIELD_INFO.imageTitle} /></label>

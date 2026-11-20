@@ -49,3 +49,12 @@ jobs:
       # red, and a fix pushed to that PR is wiped when sync-upstream force-resets.
       - name: Lint
         run: npm run lint
+
+      # The WordPress plugin is built from this same source (`vite build --mode
+      # wordpress`), so a change that breaks only that build would otherwise go
+      # unnoticed until someone packaged the plugin. `php -l` is the only check
+      # the plugin's PHP gets in CI; ubuntu-latest ships PHP.
+      - name: WordPress plugin (build + PHP syntax)
+        run: |
+          npm run build:wp
+          find wordpress/msp-studio -name '*.php' -not -path '*/build/*' -print0 | xargs -0 -n1 php -l

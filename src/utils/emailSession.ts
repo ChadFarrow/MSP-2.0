@@ -66,3 +66,25 @@ export async function verifyMagicLink(token: string): Promise<EmailSessionInfo> 
   emailSessionStorage.save(info);
   return info;
 }
+
+/**
+ * The token from a pasted magic link — the whole URL from the email, or just
+ * the token. Returns null when the text holds neither.
+ *
+ * Used by the WordPress plugin: the emailed link always points at MSP's own
+ * domain (getVerifyOrigin refuses any other host, on purpose), so clicking it
+ * would sign the user in on musicsideproject.com, not inside WordPress. The
+ * plugin asks for the link to be pasted instead and redeems it here.
+ */
+export function extractMagicLinkToken(input: string): string | null {
+  const text = input.trim();
+  if (!text) return null;
+  try {
+    const url = new URL(text);
+    const token = url.searchParams.get('token');
+    return token && /^[A-Za-z0-9_-]{16,}$/.test(token) ? token : null;
+  } catch {
+    // Not a URL: accept a bare base64url token (43 chars from 32 bytes).
+    return /^[A-Za-z0-9_-]{16,}$/.test(text) ? text : null;
+  }
+}

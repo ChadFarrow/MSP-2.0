@@ -26,7 +26,15 @@ function getAutoVersion(): string {
 }
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
+  // `npm run build:wp` builds the WordPress plugin from this same source. Its
+  // bundle is served from the plugin's folder, under a <base> the plugin sets,
+  // so asset URLs must be relative; see wordpress/msp-studio/ and
+  // src/utils/runtimeTarget.ts.
+  ...(mode === 'wordpress' ? {
+    base: './',
+    build: { outDir: 'wordpress/msp-studio/build', emptyOutDir: true },
+  } : {}),
   define: {
     __APP_VERSION__: JSON.stringify(getAutoVersion()),
   },
@@ -41,4 +49,4 @@ export default defineConfig({
       }
     }
   }
-})
+}))

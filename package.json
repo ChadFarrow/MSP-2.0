@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:wp": "tsc -b && vite build --mode wordpress && node tools/build-wp-plugin.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",

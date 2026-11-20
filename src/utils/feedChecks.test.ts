@@ -410,3 +410,17 @@ describe('issueLocationLabel', () => {
     expect(issueLocationLabel(issue, publisherFeedSnapshot(goodPublisher()))).toBe('Publisher Info');
   });
 });
+
+describe('catalog rows with no Feed GUID (#181)', () => {
+  it('blocks the save and names the row', () => {
+    const publisher = { ...goodPublisher(), remoteItems: [{ feedGuid: 'aaaa', medium: 'music' }, { feedGuid: '', medium: 'music' }] };
+    const issues = getSaveBlockers(publisherFeedSnapshot(publisher), 'hostedCreate');
+    expect(codes(issues)).toEqual(['catalog-missing-guid']);
+    expect(issues[0].saveLabel).toBe('Catalog feed 2 Feed GUID');
+  });
+
+  it('passes a catalog whose rows all have one', () => {
+    const publisher = { ...goodPublisher(), remoteItems: [{ feedGuid: 'aaaa' }] };
+    expect(getSaveBlockers(publisherFeedSnapshot(publisher), 'hostedCreate')).toEqual([]);
+  });
+});

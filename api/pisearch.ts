@@ -95,12 +95,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       podcastGuid: string;
       url: string;
       image: string;
+      medium?: string;
     }) => ({
       id: feed.id,
       title: feed.title,
       podcastGuid: feed.podcastGuid,
       url: feed.url,
-      image: feed.image
+      image: feed.image,
+      // The feed's own <podcast:medium> as Podcast Index read it. Dropping it
+      // made every search add a "music" row, so a musicL playlist was listed
+      // as an album (#181). Absent when PI has none.
+      ...(feed.medium ? { medium: feed.medium } : {})
     }));
 
     return res.status(200).json({ feeds });

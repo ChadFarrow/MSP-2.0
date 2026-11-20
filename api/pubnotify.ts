@@ -1,11 +1,19 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getAuthHeaders } from './_utils/podcastIndex.js';
-import { notifyPodping, isPodpingConfigured } from './_utils/feedUtils.js';
+import { schedulePodping } from './_utils/feedUtils.js';
 import { getFeedUrlError, normalizeFeedUrl } from './_utils/urlValidation.js';
 import { guardFeedSubmission, wantsForce } from './_utils/feedReachability.js';
 import { getClientIp } from './_utils/urlSafety.js';
+import { applyCors } from './_utils/cors.js';
+import { checkRateLimit } from './_utils/rateLimiter.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Public: the WordPress plugin calls this from each artist's own site, so the
+  // origins can't be listed. Safe because auth is headers, never cookies.
+  if (applyCors(req, res, { methods: 'GET, OPTIONS', public: true })) {
+    return;
+  }
+
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -40,6 +48,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const urlError = getFeedUrlError(url);
   if (urlError) {
     return res.status(400).json({ error: urlError });
+  }
+
+  // Rate-limited since the WordPress plugin made this endpoint callable from
+  // any origin: it spends MSP's Podcast Index credentials. Per warm lambda, like
+  // every limit here — see _utils/rateLimiter.ts.
+  const rate = checkRateLimit(`pubnotify:${getClientIp(req)}`, { limit: 60, windowMs: 3600_000 });
+  if (!rate.allowed) {
+    res.setHeader('Retry-After', Math.ceil(rate.retryAfterMs / 1000));
+    return res.status(429).json({ error: 'Too many Podcast Index notifications. Try again later.' });
   }
 
   // Don't register a feed crawlers can't fetch. Podcast Index keeps the entry
@@ -80,15 +97,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // Broadcast a podping in parallel so indexers that watch Hive re-crawl too.
-    // Fire-and-forget; Railway/hivepinger handles its own retries.
-    if (isPodpingConfigured()) {
-      notifyPodping(url, { reason: 'update', medium: podpingMedium }).then((result) => {
-        if (!result.ok) {
-          console.warn(`Podping broadcast failed for ${url}: ${result.error ?? 'unknown'}`);
-        }
-      });
-    }
+    // Broadcast a podping so indexers that watch Hive re-crawl too. Fire-and-forget;
+    // Railway/hivepinger handles its own retries. publisherPublish.ts calls this right
+    // after writing an MSP-hosted album, so a hosted URL waits for the caches to catch up.
+    schedulePodping(url, { medium: podpingMedium });
 
     // Then, look up the feed to get its Podcast Index ID (requires auth)
     // Try GUID lookup first (more reliable), fall back to URL lookup

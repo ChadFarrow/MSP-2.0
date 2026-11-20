@@ -4,12 +4,14 @@ import { randomBytes } from 'crypto';
 import { parseAuthHeader, parseFeedAuthHeader } from '../_utils/adminAuth.js';
 import {
   notifyPodcastIndex,
+  hasItunesBlock,
   getBaseUrl,
   hashToken,
   isValidFeedId,
   timingSafeEqualString
 } from '../_utils/feedUtils.js';
 import { extractPodcastMedium } from '../_utils/xmlUtils.js';
+import { applyCors } from '../_utils/cors.js';
 import { hydrateFeed } from '../_utils/feedHydrate.js';
 import { parseEmailAuthHeader } from '../_utils/emailAuth.js';
 import { addFeedToAccount } from '../_utils/accountStore.js';
@@ -20,6 +22,16 @@ function generateEditToken(): string {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Public: the WordPress plugin calls this from each artist's own site, so the
+  // origins can't be listed. Safe because auth is headers, never cookies.
+  if (applyCors(req, res, {
+    methods: 'GET, POST, OPTIONS',
+    headers: 'Content-Type, X-Edit-Token, Authorization, X-Admin-Key, X-Email-Session',
+    public: true
+  })) {
+    return;
+  }
+
   // GET - List feeds (admin sees all, regular users see their own)
   if (req.method === 'GET') {
     // Check legacy admin key
@@ -179,7 +191,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const medium = extractPodcastMedium(xml);
 
     // Only notify Podcast Index if not a draft
-    const piResult = (isDraft === true) ? null : await notifyPodcastIndex(stableUrl, { medium });
+    // A hidden feed (Listing) is pinged so directories re-read it, but not registered.
+    const piResult = (isDraft === true)
+      ? null
+      : await notifyPodcastIndex(stableUrl, { medium, register: !hasItunesBlock(xml) });
     const podcastIndexId = piResult ? piResult.podcastIndexId : undefined;
 
     // Store metadata separately (Vercel Blob doesn't support custom metadata)

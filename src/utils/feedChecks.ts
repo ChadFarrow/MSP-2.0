@@ -34,6 +34,7 @@ export type IssueCode =
   | 'track-missing-duration'
   | 'track-missing-url'
   | 'track-missing-size'
+  | 'catalog-missing-guid'
   // Should fix — live rules
   | 'duration-zero'
   | 'guid-duplicate'
@@ -158,6 +159,18 @@ export function getSaveBlockers(feed: FeedSnapshot, target: SaveTarget): FeedIss
     addGuidRules(publisher.podcastGuid, 'Publisher GUID');
     // Every value recipient needs a non-zero split or its sats silently redistribute.
     addRecipientErrors(publisher.value?.recipients, 'Value recipient', 'value');
+    // The spec requires feedGuid on a remoteItem; a row without one names
+    // nothing and is left out of the XML (#181), so say so before saving.
+    publisher.remoteItems.forEach((item, i) => {
+      if (blank(item.feedGuid)) {
+        add(
+          'catalog-missing-guid',
+          'catalog',
+          `Catalog feed ${i + 1} Feed GUID`,
+          `Catalog feed ${i + 1} has no Feed GUID, so it would be left out of the feed. Fill it in, or remove the row.`
+        );
+      }
+    });
     return issues;
   }
 

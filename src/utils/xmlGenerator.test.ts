@@ -505,3 +505,43 @@ describe('XML escaping at every interpolation site', () => {
     expect(generatePublisherRssFeed(publisher)).toContain('<podcast:pinned feedGuid="a &amp; &quot;b&quot;" />');
   });
 });
+
+describe('publisher catalog rows (#181)', () => {
+  const pub = () => {
+    const feed = createEmptyPublisherFeed();
+    feed.title = 'Label';
+    feed.podcastGuid = '11111111-2222-5333-8444-555555555555';
+    return feed;
+  };
+
+  it('writes the medium a row states, musicL included', () => {
+    const feed = pub();
+    feed.remoteItems = [{ feedGuid: 'aaaa', medium: 'musicL' }];
+    expect(generatePublisherRssFeed(feed)).toMatch(/<podcast:remoteItem feedGuid="aaaa" medium="musicL"/);
+  });
+
+  it('writes no medium when the row states none, instead of "music"', () => {
+    const feed = pub();
+    feed.remoteItems = [{ feedGuid: 'aaaa' }];
+    const xml = generatePublisherRssFeed(feed);
+    expect(xml).toContain('<podcast:remoteItem feedGuid="aaaa" />');
+    expect(xml).not.toContain('feedGuid="aaaa" medium=');
+  });
+
+  it('leaves out a row with no feedGuid', () => {
+    const feed = pub();
+    feed.remoteItems = [{ feedGuid: '', medium: 'music' }, { feedGuid: '  ', feedUrl: 'https://x.example/f.xml' }, { feedGuid: 'bbbb', medium: 'music' }];
+    const xml = generatePublisherRssFeed(feed);
+    expect(xml.match(/<podcast:remoteItem /g)).toHaveLength(1);
+    expect(xml).toContain('feedGuid="bbbb"');
+  });
+
+  it('drops characters XML forbids, so the feed stays well-formed', () => {
+    const feed = pub();
+    feed.title = 'Label\u000BName\uD800';
+    const xml = generatePublisherRssFeed(feed);
+    expect(xml).toContain('<title>LabelName</title>');
+    // eslint-disable-next-line no-control-regex -- checking for control characters
+    expect(xml).not.toMatch(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/);
+  });
+});

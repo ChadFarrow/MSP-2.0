@@ -12,7 +12,7 @@ export function InfoModal({ onClose }: InfoModalProps) {
   useEffect(() => {
     const loadContent = async () => {
       try {
-        const res = await fetch('/info.md');
+        const res = await fetch(`${import.meta.env.BASE_URL}info.md`);
         const text = await res.text();
         setContent(text);
       } catch {

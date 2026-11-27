@@ -138,5 +138,6 @@ No `.env.example`; request values from the team. For a one-off script, `vercel e
 - `docs/claude/boosts-and-charts.md` — boost ingest, the derived store, the Helipad importer and the private chart.
 - `docs/claude/desktop-fork.md` — the fork's sync, diverged files, port and reconcile recipes, stacked-PR repair.
 - `docs/claude/browser-testing.md` — driving the dev server in Chrome, handles, phone layout checks.
+- `docs/claude/wordpress-plugin.md` — before changing anything under `wordpress/` or `src/wordpress/`, gating on `isWordPress()`, or adding an `/api` endpoint the editor calls (the plugin reaches it cross-origin). `npm run build:wp` builds the plugin.
 - `docs/rss-nostr-music-crossref.md` — field mapping between RSS and Nostr music events.
 - `docs/superpowers/specs/`, `docs/superpowers/plans/` — design and plan documents for larger features.

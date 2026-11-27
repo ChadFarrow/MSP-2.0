@@ -4,10 +4,33 @@ import { DEFAULT_TRANSCRIPT_TYPE } from '../types/feed';
 import { formatRFC822Date } from './dateUtils';
 import { publisherParties } from './publisherParties';
 
+// Characters XML 1.0 forbids even when escaped: C0 controls other than tab,
+// LF and CR, U+FFFE/U+FFFF, and lone surrogates. One of them makes the whole
+// feed unreadable (expat: "not well-formed (invalid token)"), so drop them.
+// A loop, not a lookbehind regex, so older iOS Safari can parse this file.
+export const stripXmlForbidden = (str: string): string => {
+  let out = '';
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i);
+    if (c >= 0xd800 && c <= 0xdbff) {
+      const next = str.charCodeAt(i + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        out += str[i] + str[i + 1];
+        i++;
+      }
+      continue;
+    }
+    if (c >= 0xdc00 && c <= 0xdfff) continue;
+    if ((c < 0x20 && c !== 0x09 && c !== 0x0a && c !== 0x0d) || c === 0xfffe || c === 0xffff) continue;
+    out += str[i];
+  }
+  return out;
+};
+
 // Escape XML special characters
 const escapeXml = (str: string): string => {
   if (!str) return '';
-  return str
+  return stripXmlForbidden(str)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -260,7 +283,10 @@ const generateRemoteItemXml = (item: RemoteItem, level: number): string => {
   if (item.feedGuid) attrs.push(`feedGuid="${escapeXml(item.feedGuid)}"`);
   if (item.feedUrl) attrs.push(`feedUrl="${escapeXml(item.feedUrl)}"`);
   if (item.itemGuid) attrs.push(`itemGuid="${escapeXml(item.itemGuid)}"`);
-  attrs.push(`medium="${escapeXml(item.medium || 'music')}"`);
+  // Written only when known. A missing medium used to be written as "music",
+  // so a musicL playlist (or an imported row that stated none) was listed as an
+  // album, and an index then counted a playlist curator as a musician (#181).
+  if (item.medium) attrs.push(`medium="${escapeXml(item.medium)}"`);
   // title is an ATTRIBUTE per spec — "a hint to apps so that they can display
   // the title without having to do a remote lookup" — and the element is
   // self-closing. MSP used to write the title as element text, which no
@@ -719,11 +745,15 @@ export const generatePublisherRssFeed = (publisher: PublisherFeed): string => {
   lines.push(...generateCommonChannelElements(publisher, 'publisher', 2));
 
   // Remote items - the feeds this publisher owns
-  if (publisher.remoteItems.length > 0) {
-    publisher.remoteItems.forEach(item => {
+  // A row with no feedGuid is skipped: the spec requires feedGuid, and a
+  // bare <podcast:remoteItem medium="music" /> names nothing (#181). The Save
+  // gate (getSaveBlockers) refuses such a row first; this is the backstop for
+  // Download and the other paths that build XML without it.
+  publisher.remoteItems
+    .filter(item => item.feedGuid && item.feedGuid.trim())
+    .forEach(item => {
       lines.push(generateRemoteItemXml(item, 2));
     });
-  }
 
   // Recommended albums, in catalog order
   publisher.remoteItems

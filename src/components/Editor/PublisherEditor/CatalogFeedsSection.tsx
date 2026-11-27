@@ -25,7 +25,12 @@ interface SearchResult {
   podcastGuid: string;
   url: string;
   image: string;
+  medium?: string;
 }
+
+// The mediums a catalog row can name. "" is "not stated": the generator then
+// writes no medium attribute, and apps read the target feed's own.
+const CATALOG_MEDIUMS = ['', 'music', 'musicL', 'video', 'videoL', 'publisher', 'podcast', 'podcastL', 'audiobook', 'film', 'newsletter', 'blog'];
 
 interface MspFeed {
   feedId: string;
@@ -40,6 +45,7 @@ const PUBLISHER_FIELD_INFO = {
   remoteItemFeedGuid: 'The podcast:guid of the feed you want to include in your publisher catalog. This is the unique identifier that links to the feed.',
   remoteItemFeedUrl: 'The URL of the RSS feed (optional but recommended). This helps apps find the feed if they cannot resolve the GUID.',
   remoteItemTitle: 'A display title for this feed (optional). If not provided, apps will fetch the title from the feed itself.',
+  remoteItemMedium: 'What the catalog feed is, as its own <podcast:medium> says: music for an album, musicL for a playlist, video for a music video. Search and Refresh fill it from Podcast Index. "Not stated" writes no medium, and apps read the feed itself.',
   remoteItemPinned: 'Recommend this release as the first listen for someone new to your music. Written as <podcast:pinned feedGuid>: the proposed Podcasting 2.0 tag only pins an episode of the same feed, so naming a catalog feed is MSP\'s own extension, and no app reads it yet. The catalog order is not changed.',
   publisherRole: 'Sets one role on every catalog feed at once, for example Artist or Label. You can also set the roles of each feed below, for example Artist and Producer for one album. MSP writes them as rel on each catalog feed, and on the publisher reference of each album when you publish. "Not stated" writes nothing. rel is proposed in podcast-namespace PR #793. Beta feature.',
   itemRole: 'What this publisher is to this feed. The feed should name this publisher with the same roles, so the two feeds agree: when both state roles and they differ, apps ignore the link, and the check below this feed says so. With none on, MSP writes nothing. Beta feature.',
@@ -99,6 +105,8 @@ export function CatalogFeedsSection({ publisherFeed, dispatch, linkBack }: Catal
               ...item,
               image: feed.image || item.image,
               title: feed.title || item.title,
+              // The feed's own medium, when PI reports one (#181).
+              medium: feed.medium || item.medium,
               // PI's stored URLs can carry stray whitespace; this value ends up in
               // <podcast:remoteItem feedUrl>, so clean it on the way in.
               feedUrl: feed.url ? normalizeFeedUrl(feed.url) : item.feedUrl
@@ -235,7 +243,8 @@ export function CatalogFeedsSection({ publisherFeed, dispatch, linkBack }: Catal
       feedUrl: normalizeFeedUrl(result.url),
       title: result.title,
       image: result.image,
-      medium: 'music'
+      // The feed's own medium from Podcast Index; "music" only when PI has none (#181).
+      medium: result.medium || 'music'
     };
     dispatch({ type: 'ADD_REMOTE_ITEM', payload: newItem });
     void linkBack.checkItems([newItem]);
@@ -676,12 +685,18 @@ export function CatalogFeedsSection({ publisherFeed, dispatch, linkBack }: Catal
                   </div>
                   <div className="form-group">
                     <label className="form-label">Feed GUID <span className="required">*</span><InfoIcon text={PUBLISHER_FIELD_INFO.remoteItemFeedGuid} /></label>
+                    {/* Locked once a lookup filled the row (it has a title). A row from
+                        "+ Add Feed" has none, so its GUID and URL can be typed (#181). */}
                     <input
                       type="text"
                       className="form-input"
                       value={item.feedGuid || ''}
-                      disabled
-                      style={{ backgroundColor: 'var(--bg-secondary)', cursor: 'default', opacity: 1 }}
+                      disabled={!!item.title}
+                      onChange={e => dispatch({
+                        type: 'UPDATE_REMOTE_ITEM',
+                        payload: { index, item: { ...item, feedGuid: e.target.value.trim() } }
+                      })}
+                      style={item.title ? { backgroundColor: 'var(--bg-secondary)', cursor: 'default', opacity: 1 } : undefined}
                     />
                   </div>
                   <div className="form-group">
@@ -690,11 +705,13 @@ export function CatalogFeedsSection({ publisherFeed, dispatch, linkBack }: Catal
                       type="url"
                       className="form-input"
                       value={item.feedUrl || ''}
-                      disabled
+                      disabled={!!item.title}
+                      onChange={e => dispatch({
+                        type: 'UPDATE_REMOTE_ITEM',
+                        payload: { index, item: { ...item, feedUrl: normalizeFeedUrl(e.target.value) } }
+                      })}
                       style={{
-                        backgroundColor: 'var(--bg-secondary)',
-                        cursor: 'default',
-                        opacity: 1,
+                        ...(item.title ? { backgroundColor: 'var(--bg-secondary)', cursor: 'default', opacity: 1 } : {}),
                         borderColor: feedUrlError ? 'var(--error, #ef4444)' : undefined
                       }}
                     />
@@ -720,6 +737,21 @@ export function CatalogFeedsSection({ publisherFeed, dispatch, linkBack }: Catal
                         {linkStatus.status === 'linked' ? '✓ ' : ''}{linkBackMessage(linkStatus, isMspHosted(item.feedUrl ?? ''), showBeta)}
                       </p>
                     )}
+                  </div>
+                  <div className="form-group" style={{ width: '140px' }}>
+                    <label className="form-label">Medium<InfoIcon text={PUBLISHER_FIELD_INFO.remoteItemMedium} /></label>
+                    <select
+                      className="form-input"
+                      value={item.medium || ''}
+                      onChange={e => dispatch({
+                        type: 'UPDATE_REMOTE_ITEM',
+                        payload: { index, item: { ...item, medium: e.target.value || undefined } }
+                      })}
+                    >
+                      {[...new Set([...CATALOG_MEDIUMS, item.medium || ''])].map(m => (
+                        <option key={m} value={m}>{m || 'Not stated'}</option>
+                      ))}
+                    </select>
                   </div>
                   {/* The roles of this one link (podcast-namespace PR #793). Beta, and
                       shown when the feed already states one, as the toggle below. */}
